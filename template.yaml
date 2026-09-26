@@ -22,6 +22,15 @@ Parameters:
   BedrockKnowledgeBaseId:
     Type: String
     Default: pending
+  OnsSourceBucket:
+    Type: String
+    Default: ons-aws-prod-opendata
+  OnsSourceDataset:
+    Type: String
+    Default: restricao_coff_eolica_tm
+  OnsSourcePrefix:
+    Type: String
+    Default: dataset/restricao_coff_eolica_tm/
 
 Globals:
   Function:
@@ -96,6 +105,103 @@ Resources:
       LogGroupName: !Sub /aws/lambda/${ApiFunction}
       RetentionInDays: 14
 
+  IngestionDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  IngestionQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 360
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt IngestionDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  IngestionDiscoveryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: src.curtailess.ingestion.discovery_handler
+      Runtime: python3.12
+      Description: Descobre o Parquet mais recente no S3 publico do ONS
+      MemorySize: 512
+      Timeout: 60
+      Environment:
+        Variables:
+          SOURCE_BUCKET: !Ref OnsSourceBucket
+          SOURCE_DATASET: !Ref OnsSourceDataset
+          SOURCE_PREFIX: !Ref OnsSourcePrefix
+          INGESTION_QUEUE_URL: !Ref IngestionQueue
+      Policies:
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt IngestionQueue.QueueName
+        - Statement:
+            - Sid: ListPublicOnsDataset
+              Effect: Allow
+              Action:
+                - s3:ListBucket
+              Resource: !Sub arn:${AWS::Partition}:s3:::${OnsSourceBucket}
+              Condition:
+                StringLike:
+                  s3:prefix:
+                    - !Sub ${OnsSourcePrefix}*
+      Events:
+        DailyOnsDiscovery:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(30 19 * * ? *)
+            ScheduleExpressionTimezone: America/Sao_Paulo
+            State: DISABLED
+            Description: Descoberta diaria ONS; habilitar apos validar idempotencia
+
+  IngestionDiscoveryLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${IngestionDiscoveryFunction}
+      RetentionInDays: 14
+
+  IngestionCopyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: src.curtailess.ingestion.copy_handler
+      Runtime: python3.12
+      Description: Copia objeto ONS para raw e grava manifesto de proveniencia
+      MemorySize: 1024
+      Timeout: 300
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucket
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref DataBucket
+        - Statement:
+            - Sid: ReadPublicOnsDataset
+              Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub arn:${AWS::Partition}:s3:::${OnsSourceBucket}/${OnsSourcePrefix}*
+      Events:
+        IngestionQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt IngestionQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+
+  IngestionCopyLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${IngestionCopyFunction}
+      RetentionInDays: 14
+
   DataBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -144,3 +250,15 @@ Outputs:
   ScenariosTableName:
     Description: Tabela de planos e cenarios
     Value: !Ref ScenariosTable
+  IngestionQueueUrl:
+    Description: URL da fila privada de ingestao ONS
+    Value: !Ref IngestionQueue
+  IngestionDeadLetterQueueUrl:
+    Description: URL da fila de mensagens com falha
+    Value: !Ref IngestionDeadLetterQueue
+  IngestionDiscoveryFunctionName:
+    Description: Lambda de descoberta do dataset ONS
+    Value: !Ref IngestionDiscoveryFunction
+  IngestionCopyFunctionName:
+    Description: Lambda de copia raw e manifesto
+    Value: !Ref IngestionCopyFunction

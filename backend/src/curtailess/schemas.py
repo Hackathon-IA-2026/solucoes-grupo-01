@@ -76,3 +76,77 @@ class ExposureResponse(BaseModel):
     data_mode: Literal["demo", "ons_materialized"]
     total_curtailed_energy: NumericEvidence
     limitations: list[str]
+
+
+class PointContextResponse(BaseModel):
+    asset_id: str
+    connection_point: str
+    data_mode: Literal["demo", "ons_materialized"]
+    anonymized_entity_count: NumericEvidence
+    simultaneity_rate: NumericEvidence
+    physical_limit_available: bool
+    limitations: list[str]
+
+
+class HistoricalWindow(BaseModel):
+    start: datetime
+    end: datetime
+    expected_curtailed_energy: NumericEvidence
+
+
+class HistoricalWindowsResponse(BaseModel):
+    asset_id: str
+    perspective_type: Literal["historical_seasonal"]
+    validation_status: Literal["historical_signal"]
+    data_mode: Literal["demo", "ons_materialized"]
+    duration_hours: int
+    windows: list[HistoricalWindow]
+    limitations: list[str]
+
+
+class MaintenanceConstraints(BaseModel):
+    weekdays_only: bool = False
+    unavailable_periods: list[Period] = Field(default_factory=list)
+
+
+class EnergyPrice(BaseModel):
+    value: float = Field(ge=0)
+    unit: Literal["BRL/MWh"]
+    source: str = Field(min_length=1)
+    value_status: Literal["informado"]
+
+
+class MaintenanceRankRequest(BaseModel):
+    asset_id: str
+    start: date
+    end: date
+    duration_hours: int = Field(gt=0)
+    minimum_notice_hours: int = Field(ge=0)
+    baseline_window_start: datetime
+    constraints: MaintenanceConstraints = Field(default_factory=MaintenanceConstraints)
+    energy_price: EnergyPrice
+
+
+class MonetaryEvidence(BaseModel):
+    value: float
+    unit: Literal["BRL"]
+    source: str
+    value_status: Literal["calculado", "simulado"]
+
+
+class RankedMaintenanceWindow(BaseModel):
+    rank: int
+    start: datetime
+    end: datetime
+    expected_curtailed_energy: NumericEvidence
+    opportunity_cost: MonetaryEvidence
+    difference_from_baseline_mwh: float
+
+
+class MaintenanceRankResponse(BaseModel):
+    asset_id: str
+    ranking_mode: Literal["historical_prototype"]
+    data_mode: Literal["demo"]
+    baseline_window_start: datetime
+    ranked_windows: list[RankedMaintenanceWindow]
+    limitations: list[str]
