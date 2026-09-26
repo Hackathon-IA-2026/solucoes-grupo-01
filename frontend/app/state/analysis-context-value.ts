@@ -1,9 +1,12 @@
 import { createContext } from "react";
-import type { BatterySelection, DecisionRecord, MaintenancePackage } from "~/domain/types";
+import type { Asset, BatterySelection, DecisionRecord, MaintenancePackage } from "~/domain/types";
 
 export type AnalysisState = { assetId: string; selectionRevision: number; maintenanceAnalysis: MaintenancePackage | null; decision: DecisionRecord | null; batterySelection: BatterySelection | null };
 export type AnalysisContextValue = {
   state: AnalysisState;
+  assets: Asset[];
+  assetsStatus: "loading" | "ready" | "error";
+  assetsError: string | null;
   selectAsset: (assetId: string) => void;
   recordMaintenanceAnalysis: (analysis: MaintenancePackage | null) => void;
   recordDecision: (decision: DecisionRecord) => void;

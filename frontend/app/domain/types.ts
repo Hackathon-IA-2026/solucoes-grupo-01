@@ -36,6 +36,7 @@ export type Asset = {
   connectionPoint: string;
   anonymousEntities: number;
   telemetry: "ausente" | "simulada" | "fornecida";
+  dataMode?: "demo" | "ons_materialized";
 };
 
 export type ChartPoint = Record<string, string | number | null> & { label: string };

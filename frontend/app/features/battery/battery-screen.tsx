@@ -33,13 +33,14 @@ export function BatteryScreen() {
   const { state, recordBatterySelection } = useAnalysis();
   const recordedDecision = state.decision?.assetId === state.assetId ? state.decision : null;
   const residualProfileId = recordedDecision?.residualProfileId ?? defaultResidualProfile(state.assetId);
-  const analysisKey = `${state.assetId}:${residualProfileId}:${mode}:${state.selectionRevision}`;
-  const template = requestBatteryScenario(state.assetId, residualProfileId, mode);
+  const analysisKey = `${state.assetId}:${residualProfileId ?? "none"}:${mode}:${state.selectionRevision}`;
+  const template = residualProfileId ? requestBatteryScenario(state.assetId, residualProfileId, mode) : null;
   const visibleScenario = scenarioKey === analysisKey ? scenario : null;
   const unsupported = unsupportedKey === analysisKey;
   const recorded = state.batterySelection?.assetId === state.assetId && state.batterySelection.scenarioId === visibleScenario?.id;
   const chooseMode = (next: BatteryMode) => { setMode(next); };
   const evaluate = (request: BatteryScenarioRequest) => {
+    if (!residualProfileId) return;
     const response = requestBatteryScenario(state.assetId, residualProfileId, mode, request);
     setScenario(response);
     setScenarioKey(response ? analysisKey : null);
@@ -51,7 +52,7 @@ export function BatteryScreen() {
   };
 
   return <DecisionWorkspace title="Bateria sobre a perda residual" description="A manutenção reduz a perda de oportunidade associada à indisponibilidade. A bateria é avaliada sobre o curtailment que permanece depois dessas janelas." status="Triagem econômica preliminar, despacho ainda não validado" context={<AssetContext />}>
-    {!recordedDecision ? <aside className="rounded-lg border border-warning/40 bg-amber-50 p-4 text-sm text-amber-950"><strong>Perfil residual de demonstração.</strong> Nenhuma janela foi registrada para este ativo na sessão. A triagem usa o perfil-base simulado {residualProfileId}.</aside> : <aside className="rounded-lg border border-accent/30 bg-accent-soft p-4 text-sm"><strong>Decisão herdada.</strong> A triagem usa o perfil {residualProfileId}, vinculado à janela {recordedDecision.selectedWindowId}.</aside>}
+    {!recordedDecision ? <aside className="rounded-lg border border-warning/40 bg-amber-50 p-4 text-sm text-amber-950"><strong>Perfil residual indisponível.</strong> O catálogo real do ONS não implica um cenário BESS. Registre uma decisão por um endpoint compatível antes da triagem.</aside> : <aside className="rounded-lg border border-accent/30 bg-accent-soft p-4 text-sm"><strong>Decisão herdada.</strong> A triagem usa o perfil {residualProfileId}, vinculado à janela {recordedDecision.selectedWindowId}.</aside>}
     <Panel title="Qual pergunta você quer responder?">
       <div className="grid gap-3 sm:grid-cols-2"><ModeButton active={mode === "new"} onClick={() => chooseMode("new")} title="Quero avaliar uma bateria nova" text="Informe CAPEX, horizonte e configuração técnica da candidata." /><ModeButton active={mode === "existing"} onClick={() => chooseMode("existing")} title="Já possuo uma bateria" text="Informe SOC, vida remanescente, fronteira e restrições da instalação." /></div>
     </Panel>

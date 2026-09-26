@@ -1,7 +1,7 @@
 import { FileTextIcon, GearIcon, LightningIcon } from "@phosphor-icons/react";
 import { Link, NavLink, useLocation } from "react-router";
 import type { ReactNode } from "react";
-import { assets } from "~/domain/fixtures";
+
 import { useAnalysis } from "~/state/use-analysis";
 import { cn } from "~/lib/cn";
 
@@ -12,9 +12,9 @@ const primary = [
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { state, selectAsset } = useAnalysis();
+  const { state, selectAsset, assets, assetsStatus, assetsError } = useAnalysis();
   const location = useLocation();
-  const activeAsset = assets.find((asset) => asset.id === state.assetId) ?? assets[0];
+  const activeAsset = assets.find((asset) => asset.id === state.assetId);
   return (
     <div className="min-h-[100dvh] overflow-x-clip">
       <a href="#main-content" className="fixed left-3 top-3 z-50 -translate-y-20 rounded-md bg-ink px-4 py-2 text-white focus:translate-y-0">Pular para o conteúdo</a>
@@ -29,11 +29,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <label className="order-3 flex w-full min-w-0 flex-col gap-1 text-xs font-semibold text-ink-soft sm:order-none sm:ml-auto sm:w-auto sm:min-w-[260px] sm:flex-row sm:items-center sm:gap-2">
             Ativo
-            <select className="min-h-11 w-full min-w-0 rounded-lg border border-line bg-white px-3 text-sm text-ink" value={state.assetId} onChange={(event) => selectAsset(event.target.value)} name="asset" autoComplete="off">
+            <select disabled={assetsStatus !== "ready"} className="min-h-11 w-full min-w-0 rounded-lg border border-line bg-white px-3 text-sm text-ink disabled:opacity-60" value={state.assetId} onChange={(event) => selectAsset(event.target.value)} name="asset" autoComplete="off">
+              {assetsStatus === "loading" ? <option value="">Carregando ativos do ONS…</option> : null}
+              {assetsStatus === "error" ? <option value="">API indisponível</option> : null}
               {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} | {asset.technology}</option>)}
             </select>
+            {assetsError ? <span className="text-warning">{assetsError}</span> : null}
           </label>
-          <span className="rounded-md bg-accent-soft px-3 py-2 text-xs font-semibold">{activeAsset.technology}</span>
+          <span className="rounded-md bg-accent-soft px-3 py-2 text-xs font-semibold">{activeAsset?.technology ?? "ONS"}</span>
           <nav aria-label="Ações secundárias" className="flex items-center gap-1">
             <Link aria-label="Relatório" className={cn("inline-flex size-11 shrink-0 items-center justify-center gap-2 rounded-lg text-sm hover:bg-accent-soft sm:h-11 sm:w-auto sm:px-3", location.pathname === "/relatorio" && "bg-accent-soft font-semibold")} to="/relatorio"><FileTextIcon aria-hidden="true" /> <span className="hidden sm:inline">Relatório</span></Link>
             <Link aria-label="Fontes e qualidade" className={cn("inline-flex size-11 shrink-0 items-center justify-center gap-2 rounded-lg text-sm hover:bg-accent-soft sm:h-11 sm:w-auto sm:px-3", location.pathname === "/configuracoes" && "bg-accent-soft font-semibold")} to="/configuracoes"><GearIcon aria-hidden="true" /> <span className="hidden sm:inline">Fontes e qualidade</span></Link>

@@ -1,56 +1,66 @@
+import { useEffect, useState } from "react";
 import { ArrowRightIcon } from "@phosphor-icons/react";
 import { Link } from "react-router";
 import { AssetContext } from "~/components/layout/asset-context";
 import { DecisionWorkspace } from "~/components/layout/decision-workspace";
 import { EvidenceMetric } from "~/components/evidence/evidence";
 import { CapabilityUnavailable } from "~/components/evidence/capability-unavailable";
-import { DataQualityPanel } from "~/components/evidence/data-quality";
-import { EvidenceGuidance } from "~/components/evidence/guidance";
-import { ExposureHistoryChart, SimpleHistoricalBar } from "~/components/charts/exposure-charts";
 import { Panel } from "~/components/ui/panel";
-import { assetExposureById, comparableWindowsByAsset, dataQualityByAsset, exposureGuidance } from "~/domain/fixtures";
+import { getConfiguredCurtaiLessApi, mapNumericEvidence, type ApiExposure, type ApiHistoricalWindows, type ApiPointContext } from "~/domain/api-client";
 import { formatEvidence } from "~/lib/format";
 import { useAnalysis } from "~/state/use-analysis";
 
+type EvidenceState = { exposure: ApiExposure; point: ApiPointContext; windows: ApiHistoricalWindows };
+const PERIOD = { start: "2026-08-01", end: "2026-08-31" };
+
 export function ExposureScreen() {
   const { state } = useAnalysis();
-  const exposure = assetExposureById[state.assetId] ?? assetExposureById["asset-wind"];
-  const comparableWindows = comparableWindowsByAsset[state.assetId as keyof typeof comparableWindowsByAsset] ?? comparableWindowsByAsset["asset-wind"];
-  const solar = state.assetId === "asset-solar";
-  const dataQuality = dataQualityByAsset[state.assetId] ?? dataQualityByAsset["asset-wind"];
+  const [result, setResult] = useState<{ assetId: string; evidence: EvidenceState } | null>(null);
+  const [failure, setFailure] = useState<{ assetId: string; message: string } | null>(null);
+  const evidence = result?.assetId === state.assetId ? result.evidence : null;
+  const error = failure?.assetId === state.assetId ? failure.message : null;
+
+  useEffect(() => {
+    if (!state.assetId) return;
+    let active = true;
+    const assetId = state.assetId;
+    const api = getConfiguredCurtaiLessApi();
+    Promise.all([
+      api.getExposure(state.assetId, PERIOD.start, PERIOD.end),
+      api.getPointContext(state.assetId),
+      api.getWindows(state.assetId, PERIOD.start, PERIOD.end, 72),
+    ]).then(([exposure, point, windows]) => {
+      if (active) {
+        setResult({ assetId, evidence: { exposure, point, windows } });
+        setFailure(null);
+      }
+    }).catch((reason: unknown) => {
+      if (active) setFailure({ assetId, message: reason instanceof Error ? reason.message : "Falha ao consultar evidências" });
+    });
+    return () => { active = false; };
+  }, [state.assetId]);
+
   return (
-    <DecisionWorkspace title="Exposição e perspectiva operacional" description="Entenda a energia não realizada, a recorrência histórica e a posição cadastral do ativo antes de escolher uma intervenção." status="Perspectiva histórica e sazonal, sem previsão operacional" context={<AssetContext />}>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <EvidenceMetric label="Energia não realizada" evidence={exposure.summary.total} emphasis />
-        <EvidenceMetric label="Razão caracterizada" evidence={exposure.summary.characterized} />
-        <EvidenceMetric label="Eventos simultâneos" evidence={exposure.summary.simultaneous} />
-      </div>
-      <CapabilityUnavailable title={solar ? "Telemetria simulada" : "Telemetria do cliente não fornecida"}>
-        {solar ? "A série própria desta demonstração é sintética e está marcada como simulada. Razão, origem e modalidade permanecem campos independentes." : "A análise usa apenas dados públicos do ONS. Geração e disponibilidade próprias aparecerão quando o cliente fornecer a telemetria."}
-      </CapabilityUnavailable>
-      <ExposureHistoryChart data={exposure.history} />
-      <div className="grid gap-5 2xl:grid-cols-2">
-        <SimpleHistoricalBar title="Razão registrada" description="Distribuição histórica da energia apurada por razão." data={exposure.reasons} />
-        <SimpleHistoricalBar title="Origem registrada" description="Origem publicada sem inferência a partir da razão." data={exposure.origins} />
-      </div>
-      {exposure.modality ? <SimpleHistoricalBar title="Modalidade solar registrada" description="Modalidade _detail_tm apresentada separadamente da razão _tm e da origem." data={exposure.modality} /> : null}
-      <div className="grid gap-5 2xl:grid-cols-2">
-        <SimpleHistoricalBar title="Recorrência por dia da semana" description="Frequência histórica de patamares com restrição." data={exposure.seasonality} />
-        <SimpleHistoricalBar title="Recorrência por hora" description="Perfil horário histórico para reconhecer concentração temporal." data={exposure.hourly} />
-      </div>
-      <SimpleHistoricalBar title="Perspectiva operacional de 30 dias" description="Frequência histórica de corte em datas e condições sazonais semelhantes. Resultado calculado, sem meteorologia ex ante." data={exposure.perspective} />
-      <p className="rounded-lg border border-warning/30 bg-amber-50 p-4 text-sm text-amber-950">Esta perspectiva ainda não é uma previsão operacional. Não usa nem herda as métricas do modelo de seis horas.</p>
-      <Panel title="Janelas históricas semelhantes" description="Janelas históricas de 72 horas usadas como contexto, sem transformar histórico em previsão.">
-        <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><caption className="sr-only">Janelas históricas semelhantes ao período analisado</caption><thead><tr><th scope="col" className="border-b border-line p-3">Janela</th><th scope="col" className="border-b border-line p-3">Energia histórica</th><th scope="col" className="border-b border-line p-3">Frequência</th><th scope="col" className="border-b border-line p-3">Estado</th></tr></thead><tbody>{comparableWindows.map((window) => <tr key={window.label}><td className="border-b border-line/70 p-3 font-semibold">{window.label}</td><td className="num border-b border-line/70 p-3">{formatEvidence(window.energy.value, window.energy.unit)}</td><td className="num border-b border-line/70 p-3">{formatEvidence(window.eventFrequency.value, window.eventFrequency.unit)}</td><td className="border-b border-line/70 p-3">{window.energy.state}</td></tr>)}</tbody></table></div>
-        <dl className="mt-3 grid gap-2 text-xs leading-5 text-ink-soft"><div><dt className="font-semibold text-ink">Energia histórica</dt><dd>Método: {comparableWindows[0].energy.method} Período: {comparableWindows[0].energy.period.label}. Fonte: {comparableWindows[0].energy.source}. Versão: {comparableWindows[0].energy.dataVersion}. Estado: {comparableWindows[0].energy.state}.</dd></div><div><dt className="font-semibold text-ink">Frequência</dt><dd>Método: {comparableWindows[0].eventFrequency.method} Período: {comparableWindows[0].eventFrequency.period.label}. Fonte: {comparableWindows[0].eventFrequency.source}. Versão: {comparableWindows[0].eventFrequency.dataVersion}. Estado: {comparableWindows[0].eventFrequency.state}.</dd></div></dl>
-      </Panel>
-      <Panel title="Simultaneidade histórica anonimizada" description="Comparação entre eventos exclusivos e simultâneos para o ativo selecionado.">
-        <div className="grid gap-3 sm:grid-cols-3"><EvidenceMetric label="Exclusiva do ativo" evidence={exposure.summary.exclusive} /><EvidenceMetric label="Simultânea" evidence={exposure.summary.simultaneous} /><EvidenceMetric label="Entidades anonimizadas" evidence={exposure.summary.entityCount} /></div>
-        <p className="mt-4 text-sm text-ink-soft">Associação histórica não comprova causalidade elétrica, limite do ponto ou compartilhamento de planos.</p>
-      </Panel>
-      <DataQualityPanel quality={dataQuality} />
-      <EvidenceGuidance guidance={exposureGuidance} />
-      <div className="flex justify-end"><Link className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white hover:bg-accent" to="/manutencao">Configurar intervenção <ArrowRightIcon aria-hidden="true" /></Link></div>
+    <DecisionWorkspace title="Exposição histórica observada" description="Consulte energia não realizada e contexto anonimizado materializados a partir de dados públicos do ONS." status="Histórico observado; não é previsão operacional" context={<AssetContext />}>
+      {!state.assetId ? <Panel title="Carregando ativos" description="Consultando o catálogo materializado na API CurtaiLess." /> : null}
+      {error ? <CapabilityUnavailable title="Evidência pública indisponível">{error}. Nenhum valor demonstrativo foi usado como substituto.</CapabilityUnavailable> : null}
+      {evidence ? <>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <EvidenceMetric label="Energia não realizada" evidence={mapNumericEvidence(evidence.exposure.total_curtailed_energy)} emphasis />
+          <EvidenceMetric label="Entidades anonimizadas" evidence={mapNumericEvidence(evidence.point.anonymized_entity_count)} />
+          <EvidenceMetric label="Simultaneidade histórica" evidence={mapNumericEvidence(evidence.point.simultaneity_rate)} />
+        </div>
+        <CapabilityUnavailable title="Telemetria do cliente não fornecida">A análise usa apenas agregados públicos do ONS. Geração, disponibilidade, setpoint e eventos próprios não foram inferidos.</CapabilityUnavailable>
+        <Panel title="Janelas históricas materializadas" description="Sinal mensal observado rateado para janelas de 72 horas; não é previsão ex ante.">
+          <div className="max-w-full overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><caption className="sr-only">Janelas históricas do ativo</caption><thead><tr><th className="border-b border-line p-3">Início</th><th className="border-b border-line p-3">Fim</th><th className="border-b border-line p-3">Energia histórica</th><th className="border-b border-line p-3">Estado</th></tr></thead><tbody>{evidence.windows.windows.map((window) => { const item = mapNumericEvidence(window.expected_curtailed_energy); return <tr key={window.start}><td className="border-b border-line/70 p-3">{window.start}</td><td className="border-b border-line/70 p-3">{window.end}</td><td className="num border-b border-line/70 p-3">{formatEvidence(item.value, item.unit)}</td><td className="border-b border-line/70 p-3">{item.state}</td></tr>; })}</tbody></table></div>
+          <p className="mt-3 text-xs leading-5 text-ink-soft">{evidence.windows.limitations.join(" ")}</p>
+        </Panel>
+        <Panel title="Proveniência e limites">
+          <dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs text-ink-soft">Modo</dt><dd className="font-semibold">{evidence.exposure.data_mode}</dd></div><div><dt className="text-xs text-ink-soft">Tipo</dt><dd className="font-semibold">{evidence.exposure.perspective_type}</dd></div><div><dt className="text-xs text-ink-soft">Fonte</dt><dd className="font-semibold">{evidence.exposure.total_curtailed_energy.source}</dd></div><div><dt className="text-xs text-ink-soft">Versão</dt><dd className="font-semibold">{evidence.exposure.total_curtailed_energy.data_version}</dd></div></dl>
+          <p className="mt-4 text-sm text-ink-soft">{evidence.exposure.limitations.join(" ")} {evidence.point.limitations.join(" ")}</p>
+        </Panel>
+        <div className="flex justify-end"><Link className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white hover:bg-accent" to="/manutencao">Avaliar próxima etapa <ArrowRightIcon aria-hidden="true" /></Link></div>
+      </> : state.assetId && !error ? <Panel title="Carregando evidências" description="Consultando exposição, contexto do ponto e janelas históricas na API." /> : null}
     </DecisionWorkspace>
   );
 }
