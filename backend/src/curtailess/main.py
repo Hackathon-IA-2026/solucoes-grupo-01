@@ -1,11 +1,14 @@
+import hashlib
+import uuid
 from datetime import UTC, date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
 from . import __version__
+from .artifacts import create_artifact_repository, serialize_report_body
 from .bedrock import BedrockOptimizationError, optimize_with_bedrock
 from .config import get_settings
 from .data_access import create_exposure_repository
@@ -13,23 +16,34 @@ from .schemas import (
     ApiInfo,
     Asset,
     AssetList,
+    BessScreenRequest,
+    BessScreenResponse,
     CurtailmentRecommendation,
     CurtailmentScenario,
+    DataQualityResponse,
     ExposureResponse,
     HealthResponse,
     HistoricalWindow,
     HistoricalWindowsResponse,
     MaintenanceRankRequest,
     MaintenanceRankResponse,
+    ModelRunResponse,
     MonetaryEvidence,
     NumericEvidence,
     Period,
     PointContextResponse,
+    ProvenanceResponse,
     RankedMaintenanceWindow,
+    ReportCreateRequest,
+    ReportFileResponse,
+    ReportResponse,
 )
 
 settings = get_settings()
 repository = create_exposure_repository(settings.exposure_table, settings.aws_region)
+artifact_repository = create_artifact_repository(
+    settings.scenarios_table, settings.data_bucket, settings.aws_region
+)
 
 DEMO_ASSET = Asset(
     asset_id="demo-wind-ne-001",
@@ -107,6 +121,65 @@ def get_asset(asset_id: str) -> Asset:
 
 
 @app.get(
+    "/v1/data-quality/{asset_id}",
+    response_model=DataQualityResponse,
+    tags=["audit"],
+)
+def get_data_quality(asset_id: str) -> DataQualityResponse:
+    item = repository.get_data_quality(asset_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Qualidade de dados não encontrada.")
+    start = date.fromisoformat(item["period_start"][:10])
+    end = date.fromisoformat(item["period_end"][:10])
+    expected = ((end - start).days + 1) * 48
+    observed = int(item["interval_count"])
+    limitation = (
+        "Contagens de nulos e duplicatas ainda não materializadas; cobertura calculada "
+        "sobre intervalos esperados de 30 minutos no período."
+    )
+    return DataQualityResponse(
+        asset_id=asset_id,
+        validation_status="valid",
+        period=Period(start=start, end=end),
+        observed_interval_count=observed,
+        expected_interval_count=expected,
+        coverage_percent=round(min(observed / expected * 100, 100.0), 6),
+        null_count=None,
+        duplicate_count=None,
+        source="ONS/restricao_coff_eolica_tm",
+        source_sha256=item["source_sha256"],
+        limitations=[limitation],
+    )
+
+
+@app.get(
+    "/v1/provenances/{provenance_id}",
+    response_model=ProvenanceResponse,
+    tags=["audit"],
+)
+def get_provenance(provenance_id: str) -> ProvenanceResponse:
+    if not provenance_id.startswith("sha256:"):
+        raise HTTPException(status_code=422, detail="provenance_id deve usar o prefixo sha256:.")
+    source_sha256 = provenance_id.removeprefix("sha256:")
+    item = repository.get_provenance(source_sha256)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Proveniência não encontrada.")
+    limitation = "Linhagem da materialização mensal; o manifesto bruto permanece privado no S3."
+    return ProvenanceResponse(
+        provenance_id=provenance_id,
+        classification="calculado",
+        source="ONS/restricao_coff_eolica_tm",
+        source_bucket=item.get("source_bucket"),
+        source_key=item["source_key"],
+        source_sha256=source_sha256,
+        data_version=item["period"],
+        method=item["method"],
+        asset_ids=item.get("asset_ids", [item["asset_id"]]),
+        limitations=[limitation],
+    )
+
+
+@app.get(
     "/v1/assets/{asset_id}/exposure",
     response_model=ExposureResponse,
     tags=["exposure"],
@@ -115,12 +188,19 @@ def get_asset_exposure(
     asset_id: str,
     start: Annotated[date, "query"],
     end: Annotated[date, "query"],
+    granularity: Literal["period", "day", "hour", "30min"] = "period",
+    reason: Literal["ENE", "REL", "CNF"] | None = None,
+    technology: Literal["wind", "solar"] = "wind",
 ) -> ExposureResponse:
     if start > end:
         raise HTTPException(status_code=422, detail="start deve ser anterior ou igual a end.")
     if repository.get_asset(asset_id) is None:
         raise HTTPException(status_code=404, detail="Ativo não encontrado.")
-    exposure = repository.get_exposure(asset_id, start, end)
+    if granularity != "period":
+        raise HTTPException(status_code=422, detail="Apenas granularity=period está materializada.")
+    if technology != "wind":
+        raise HTTPException(status_code=422, detail="Apenas technology=wind está materializada.")
+    exposure = repository.get_exposure(asset_id, start, end, reason)
     if exposure is None:
         raise HTTPException(status_code=404, detail="Sem dados materializados para o período.")
 
@@ -135,6 +215,9 @@ def get_asset_exposure(
         asset_id=asset_id,
         perspective_type="historical_observed",
         data_mode="ons_materialized",
+        granularity="period",
+        reason=reason,
+        technology="wind",
         total_curtailed_energy=NumericEvidence(
             value=float(exposure["curtailed_mwh"]),
             unit="MWh",
@@ -216,6 +299,7 @@ def get_asset_windows(
     start: Annotated[date, "query"],
     end: Annotated[date, "query"],
     duration_hours: Annotated[int, "query"] = 72,
+    reason: Literal["ENE", "REL", "CNF"] | None = None,
 ) -> HistoricalWindowsResponse:
     if start > end:
         raise HTTPException(status_code=422, detail="start deve ser anterior ou igual a end.")
@@ -223,7 +307,9 @@ def get_asset_windows(
         raise HTTPException(status_code=422, detail="duration_hours deve ser positivo.")
     if repository.get_asset(asset_id) is None:
         raise HTTPException(status_code=404, detail="Ativo não encontrado.")
-    materialized_windows = repository.get_historical_windows(asset_id, start, end, duration_hours)
+    materialized_windows = repository.get_historical_windows(
+        asset_id, start, end, duration_hours, reason
+    )
     if not materialized_windows:
         raise HTTPException(status_code=404, detail="Sem sinal histórico materializado.")
     limitation = (
@@ -236,6 +322,7 @@ def get_asset_windows(
         validation_status="historical_signal",
         data_mode="ons_materialized",
         duration_hours=duration_hours,
+        reason=reason,
         windows=[
             HistoricalWindow(
                 start=window["start"],
@@ -337,6 +424,155 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
         baseline_window_start=baseline,
         ranked_windows=ranked_windows,
         limitations=[limitation],
+    )
+
+
+@app.post(
+    "/v1/bess/screen",
+    response_model=BessScreenResponse,
+    tags=["bess"],
+)
+def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
+    item = repository.get_asset(request.asset_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado.")
+    residual_exposure = float(item["curtailed_mwh"])
+    annual_energy_capacity = (
+        request.energy_mwh * request.cycles_per_year * request.round_trip_efficiency
+    )
+    absorbable = min(residual_exposure, annual_energy_capacity)
+    annual_benefit = absorbable * request.energy_price_brl_mwh
+    annual_net_benefit = annual_benefit - request.annualized_cost_brl
+    limitation = (
+        "Triagem determinística sobre exposição histórica: não é dimensionamento, previsão "
+        "de despacho ou garantia de corte evitado."
+    )
+    return BessScreenResponse(
+        asset_id=request.asset_id,
+        maintenance_result_id=request.maintenance_result_id,
+        screening_mode="historical_deterministic",
+        data_mode="ons_materialized",
+        residual_exposure_mwh=round(residual_exposure, 6),
+        technically_absorbable_mwh=round(absorbable, 6),
+        annual_benefit_brl=round(annual_benefit, 2),
+        annual_net_benefit_brl=round(annual_net_benefit, 2),
+        preliminary_viable=annual_net_benefit > 0,
+        missing_data=[
+            "soc_cronológico",
+            "degradação",
+            "disponibilidade",
+            "limite_de_conexão",
+            "preço_horário",
+            "fronteira_de_medição",
+        ],
+        limitations=[limitation],
+    )
+
+
+@app.get(
+    "/v1/model-runs/{model_run_id}",
+    response_model=ModelRunResponse,
+    tags=["audit"],
+)
+def get_model_run(model_run_id: str) -> ModelRunResponse:
+    if not model_run_id.startswith("materialization:"):
+        raise HTTPException(status_code=404, detail="Execução não encontrada.")
+    period = model_run_id.removeprefix("materialization:")
+    run = repository.get_materialization_run(period)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Execução não encontrada.")
+    return ModelRunResponse(
+        model_run_id=model_run_id,
+        run_type="historical_replay",
+        model_used=False,
+        validation_status="materialized_historical_data",
+        dataset="ONS/restricao_coff_eolica_tm",
+        period=period,
+        asset_count=run["asset_count"],
+        source_sha256s=run["source_sha256s"],
+        metrics=None,
+        limitations=["Registro derivado da materialização; nenhum modelo preditivo foi executado."],
+    )
+
+
+def report_response(item: dict) -> ReportResponse:
+    return ReportResponse(
+        report_id=item["scenario_id"],
+        asset_id=item["asset_id"],
+        evidence_ids=item["evidence_ids"],
+        report_type=item["report_type"],
+        format=item["format"],
+        execution_status=item["execution_status"],
+        generation_mode=item["generation_mode"],
+        hash_sha256=item["hash_sha256"],
+        created_at=item["created_at"],
+        limitations=item["limitations"],
+    )
+
+
+@app.post("/v1/reports", response_model=ReportResponse, status_code=202, tags=["reports"])
+def create_report(request: ReportCreateRequest) -> ReportResponse:
+    asset = repository.get_asset(request.asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado.")
+    report_id = str(uuid.uuid4())
+    created_at = datetime.now(UTC)
+    limitations = [
+        "Relatório determinístico de evidência histórica; não contém previsão "
+        "nem orientação regulatória."
+    ]
+    body = serialize_report_body(
+        {
+            "report_id": report_id,
+            "asset_id": request.asset_id,
+            "asset_name": asset["asset_name"],
+            "data_mode": "ons_materialized",
+            "evidence_ids": request.evidence_ids,
+            "source_sha256": asset["source_sha256"],
+            "period": asset["period"],
+            "limitations": limitations,
+        }
+    )
+    item = {
+        "plant_id": "REPORT",
+        "scenario_id": report_id,
+        "asset_id": request.asset_id,
+        "evidence_ids": request.evidence_ids,
+        "report_type": request.report_type,
+        "format": request.format,
+        "execution_status": "completed",
+        "generation_mode": "deterministic_fallback",
+        "hash_sha256": hashlib.sha256(body.encode()).hexdigest(),
+        "created_at": created_at.isoformat(),
+        "artifact_key": f"reports/{report_id}.json",
+        "limitations": limitations,
+        "body": body,
+    }
+    stored = artifact_repository.create_report(item)
+    return report_response(stored)
+
+
+@app.get("/v1/reports/{report_id}", response_model=ReportResponse, tags=["reports"])
+def get_report(report_id: str) -> ReportResponse:
+    item = artifact_repository.get_report(report_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Relatório não encontrado.")
+    return report_response(item)
+
+
+@app.get(
+    "/v1/reports/{report_id}/file",
+    response_model=ReportFileResponse,
+    tags=["reports"],
+)
+def get_report_file(report_id: str) -> ReportFileResponse:
+    item = artifact_repository.get_report(report_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Relatório não encontrado.")
+    return ReportFileResponse(
+        report_id=report_id,
+        url=artifact_repository.get_report_file_url(item),
+        expires_in_seconds=300,
     )
 
 

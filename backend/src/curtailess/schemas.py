@@ -74,7 +74,37 @@ class ExposureResponse(BaseModel):
     asset_id: str
     perspective_type: Literal["historical_observed"]
     data_mode: Literal["demo", "ons_materialized"]
+    granularity: Literal["period"]
+    reason: Literal["ENE", "REL", "CNF"] | None
+    technology: Literal["wind"]
     total_curtailed_energy: NumericEvidence
+    limitations: list[str]
+
+
+class DataQualityResponse(BaseModel):
+    asset_id: str
+    validation_status: Literal["valid"]
+    period: Period
+    observed_interval_count: int
+    expected_interval_count: int
+    coverage_percent: float
+    null_count: int | None
+    duplicate_count: int | None
+    source: str
+    source_sha256: str
+    limitations: list[str]
+
+
+class ProvenanceResponse(BaseModel):
+    provenance_id: str
+    classification: Literal["calculado"]
+    source: str
+    source_bucket: str | None
+    source_key: str
+    source_sha256: str
+    data_version: str
+    method: str
+    asset_ids: list[str]
     limitations: list[str]
 
 
@@ -100,6 +130,7 @@ class HistoricalWindowsResponse(BaseModel):
     validation_status: Literal["historical_signal"]
     data_mode: Literal["demo", "ons_materialized"]
     duration_hours: int
+    reason: Literal["ENE", "REL", "CNF"] | None
     windows: list[HistoricalWindow]
     limitations: list[str]
 
@@ -150,3 +181,68 @@ class MaintenanceRankResponse(BaseModel):
     baseline_window_start: datetime
     ranked_windows: list[RankedMaintenanceWindow]
     limitations: list[str]
+
+
+class BessScreenRequest(BaseModel):
+    asset_id: str
+    maintenance_result_id: str
+    power_mw: float = Field(gt=0)
+    energy_mwh: float = Field(gt=0)
+    capex_brl: float = Field(ge=0)
+    annualized_cost_brl: float = Field(ge=0)
+    round_trip_efficiency: float = Field(gt=0, le=1)
+    cycles_per_year: int = Field(gt=0)
+    energy_price_brl_mwh: float = Field(ge=0)
+
+
+class BessScreenResponse(BaseModel):
+    asset_id: str
+    maintenance_result_id: str
+    screening_mode: Literal["historical_deterministic"]
+    data_mode: Literal["ons_materialized"]
+    residual_exposure_mwh: float
+    technically_absorbable_mwh: float
+    annual_benefit_brl: float
+    annual_net_benefit_brl: float
+    preliminary_viable: bool
+    missing_data: list[str]
+    limitations: list[str]
+
+
+class ModelRunResponse(BaseModel):
+    model_run_id: str
+    run_type: Literal["historical_replay"]
+    model_used: Literal[False]
+    validation_status: Literal["materialized_historical_data"]
+    dataset: str
+    period: str
+    asset_count: int
+    source_sha256s: list[str]
+    metrics: dict[str, float] | None
+    limitations: list[str]
+
+
+class ReportCreateRequest(BaseModel):
+    asset_id: str
+    evidence_ids: list[str] = Field(min_length=1)
+    report_type: Literal["decision_support"]
+    format: Literal["json"]
+
+
+class ReportResponse(BaseModel):
+    report_id: str
+    asset_id: str
+    evidence_ids: list[str]
+    report_type: Literal["decision_support"]
+    format: Literal["json"]
+    execution_status: Literal["completed"]
+    generation_mode: Literal["deterministic_fallback"]
+    hash_sha256: str
+    created_at: datetime
+    limitations: list[str]
+
+
+class ReportFileResponse(BaseModel):
+    report_id: str
+    url: str
+    expires_in_seconds: Literal[300]

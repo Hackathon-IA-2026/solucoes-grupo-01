@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 from fastapi.testclient import TestClient
 
 import curtailess.main as main
@@ -95,7 +98,7 @@ def test_get_asset_exposure_returns_materialized_ons_values(monkeypatch) -> None
     monkeypatch.setattr(
         main.repository,
         "get_exposure",
-        lambda asset_id, start, end: {
+        lambda asset_id, start, end, reason=None: {
             "curtailed_mwh": 23968.0945,
             "periods": ["2026-08"],
             "source_sha256s": [MATERIALIZED_ITEM["source_sha256"]],
@@ -122,6 +125,53 @@ def test_get_asset_exposure_returns_materialized_ons_values(monkeypatch) -> None
     assert "materializado" in " ".join(payload["limitations"]).lower()
 
 
+def test_get_asset_exposure_filters_materialized_reason(monkeypatch) -> None:
+    item = {
+        **MATERIALIZED_ITEM,
+        "curtailed_mwh_by_reason": {"ENE": 120.5, "REL": 80.0, "CNF": 10.0, "NC": 2.0},
+    }
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: item)
+    monkeypatch.setattr(
+        main.repository,
+        "get_exposure",
+        lambda asset_id, start, end, reason=None: {
+            "curtailed_mwh": 120.5,
+            "periods": ["2026-08"],
+            "source_sha256s": [MATERIALIZED_ITEM["source_sha256"]],
+            "items": [item],
+        },
+    )
+
+    response = client.get(
+        "/v1/assets/CJU_BAOUR/exposure",
+        params={
+            "start": "2026-08-01",
+            "end": "2026-08-31",
+            "granularity": "period",
+            "reason": "ENE",
+            "technology": "wind",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reason"] == "ENE"
+    assert payload["granularity"] == "period"
+    assert payload["total_curtailed_energy"]["value"] == 120.5
+
+
+def test_get_asset_exposure_rejects_unmaterialized_granularity(monkeypatch) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+
+    response = client.get(
+        "/v1/assets/CJU_BAOUR/exposure",
+        params={"start": "2026-08-01", "end": "2026-08-31", "granularity": "hour"},
+    )
+
+    assert response.status_code == 422
+    assert "granularity=period" in response.json()["detail"]
+
+
 def test_get_asset_exposure_rejects_inverted_period() -> None:
     response = client.get(
         "/v1/assets/demo-wind-ne-001/exposure",
@@ -135,6 +185,45 @@ def test_get_unknown_asset_returns_not_found() -> None:
     response = client.get("/v1/assets/unknown")
 
     assert response.status_code == 404
+
+
+def test_get_data_quality_returns_materialized_coverage(monkeypatch) -> None:
+    item = {**MATERIALIZED_ITEM, "interval_count": 1488, "limited_interval_count": 296}
+    monkeypatch.setattr(main.repository, "get_data_quality", lambda asset_id: item)
+
+    response = client.get("/v1/data-quality/CJU_BAOUR")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["asset_id"] == "CJU_BAOUR"
+    assert payload["validation_status"] == "valid"
+    assert payload["coverage_percent"] == 100.0
+    assert payload["observed_interval_count"] == 1488
+    assert payload["expected_interval_count"] == 1488
+    assert payload["null_count"] is None
+    assert payload["duplicate_count"] is None
+    assert payload["source_sha256"] == MATERIALIZED_ITEM["source_sha256"]
+    assert "não materializadas" in " ".join(payload["limitations"]).lower()
+
+
+def test_get_provenance_returns_source_lineage(monkeypatch) -> None:
+    monkeypatch.setattr(
+        main.repository,
+        "get_provenance",
+        lambda source_sha256: MATERIALIZED_ITEM,
+    )
+
+    response = client.get(f"/v1/provenances/sha256:{MATERIALIZED_ITEM['source_sha256']}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provenance_id"] == f"sha256:{MATERIALIZED_ITEM['source_sha256']}"
+    assert payload["classification"] == "calculado"
+    assert payload["source"] == "ONS/restricao_coff_eolica_tm"
+    assert payload["source_key"] == MATERIALIZED_ITEM["source_key"]
+    assert payload["source_sha256"] == MATERIALIZED_ITEM["source_sha256"]
+    assert payload["method"] == MATERIALIZED_ITEM["method"]
+    assert payload["asset_ids"] == ["CJU_BAOUR"]
 
 
 def test_get_point_context_returns_materialized_anonymized_aggregates(monkeypatch) -> None:
@@ -175,7 +264,7 @@ def test_get_historical_windows_uses_materialized_monthly_signal(monkeypatch) ->
     monkeypatch.setattr(
         main.repository,
         "get_historical_windows",
-        lambda asset_id, start, end, duration_hours: [
+        lambda asset_id, start, end, duration_hours, reason=None: [
             {
                 "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
                 "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
@@ -207,6 +296,40 @@ def test_get_historical_windows_uses_materialized_monthly_signal(monkeypatch) ->
     assert payload["windows"][0]["expected_curtailed_energy"]["value"] == 2319.493016
     assert payload["windows"][0]["expected_curtailed_energy"]["value_status"] == "calculado"
     assert "não é previsão" in " ".join(payload["limitations"]).lower()
+
+
+def test_get_asset_windows_passes_reason_filter(monkeypatch) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    captured = {}
+
+    def fake_windows(asset_id, start, end, duration_hours, reason=None):
+        captured["reason"] = reason
+        return [
+            {
+                "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
+                "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
+                "curtailed_mwh": 12.5,
+                "period": "2026-08",
+                "source_sha256": MATERIALIZED_ITEM["source_sha256"],
+                "method": "monthly_observed_reason_rate_prorated_to_window_v1",
+            }
+        ]
+
+    monkeypatch.setattr(main.repository, "get_historical_windows", fake_windows)
+
+    response = client.get(
+        "/v1/assets/CJU_BAOUR/windows",
+        params={
+            "start": "2026-08-01",
+            "end": "2026-08-31",
+            "duration_hours": 72,
+            "reason": "REL",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["reason"] == "REL"
+    assert response.json()["reason"] == "REL"
 
 
 def test_get_historical_windows_rejects_non_positive_duration() -> None:
@@ -369,6 +492,104 @@ def test_rank_maintenance_rejects_unknown_asset() -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(monkeypatch) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+
+    response = client.post(
+        "/v1/bess/screen",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "maintenance_result_id": "historical:CJU_BAOUR:2026-08",
+            "power_mw": 20,
+            "energy_mwh": 80,
+            "capex_brl": 1000000,
+            "annualized_cost_brl": 100000,
+            "round_trip_efficiency": 0.85,
+            "cycles_per_year": 200,
+            "energy_price_brl_mwh": 250,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["asset_id"] == "CJU_BAOUR"
+    assert payload["screening_mode"] == "historical_deterministic"
+    assert payload["data_mode"] == "ons_materialized"
+    assert payload["residual_exposure_mwh"] == 23968.0945
+    assert payload["technically_absorbable_mwh"] == 13600.0
+    assert payload["annual_benefit_brl"] == 3400000.0
+    assert payload["annual_net_benefit_brl"] == 3300000.0
+    assert payload["preliminary_viable"] is True
+    assert "soc_cronológico" in payload["missing_data"]
+    assert "não é dimensionamento" in " ".join(payload["limitations"]).lower()
+
+
+def test_get_materialization_model_run_is_explicitly_historical(monkeypatch) -> None:
+    monkeypatch.setattr(
+        main.repository,
+        "get_materialization_run",
+        lambda period: {
+            "period": period,
+            "asset_count": 153,
+            "source_sha256s": [MATERIALIZED_ITEM["source_sha256"]],
+        },
+    )
+
+    response = client.get("/v1/model-runs/materialization:2026-08")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["model_run_id"] == "materialization:2026-08"
+    assert payload["run_type"] == "historical_replay"
+    assert payload["model_used"] is False
+    assert payload["validation_status"] == "materialized_historical_data"
+    assert payload["asset_count"] == 153
+    assert payload["metrics"] is None
+
+
+def test_report_lifecycle_uses_frozen_materialized_evidence(monkeypatch) -> None:
+    stored = {}
+
+    def fake_create(report):
+        stored.update(report)
+        return report
+
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    monkeypatch.setattr(main.artifact_repository, "create_report", fake_create)
+    monkeypatch.setattr(main.artifact_repository, "get_report", lambda report_id: stored or None)
+    monkeypatch.setattr(
+        main.artifact_repository,
+        "get_report_file_url",
+        lambda report: "https://example.invalid/temporary-report-url",
+    )
+
+    create_response = client.post(
+        "/v1/reports",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "evidence_ids": [f"sha256:{MATERIALIZED_ITEM['source_sha256']}"],
+            "report_type": "decision_support",
+            "format": "json",
+        },
+    )
+
+    assert create_response.status_code == 202
+    created = create_response.json()
+    assert created["execution_status"] == "completed"
+    assert created["generation_mode"] == "deterministic_fallback"
+    assert created["hash_sha256"] == hashlib.sha256(stored["body"].encode()).hexdigest()
+    assert json.loads(stored["body"])["data_mode"] == "ons_materialized"
+
+    get_response = client.get(f"/v1/reports/{created['report_id']}")
+    assert get_response.status_code == 200
+    assert get_response.json()["hash_sha256"] == created["hash_sha256"]
+
+    file_response = client.get(f"/v1/reports/{created['report_id']}/file")
+    assert file_response.status_code == 200
+    assert file_response.json()["expires_in_seconds"] == 300
+    assert file_response.json()["url"].startswith("https://")
 
 
 def test_optimize_curtailment_returns_explainable_recommendation(monkeypatch) -> None:

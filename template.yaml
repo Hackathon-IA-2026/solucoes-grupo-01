@@ -74,6 +74,8 @@ Resources:
             TableName: !Ref ScenariosTable
         - DynamoDBReadPolicy:
             TableName: !Ref ExposureTable
+        - S3WritePolicy:
+            BucketName: !Ref DataBucket
         - Statement:
             - Sid: InvokeBedrockModel
               Effect: Allow

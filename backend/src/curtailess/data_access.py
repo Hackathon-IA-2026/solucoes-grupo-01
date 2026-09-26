@@ -26,7 +26,9 @@ class ExposureRepository:
         items = [item for item in self.list_assets() if item["asset_id"] == asset_id]
         return items[0] if items else None
 
-    def get_exposure(self, asset_id: str, start: date, end: date) -> dict[str, Any] | None:
+    def get_exposure(
+        self, asset_id: str, start: date, end: date, reason: str | None = None
+    ) -> dict[str, Any] | None:
         response = self.table.scan()
         items = [
             item
@@ -39,8 +41,13 @@ class ExposureRepository:
         if not items:
             return None
         items.sort(key=lambda item: item["period"])
+        values = (
+            (item.get("curtailed_mwh_by_reason", {}).get(reason, Decimal("0")) for item in items)
+            if reason
+            else (item["curtailed_mwh"] for item in items)
+        )
         return {
-            "curtailed_mwh": sum((item["curtailed_mwh"] for item in items), start=Decimal("0")),
+            "curtailed_mwh": sum(values, start=Decimal("0")),
             "periods": [item["period"] for item in items],
             "source_sha256s": [item["source_sha256"] for item in items],
             "items": items,
@@ -75,9 +82,14 @@ class ExposureRepository:
         }
 
     def get_historical_windows(
-        self, asset_id: str, start: date, end: date, duration_hours: int
+        self,
+        asset_id: str,
+        start: date,
+        end: date,
+        duration_hours: int,
+        reason: str | None = None,
     ) -> list[dict[str, Any]]:
-        exposure = self.get_exposure(asset_id, start, end)
+        exposure = self.get_exposure(asset_id, start, end, reason)
         if exposure is None:
             return []
         windows = []
@@ -97,10 +109,42 @@ class ExposureRepository:
                     "curtailed_mwh": round(float(curtailed_mwh), 6),
                     "period": item["period"],
                     "source_sha256": item["source_sha256"],
-                    "method": "monthly_observed_rate_prorated_to_window_v1",
+                    "method": (
+                        "monthly_observed_reason_rate_prorated_to_window_v1"
+                        if reason
+                        else "monthly_observed_rate_prorated_to_window_v1"
+                    ),
                 }
             )
         return windows
+
+    def get_data_quality(self, asset_id: str) -> dict[str, Any] | None:
+        return self.get_asset(asset_id)
+
+    def get_provenance(self, source_sha256: str) -> dict[str, Any] | None:
+        response = self.table.scan()
+        items = [
+            item
+            for item in response.get("Items", [])
+            if "#" not in item["period"] and item.get("source_sha256") == source_sha256
+        ]
+        if not items:
+            return None
+        items.sort(key=lambda item: (item["period"], item["asset_id"]), reverse=True)
+        result = dict(items[0])
+        result["asset_ids"] = sorted({item["asset_id"] for item in items})
+        return result
+
+    def get_materialization_run(self, period: str) -> dict[str, Any] | None:
+        response = self.table.scan()
+        items = [item for item in response.get("Items", []) if item.get("period") == period]
+        if not items:
+            return None
+        return {
+            "period": period,
+            "asset_count": len({item["asset_id"] for item in items}),
+            "source_sha256s": sorted({item["source_sha256"] for item in items}),
+        }
 
 
 class UnconfiguredExposureRepository:
@@ -111,8 +155,10 @@ class UnconfiguredExposureRepository:
         del asset_id
         return None
 
-    def get_exposure(self, asset_id: str, start: date, end: date) -> None:
-        del asset_id, start, end
+    def get_exposure(
+        self, asset_id: str, start: date, end: date, reason: str | None = None
+    ) -> None:
+        del asset_id, start, end, reason
         return None
 
     def get_point_context(self, asset_id: str) -> None:
@@ -120,10 +166,27 @@ class UnconfiguredExposureRepository:
         return None
 
     def get_historical_windows(
-        self, asset_id: str, start: date, end: date, duration_hours: int
+        self,
+        asset_id: str,
+        start: date,
+        end: date,
+        duration_hours: int,
+        reason: str | None = None,
     ) -> list[dict[str, Any]]:
-        del asset_id, start, end, duration_hours
+        del asset_id, start, end, duration_hours, reason
         return []
+
+    def get_data_quality(self, asset_id: str) -> None:
+        del asset_id
+        return None
+
+    def get_provenance(self, source_sha256: str) -> None:
+        del source_sha256
+        return None
+
+    def get_materialization_run(self, period: str) -> None:
+        del period
+        return None
 
 
 def create_exposure_repository(table_name: str | None, region_name: str) -> Any:
