@@ -31,6 +31,16 @@ cd repo
 
 Liste aqui o que precisa estar instalado antes de rodar o projeto (ex: Node 18+, Python 3.10+, Docker, etc.)
 
+## Integração contínua
+
+Pull requests executam o workflow `.github/workflows/ci.yml`, com verificações independentes para:
+
+- backend: dependências com `uv`, testes, Ruff e formatação;
+- infraestrutura: validação e build do template AWS SAM;
+- frontend: instalação reproduzível, tipos, lint, testes e build.
+
+O workflow concede apenas permissão de leitura ao conteúdo e não recebe credenciais AWS. Deploy automático não faz parte deste CI. A adoção de CD deve ser avaliada separadamente, porque a conta do workshop usa credenciais temporárias e políticas IAM limitadas.
+
 ## Licença
 
 Este projeto está sob a licença MIT — veja o arquivo [LICENSE](./LICENSE) para mais detalhes.
