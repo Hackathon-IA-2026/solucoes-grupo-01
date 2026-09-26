@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     scenarios_table: str | None = None
     bedrock_model_id: str = "us.anthropic.claude-opus-5"
     bedrock_fallback_model_id: str = "us.anthropic.claude-sonnet-5"
-    bedrock_emergency_model_id: str = "amazon.nova-pro-v1:0"
+    bedrock_emergency_model_id: str = "us.amazon.nova-pro-v1:0"
     bedrock_knowledge_base_id: str | None = None
 
     model_config = SettingsConfigDict(
