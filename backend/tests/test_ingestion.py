@@ -129,6 +129,15 @@ class FakeDestinationS3:
         self.objects.append(kwargs)
 
 
+class FakeLambda:
+    def __init__(self):
+        self.calls = []
+
+    def invoke(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"StatusCode": 202}
+
+
 def test_copy_handler_preserves_raw_object_and_writes_traceable_manifest() -> None:
     s3 = FakeDestinationS3()
     event = {
@@ -177,3 +186,46 @@ def test_copy_handler_preserves_raw_object_and_writes_traceable_manifest() -> No
         "fba56374a33fa9ac89f203b90e6c34687cbd6721bfa94e78af45580a132641e0"
     )
     assert manifest["validation_status"] == "pending"
+
+
+def test_copy_handler_starts_materialization_with_provenance() -> None:
+    s3 = FakeDestinationS3()
+    lambda_client = FakeLambda()
+    event = {
+        "Records": [
+            {
+                "messageId": "message-2",
+                "body": json.dumps(
+                    {
+                        "dataset": "restricao_coff_eolica_tm",
+                        "source_bucket": "ons-aws-prod-opendata",
+                        "source_key": (
+                            "dataset/restricao_coff_eolica_tm/RESTRICAO_COFF_EOLICA_2026_09.parquet"
+                        ),
+                        "source_size": 13,
+                        "source_etag": "source-etag",
+                        "source_last_modified": "2026-09-03T00:00:00+00:00",
+                    }
+                ),
+            }
+        ]
+    }
+    result = copy_handler(
+        event,
+        None,
+        s3_client=s3,
+        lambda_client=lambda_client,
+        environment={
+            "DATA_BUCKET": "curtailess-data",
+            "MATERIALIZATION_FUNCTION": "materialize-function",
+        },
+        now=lambda: datetime(2026, 9, 26, 18, 30, tzinfo=UTC),
+    )
+    assert result == {"batchItemFailures": []}
+    call = lambda_client.calls[0]
+    assert call["FunctionName"] == "materialize-function"
+    assert call["InvocationType"] == "Event"
+    payload = json.loads(call["Payload"])
+    assert payload["bucket"] == "curtailess-data"
+    assert payload["key"].startswith("raw/ons/")
+    assert len(payload["sha256"]) == 64

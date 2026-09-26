@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "boto3>=1.40,<2",
+  "duckdb>=1.4,<2",
   "fastapi>=0.118,<1",
   "mangum>=0.19,<1",
   "pydantic-settings>=2.10,<3",

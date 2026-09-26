@@ -8,6 +8,7 @@ from mangum import Mangum
 from . import __version__
 from .bedrock import BedrockOptimizationError, optimize_with_bedrock
 from .config import get_settings
+from .data_access import create_exposure_repository
 from .schemas import (
     ApiInfo,
     Asset,
@@ -28,6 +29,7 @@ from .schemas import (
 )
 
 settings = get_settings()
+repository = create_exposure_repository(settings.exposure_table, settings.aws_region)
 
 DEMO_ASSET = Asset(
     asset_id="demo-wind-ne-001",
@@ -79,14 +81,29 @@ def get_demo_asset(asset_id: str) -> Asset:
     return DEMO_ASSET
 
 
+def materialized_asset(item: dict) -> Asset:
+    return Asset(
+        asset_id=item["asset_id"],
+        name=item["asset_name"],
+        technology="wind",
+        capacity_mw=None,
+        ons_group=item["asset_id"],
+        connection_point=item["point_id"],
+        data_mode="ons_materialized",
+    )
+
+
 @app.get("/v1/assets", response_model=AssetList, tags=["assets"])
 def list_assets() -> AssetList:
-    return AssetList(items=[DEMO_ASSET])
+    return AssetList(items=[materialized_asset(item) for item in repository.list_assets()])
 
 
 @app.get("/v1/assets/{asset_id}", response_model=Asset, tags=["assets"])
 def get_asset(asset_id: str) -> Asset:
-    return get_demo_asset(asset_id)
+    item = repository.get_asset(asset_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado.")
+    return materialized_asset(item)
 
 
 @app.get(
@@ -99,30 +116,37 @@ def get_asset_exposure(
     start: Annotated[date, "query"],
     end: Annotated[date, "query"],
 ) -> ExposureResponse:
-    get_demo_asset(asset_id)
     if start > end:
         raise HTTPException(status_code=422, detail="start deve ser anterior ou igual a end.")
+    if repository.get_asset(asset_id) is None:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado.")
+    exposure = repository.get_exposure(asset_id, start, end)
+    if exposure is None:
+        raise HTTPException(status_code=404, detail="Sem dados materializados para o período.")
 
-    demo_limitation = (
-        "Valores numéricos simulados para validar o contrato; a materialização dos "
-        "dados públicos do ONS ainda não está conectada a esta rota."
+    limitation = (
+        "Agregado mensal materializado de dados públicos do ONS; períodos mensais "
+        "sobrepostos são incluídos integralmente."
     )
+    first_item = exposure["items"][0]
+    data_version = ",".join(exposure["periods"])
+    provenance_id = "sha256:" + ",".join(exposure["source_sha256s"])
     return ExposureResponse(
         asset_id=asset_id,
         perspective_type="historical_observed",
-        data_mode="demo",
+        data_mode="ons_materialized",
         total_curtailed_energy=NumericEvidence(
-            value=0.0,
+            value=float(exposure["curtailed_mwh"]),
             unit="MWh",
             period=Period(start=start, end=end),
             source="ONS/restricao_coff_eolica_tm",
-            data_version="demo-not-materialized",
-            method="settlement_energy_v1",
+            data_version=data_version,
+            method=first_item["method"],
             value_status="calculado",
-            limitations=[demo_limitation],
-            provenance_id=(f"prov-demo-{asset_id}-{start.isoformat()}-{end.isoformat()}"),
+            limitations=[limitation],
+            provenance_id=provenance_id,
         ),
-        limitations=[demo_limitation],
+        limitations=[limitation],
     )
 
 
@@ -132,37 +156,50 @@ def get_asset_exposure(
     tags=["exposure"],
 )
 def get_asset_point_context(asset_id: str) -> PointContextResponse:
-    asset = get_demo_asset(asset_id)
-    period = Period(start=date(2021, 10, 1), end=date(2026, 9, 26))
+    if repository.get_asset(asset_id) is None:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado.")
+    context = repository.get_point_context(asset_id)
+    if context is None:
+        raise HTTPException(status_code=404, detail="Contexto materializado não encontrado.")
+    period = Period(
+        start=date.fromisoformat(context["period_start"]),
+        end=date.fromisoformat(context["period_end"]),
+    )
     limitation = (
-        "Demonstração sem nomes ou planos de terceiros; conexões cadastrais não "
+        "Agregado materializado sem nomes ou planos de terceiros; conexões cadastrais não "
         "comprovam limite, folga ou causalidade elétrica."
     )
+    simultaneity_rate = (
+        round(context["limited_entity_count"] / context["entity_count"] * 100, 6)
+        if context["entity_count"]
+        else 0
+    )
+    provenance_id = "sha256:" + ",".join(context["source_sha256s"])
     return PointContextResponse(
         asset_id=asset_id,
-        connection_point=asset.connection_point,
-        data_mode="demo",
+        connection_point=context["connection_point"],
+        data_mode="ons_materialized",
         anonymized_entity_count=NumericEvidence(
-            value=1,
+            value=context["entity_count"],
             unit="entities",
             period=period,
             source="ONS/usina_conjunto",
-            data_version="demo-not-materialized",
+            data_version=context["data_version"],
             method="point_context_v1",
-            value_status="simulado",
+            value_status="calculado",
             limitations=[limitation],
-            provenance_id=f"prov-demo-{asset_id}-point-entities",
+            provenance_id=provenance_id,
         ),
         simultaneity_rate=NumericEvidence(
-            value=0,
+            value=simultaneity_rate,
             unit="%",
             period=period,
             source="ONS/restricao_coff_eolica_tm",
-            data_version="demo-not-materialized",
+            data_version=context["data_version"],
             method="historical_simultaneity_v1",
-            value_status="simulado",
+            value_status="calculado",
             limitations=[limitation],
-            provenance_id=f"prov-demo-{asset_id}-point-simultaneity",
+            provenance_id=provenance_id,
         ),
         physical_limit_available=False,
         limitations=[limitation],
@@ -180,40 +217,42 @@ def get_asset_windows(
     end: Annotated[date, "query"],
     duration_hours: Annotated[int, "query"] = 72,
 ) -> HistoricalWindowsResponse:
-    get_demo_asset(asset_id)
     if start > end:
         raise HTTPException(status_code=422, detail="start deve ser anterior ou igual a end.")
     if duration_hours <= 0:
         raise HTTPException(status_code=422, detail="duration_hours deve ser positivo.")
-
-    start_datetime = datetime.combine(start, datetime.min.time(), tzinfo=UTC)
-    end_datetime = start_datetime + timedelta(hours=duration_hours)
+    if repository.get_asset(asset_id) is None:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado.")
+    materialized_windows = repository.get_historical_windows(asset_id, start, end, duration_hours)
+    if not materialized_windows:
+        raise HTTPException(status_code=404, detail="Sem sinal histórico materializado.")
     limitation = (
-        "Resultado simulado para o contrato: não é previsão operacional ex ante; "
-        "a perspectiva real será histórica e sazonal."
+        "Sinal derivado da taxa mensal histórica materializada; não é previsão "
+        "operacional ex ante nem preserva a distribuição intramensal."
     )
     return HistoricalWindowsResponse(
         asset_id=asset_id,
         perspective_type="historical_seasonal",
         validation_status="historical_signal",
-        data_mode="demo",
+        data_mode="ons_materialized",
         duration_hours=duration_hours,
         windows=[
             HistoricalWindow(
-                start=start_datetime,
-                end=end_datetime,
+                start=window["start"],
+                end=window["end"],
                 expected_curtailed_energy=NumericEvidence(
-                    value=0,
+                    value=window["curtailed_mwh"],
                     unit="MWh",
-                    period=Period(start=start, end=end_datetime.date()),
+                    period=Period(start=window["start"].date(), end=window["end"].date()),
                     source="ONS/restricao_coff_eolica_tm",
-                    data_version="demo-not-materialized",
-                    method="historical_window_v1",
-                    value_status="simulado",
+                    data_version=window["period"],
+                    method=window["method"],
+                    value_status="calculado",
                     limitations=[limitation],
-                    provenance_id=f"prov-demo-{asset_id}-window-{start.isoformat()}",
+                    provenance_id=f"sha256:{window['source_sha256']}",
                 ),
             )
+            for window in materialized_windows
         ],
         limitations=[limitation],
     )

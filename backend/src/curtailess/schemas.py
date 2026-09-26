@@ -43,7 +43,7 @@ class Asset(BaseModel):
     asset_id: str
     name: str
     technology: Literal["wind", "solar"]
-    capacity_mw: float
+    capacity_mw: float | None
     ons_group: str
     connection_point: str
     data_mode: Literal["demo", "ons_materialized"]

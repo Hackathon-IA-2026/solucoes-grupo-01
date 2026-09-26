@@ -62,6 +62,7 @@ Resources:
           CORS_ORIGINS: !Ref AllowedOrigin
           DATA_BUCKET: !Ref DataBucket
           SCENARIOS_TABLE: !Ref ScenariosTable
+          EXPOSURE_TABLE: !Ref ExposureTable
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_FALLBACK_MODEL_ID: !Ref BedrockFallbackModelId
           BEDROCK_EMERGENCY_MODEL_ID: !Ref BedrockEmergencyModelId
@@ -71,6 +72,8 @@ Resources:
             BucketName: !Ref DataBucket
         - DynamoDBCrudPolicy:
             TableName: !Ref ScenariosTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ExposureTable
         - Statement:
             - Sid: InvokeBedrockModel
               Effect: Allow
@@ -178,6 +181,7 @@ Resources:
       Environment:
         Variables:
           DATA_BUCKET: !Ref DataBucket
+          MATERIALIZATION_FUNCTION: !Ref ExposureMaterializationFunction
       Policies:
         - S3CrudPolicy:
             BucketName: !Ref DataBucket
@@ -187,6 +191,11 @@ Resources:
               Action:
                 - s3:GetObject
               Resource: !Sub arn:${AWS::Partition}:s3:::${OnsSourceBucket}/${OnsSourcePrefix}*
+            - Sid: StartExposureMaterialization
+              Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt ExposureMaterializationFunction.Arn
       Events:
         IngestionQueueEvent:
           Type: SQS
@@ -200,6 +209,32 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /aws/lambda/${IngestionCopyFunction}
+      RetentionInDays: 14
+
+  ExposureMaterializationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: src.curtailess.materialization.materialization_handler
+      Runtime: python3.12
+      Description: Valida e materializa exposicao mensal real do ONS
+      MemorySize: 2048
+      Timeout: 300
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          EXPOSURE_TABLE: !Ref ExposureTable
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref DataBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExposureTable
+
+  ExposureMaterializationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ExposureMaterializationFunction}
       RetentionInDays: 14
 
   DataBucket:
@@ -240,6 +275,27 @@ Resources:
       SSESpecification:
         SSEEnabled: true
 
+  ExposureTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: asset_id
+          AttributeType: S
+        - AttributeName: period
+          AttributeType: S
+      KeySchema:
+        - AttributeName: asset_id
+          KeyType: HASH
+        - AttributeName: period
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
 Outputs:
   ApiUrl:
     Description: URL publica da API
@@ -262,3 +318,9 @@ Outputs:
   IngestionCopyFunctionName:
     Description: Lambda de copia raw e manifesto
     Value: !Ref IngestionCopyFunction
+  ExposureMaterializationFunctionName:
+    Description: Lambda de validacao e materializacao mensal
+    Value: !Ref ExposureMaterializationFunction
+  ExposureTableName:
+    Description: Tabela de exposicao mensal por ativo
+    Value: !Ref ExposureTable

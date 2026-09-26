@@ -80,12 +80,16 @@ def copy_handler(
     context: Any,
     *,
     s3_client: Any | None = None,
+    lambda_client: Any | None = None,
     environment: dict[str, str] | None = None,
     now: Any | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     del context
     env = environment if environment is not None else dict(os.environ)
     client = s3_client or boto3.client("s3", region_name="us-west-2")
+    function_client = lambda_client
+    if function_client is None and env.get("MATERIALIZATION_FUNCTION"):
+        function_client = boto3.client("lambda", region_name="us-west-2")
     clock = now or (lambda: datetime.now(UTC))
     failures = []
 
@@ -152,6 +156,19 @@ def copy_handler(
                 Body=json.dumps(manifest, ensure_ascii=False).encode(),
                 ContentType="application/json",
             )
+            if function_client is not None and env.get("MATERIALIZATION_FUNCTION"):
+                function_client.invoke(
+                    FunctionName=env["MATERIALIZATION_FUNCTION"],
+                    InvocationType="Event",
+                    Payload=json.dumps(
+                        {
+                            "bucket": env["DATA_BUCKET"],
+                            "key": raw_key,
+                            "sha256": sha256.hexdigest(),
+                            "manifest_key": manifest_key,
+                        }
+                    ).encode(),
+                )
         except Exception:
             failures.append({"itemIdentifier": record["messageId"]})
 
