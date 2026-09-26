@@ -1,0 +1,43 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+@theme {
+  --color-ink: #102a2a;
+  --color-ink-soft: #355252;
+  --color-canvas: #f5f3ed;
+  --color-surface: #fffdf8;
+  --color-line: #d7ddd8;
+  --color-line-strong: #8da09c;
+  --color-accent: #08756f;
+  --color-accent-soft: #d8eeea;
+  --color-warning: #9a5d00;
+  --color-danger: #9d2d32;
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html { background: var(--color-canvas); scroll-behavior: smooth; }
+body { margin: 0; min-width: 320px; overflow-x: clip; background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); }
+button, input, select, textarea { font: inherit; }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 3px solid color-mix(in srgb, var(--color-accent) 70%, white); outline-offset: 3px; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.text-pretty { text-wrap: pretty; }
+.chart-pattern-diagonal { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(16,42,42,.18) 4px 6px); }
+.react-flow__controls-button { width: 44px; height: 44px; }
+.react-flow__controls-button svg { width: 18px; height: 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; color: #111; }
+  main { padding: 0 !important; }
+  .print-break { break-before: page; }
+  .react-flow { display: none !important; }
+  [data-topology-list] { display: block !important; }
+}
