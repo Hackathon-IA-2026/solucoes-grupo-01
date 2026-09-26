@@ -1,0 +1,4 @@
+boto3==1.43.103
+fastapi==0.141.1
+mangum==0.22.0
+pydantic-settings==2.15.0

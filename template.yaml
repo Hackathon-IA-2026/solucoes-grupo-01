@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Infraestrutura serverless da POC CurtaiLess
+
+Parameters:
+  StageName:
+    Type: String
+    Default: dev
+    AllowedPattern: "^[a-z0-9-]+$"
+  AllowedOrigin:
+    Type: String
+    Default: http://localhost:5173
+  BedrockModelId:
+    Type: String
+    Default: us.anthropic.claude-opus-5
+  BedrockFallbackModelId:
+    Type: String
+    Default: us.anthropic.claude-sonnet-5
+  BedrockEmergencyModelId:
+    Type: String
+    Default: amazon.nova-pro-v1:0
+  BedrockKnowledgeBaseId:
+    Type: String
+    Default: pending
+
+Globals:
+  Function:
+    Architectures:
+      - x86_64
+    MemorySize: 2048
+    Timeout: 60
+    Tracing: Active
+
+Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref StageName
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: src.curtailess.main.handler
+      Runtime: python3.12
+      Description: API FastAPI da plataforma CurtaiLess
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          APP_ENV: !Ref StageName
+          API_GATEWAY_BASE_PATH: !Sub /${StageName}
+          CORS_ORIGINS: !Ref AllowedOrigin
+          DATA_BUCKET: !Ref DataBucket
+          SCENARIOS_TABLE: !Ref ScenariosTable
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          BEDROCK_FALLBACK_MODEL_ID: !Ref BedrockFallbackModelId
+          BEDROCK_EMERGENCY_MODEL_ID: !Ref BedrockEmergencyModelId
+          BEDROCK_KNOWLEDGE_BASE_ID: !Ref BedrockKnowledgeBaseId
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref DataBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ScenariosTable
+        - Statement:
+            - Sid: InvokeBedrockModel
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: "*"
+            - Sid: RetrieveBedrockKnowledgeBase
+              Effect: Allow
+              Action:
+                - bedrock:Retrieve
+              Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*
+      Events:
+        Root:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /
+            Method: ANY
+            PayloadFormatVersion: "2.0"
+        Proxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: ANY
+            PayloadFormatVersion: "2.0"
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApiFunction}
+      RetentionInDays: 14
+
+  DataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  ScenariosTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: plant_id
+          AttributeType: S
+        - AttributeName: scenario_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: plant_id
+          KeyType: HASH
+        - AttributeName: scenario_id
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+Outputs:
+  ApiUrl:
+    Description: URL publica da API
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${StageName}
+  DataBucketName:
+    Description: Bucket de dados e artefatos
+    Value: !Ref DataBucket
+  ScenariosTableName:
+    Description: Tabela de planos e cenarios
+    Value: !Ref ScenariosTable
