@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException
@@ -264,7 +264,8 @@ def get_asset_windows(
     tags=["maintenance"],
 )
 def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse:
-    get_demo_asset(request.asset_id)
+    if repository.get_asset(request.asset_id) is None:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado.")
     if request.start > request.end:
         raise HTTPException(status_code=422, detail="start deve ser anterior ou igual a end.")
 
@@ -276,50 +277,54 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
     if not period_start <= baseline <= period_end:
         raise HTTPException(status_code=422, detail="Janela-base fora do período informado.")
 
+    candidates = repository.get_historical_windows(
+        request.asset_id,
+        request.start,
+        request.end,
+        request.duration_hours,
+    )
+    if not candidates:
+        raise HTTPException(status_code=404, detail="Sem sinal histórico materializado.")
+
     limitation = (
-        "Ranking demonstrativo com valores simulados: não é previsão operacional; "
-        "não coordena nem revela manutenções de terceiros."
+        "Ranking baseado em taxa mensal histórica materializada do ONS: não é previsão "
+        "operacional e não preserva a distribuição intramensal; não coordena nem revela "
+        "manutenções de terceiros."
     )
-    candidates = [
-        (period_start + timedelta(days=7), 12.0),
-        (baseline, 8.0),
-        (period_start + timedelta(days=21), 4.0),
-    ]
-    candidates = [
-        (window_start, energy)
-        for window_start, energy in candidates
-        if period_start <= window_start <= period_end
-    ]
-    candidates.sort(key=lambda item: item[1], reverse=True)
-    baseline_energy = next(
-        (energy for window_start, energy in candidates if window_start == baseline),
-        8.0,
+    candidates.sort(key=lambda item: item["curtailed_mwh"], reverse=True)
+    baseline_candidate = min(
+        candidates,
+        key=lambda item: abs(item["start"] - baseline),
     )
+    baseline_energy = baseline_candidate["curtailed_mwh"]
 
     ranked_windows = []
-    for rank, (window_start, energy) in enumerate(candidates, start=1):
-        window_end = window_start + timedelta(hours=request.duration_hours)
+    for rank, candidate in enumerate(candidates, start=1):
+        energy = candidate["curtailed_mwh"]
         ranked_windows.append(
             RankedMaintenanceWindow(
                 rank=rank,
-                start=window_start,
-                end=window_end,
+                start=candidate["start"],
+                end=candidate["end"],
                 expected_curtailed_energy=NumericEvidence(
                     value=energy,
                     unit="MWh",
-                    period=Period(start=window_start.date(), end=window_end.date()),
-                    source="demo_historical_profile",
-                    data_version="demo-not-materialized",
-                    method="maintenance_rank_v1",
-                    value_status="simulado",
+                    period=Period(
+                        start=candidate["start"].date(),
+                        end=candidate["end"].date(),
+                    ),
+                    source="ONS/restricao_coff_eolica_tm",
+                    data_version=candidate["period"],
+                    method=candidate["method"],
+                    value_status="calculado",
                     limitations=[limitation],
-                    provenance_id=f"prov-demo-{request.asset_id}-maintenance-{rank}",
+                    provenance_id=f"sha256:{candidate['source_sha256']}",
                 ),
                 opportunity_cost=MonetaryEvidence(
                     value=energy * request.energy_price.value,
                     unit="BRL",
                     source=request.energy_price.source,
-                    value_status="simulado",
+                    value_status="calculado",
                 ),
                 difference_from_baseline_mwh=energy - baseline_energy,
             )
@@ -328,7 +333,7 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
     return MaintenanceRankResponse(
         asset_id=request.asset_id,
         ranking_mode="historical_prototype",
-        data_mode="demo",
+        data_mode="ons_materialized",
         baseline_window_start=baseline,
         ranked_windows=ranked_windows,
         limitations=[limitation],

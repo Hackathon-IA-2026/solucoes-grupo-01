@@ -14,7 +14,6 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "esModuleInterop": true,
-    "baseUrl": ".",
     "rootDirs": [".", "./.react-router/types"],
     "paths": { "~/*": ["./app/*"] }
   }

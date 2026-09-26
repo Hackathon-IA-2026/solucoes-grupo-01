@@ -235,16 +235,40 @@ def test_get_historical_windows_rejects_inverted_period() -> None:
     assert response.status_code == 422
 
 
-def test_rank_maintenance_returns_ranked_historical_prototype() -> None:
+def test_rank_maintenance_uses_materialized_ons_historical_windows(monkeypatch) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    monkeypatch.setattr(
+        main.repository,
+        "get_historical_windows",
+        lambda asset_id, start, end, duration_hours: [
+            {
+                "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
+                "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
+                "curtailed_mwh": 20.0,
+                "period": "2026-08",
+                "source_sha256": MATERIALIZED_ITEM["source_sha256"],
+                "method": "monthly_observed_rate_prorated_to_window_v1",
+            },
+            {
+                "start": main.datetime(2026, 8, 15, tzinfo=main.UTC),
+                "end": main.datetime(2026, 8, 18, tzinfo=main.UTC),
+                "curtailed_mwh": 8.0,
+                "period": "2026-08",
+                "source_sha256": MATERIALIZED_ITEM["source_sha256"],
+                "method": "monthly_observed_rate_prorated_to_window_v1",
+            },
+        ],
+    )
+
     response = client.post(
         "/v1/maintenance/rank",
         json={
-            "asset_id": "demo-wind-ne-001",
-            "start": "2026-10-01",
-            "end": "2026-10-31",
+            "asset_id": "CJU_BAOUR",
+            "start": "2026-08-01",
+            "end": "2026-08-31",
             "duration_hours": 72,
             "minimum_notice_hours": 168,
-            "baseline_window_start": "2026-10-15T00:00:00Z",
+            "baseline_window_start": "2026-08-15T00:00:00Z",
             "constraints": {
                 "weekdays_only": False,
                 "unavailable_periods": [],
@@ -260,22 +284,25 @@ def test_rank_maintenance_returns_ranked_historical_prototype() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["asset_id"] == "demo-wind-ne-001"
+    assert payload["asset_id"] == "CJU_BAOUR"
     assert payload["ranking_mode"] == "historical_prototype"
-    assert payload["data_mode"] == "demo"
-    assert payload["baseline_window_start"] == "2026-10-15T00:00:00Z"
-    assert len(payload["ranked_windows"]) >= 2
-    expected_values = [
-        item["expected_curtailed_energy"]["value"] for item in payload["ranked_windows"]
+    assert payload["data_mode"] == "ons_materialized"
+    assert payload["baseline_window_start"] == "2026-08-15T00:00:00Z"
+    assert [item["expected_curtailed_energy"]["value"] for item in payload["ranked_windows"]] == [
+        20.0,
+        8.0,
     ]
-    assert expected_values == sorted(expected_values, reverse=True)
-    assert payload["ranked_windows"][0]["rank"] == 1
-    assert payload["ranked_windows"][0]["opportunity_cost"]["unit"] == "BRL"
-    assert payload["ranked_windows"][0]["expected_curtailed_energy"]["value_status"] == "simulado"
+    assert payload["ranked_windows"][0]["opportunity_cost"]["value"] == 5000.0
+    evidence = payload["ranked_windows"][0]["expected_curtailed_energy"]
+    assert evidence["value_status"] == "calculado"
+    assert evidence["source"] == "ONS/restricao_coff_eolica_tm"
+    assert evidence["provenance_id"].startswith("sha256:")
     assert "não é previsão" in " ".join(payload["limitations"]).lower()
 
 
-def test_rank_maintenance_rejects_baseline_outside_period() -> None:
+def test_rank_maintenance_rejects_baseline_outside_period(monkeypatch) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+
     response = client.post(
         "/v1/maintenance/rank",
         json={

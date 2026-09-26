@@ -146,7 +146,7 @@ class RankedMaintenanceWindow(BaseModel):
 class MaintenanceRankResponse(BaseModel):
     asset_id: str
     ranking_mode: Literal["historical_prototype"]
-    data_mode: Literal["demo"]
+    data_mode: Literal["ons_materialized"]
     baseline_window_start: datetime
     ranked_windows: list[RankedMaintenanceWindow]
     limitations: list[str]
