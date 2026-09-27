@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+from decimal import Decimal
 from typing import Any
 
 import boto3
@@ -65,6 +66,16 @@ def parse_evidence_id(evidence_id: str) -> dict[str, Any]:
     if registration is None or not registration[1].fullmatch(evidence_id):
         raise ValueError("evidence_id inválido ou corrompido")
     return {"digest": evidence_id.removeprefix(f"{prefix}."), "kind": registration[0]}
+
+
+def _dynamodb_safe(value: Any) -> Any:
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, dict):
+        return {key: _dynamodb_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_dynamodb_safe(item) for item in value]
+    return value
 
 
 def _item_size(item: dict[str, Any]) -> int:
@@ -181,8 +192,16 @@ class IssuedProvenanceRepository:
                 "period_end",
                 "limited_interval_count",
             )
+        if operation in {"historical_windows", "maintenance_rank"}:
+            source_fields += (
+                "period_start",
+                "period_end",
+                "interval_count",
+                "curtailed_mwh",
+                "curtailed_mwh_by_reason",
+            )
         compact_sources = [
-            {key: source[key] for key in source_fields if key in source}
+            _dynamodb_safe({key: source[key] for key in source_fields if key in source})
             for source in source_records
         ]
         payload = {

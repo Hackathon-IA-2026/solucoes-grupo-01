@@ -1,5 +1,7 @@
 import math
-from datetime import UTC, date, datetime
+import re
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
 from fastapi import HTTPException
@@ -173,11 +175,112 @@ def build_exposure_response(
     return response, provenance
 
 
+def historical_window_source_record(
+    window: dict[str, Any],
+    *,
+    asset_id: str,
+    duration_hours: int,
+    reason: Literal["ENE", "REL", "CNF"] | None,
+) -> dict[str, Any]:
+    detail = "Linhagem mensal materializada inválida ou incompleta."
+    try:
+        source = window["source_record"]
+        if not isinstance(source, dict):
+            raise TypeError("source_record must be an object")
+        period = source["period"]
+        source_key = source["source_key"]
+        source_sha256 = source["source_sha256"]
+        source_start = aware(source["period_start"])
+        source_end = aware(source["period_end"])
+        interval_count = Decimal(str(source["interval_count"]))
+        total_curtailed_mwh = Decimal(str(source["curtailed_mwh"]))
+        by_reason = source.get("curtailed_mwh_by_reason", {})
+        if not isinstance(by_reason, dict) or len(by_reason) > 3:
+            raise TypeError("curtailed_mwh_by_reason must be a bounded object")
+        reason_values = [Decimal(str(value)) for value in by_reason.values()]
+        source_value = by_reason[reason] if reason else total_curtailed_mwh
+        curtailed_mwh = Decimal(str(source_value))
+        window_start = aware(window["start"])
+        window_end = aware(window["end"])
+        expected_method = (
+            "monthly_observed_reason_rate_prorated_to_window_v1"
+            if reason
+            else "monthly_observed_rate_prorated_to_window_v1"
+        )
+        expected_value = (
+            round(
+                float(curtailed_mwh * Decimal(duration_hours) / (interval_count * Decimal("0.5"))),
+                6,
+            )
+            if interval_count
+            else 0.0
+        )
+        actual_value = _finite_float(window["curtailed_mwh"], "expected_curtailed_energy")
+        if (
+            source.get("asset_id") != asset_id
+            or not isinstance(period, str)
+            or not re.fullmatch(r"\d{4}-\d{2}", period)
+            or source_start.strftime("%Y-%m") != period
+            or source_end.strftime("%Y-%m") != period
+            or source_end <= source_start
+            or not isinstance(source_key, str)
+            or not source_key
+            or len(source_key) > 1024
+            or not isinstance(source.get("method"), str)
+            or not source["method"]
+            or len(source["method"]) > 1024
+            or not isinstance(source_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", source_sha256)
+            or interval_count < 0
+            or not total_curtailed_mwh.is_finite()
+            or any(not value.is_finite() for value in reason_values)
+            or not curtailed_mwh.is_finite()
+            or window.get("period") != period
+            or window.get("source_key") != source_key
+            or window.get("source_sha256") != source_sha256
+            or window.get("method") != expected_method
+            or window_start != source_start
+            or window_end != source_start + timedelta(hours=duration_hours)
+            or not math.isclose(actual_value, expected_value, rel_tol=0, abs_tol=5e-7)
+        ):
+            raise ValueError("historical window does not match its source record")
+    except HTTPException:
+        raise
+    except (KeyError, TypeError, ValueError, InvalidOperation, OverflowError) as exc:
+        raise HTTPException(status_code=422, detail=detail) from exc
+    return source
+
+
+def historical_window_source_records(
+    windows: list[dict[str, Any]],
+    *,
+    asset_id: str,
+    duration_hours: int,
+    reason: Literal["ENE", "REL", "CNF"] | None,
+) -> list[dict[str, Any]]:
+    sources = [
+        historical_window_source_record(
+            window,
+            asset_id=asset_id,
+            duration_hours=duration_hours,
+            reason=reason,
+        )
+        for window in windows
+    ]
+    keys_by_hash: dict[str, set[str]] = {}
+    hashes_by_key: dict[str, set[str]] = {}
+    for source in sources:
+        keys_by_hash.setdefault(source["source_sha256"], set()).add(source["source_key"])
+        hashes_by_key.setdefault(source["source_key"], set()).add(source["source_sha256"])
+    if any(len(values) != 1 for values in (*keys_by_hash.values(), *hashes_by_key.values())):
+        raise HTTPException(status_code=422, detail="Linhagem mensal materializada conflitante.")
+    return sources
+
+
 def build_historical_windows_response(
     asset_id: str,
     duration_hours: int,
     reason: Literal["ENE", "REL", "CNF"] | None,
-    asset_item: dict[str, Any],
     materialized_windows: list[dict[str, Any]],
 ) -> HistoricalWindowsResponse:
     if len(materialized_windows) > MAX_PLANNING_RESULTS:
@@ -189,8 +292,14 @@ def build_historical_windows_response(
         "Sinal derivado da taxa mensal histórica materializada; não é previsão "
         "operacional ex ante nem preserva a distribuição intramensal."
     )
+    source_records = historical_window_source_records(
+        materialized_windows,
+        asset_id=asset_id,
+        duration_hours=duration_hours,
+        reason=reason,
+    )
     windows = []
-    for window in materialized_windows:
+    for window, source_record in zip(materialized_windows, source_records, strict=True):
         value = _finite_float(window.get("curtailed_mwh"), "expected_curtailed_energy")
         provenance = build_field_provenance(
             field_name="expected_curtailed_energy",
@@ -207,7 +316,7 @@ def build_historical_windows_response(
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[window["source_sha256"]],
-            source_item=asset_item,
+            source_item=source_record,
             source_uri=f"curtailess://assets/{asset_id}/windows",
         )
         windows.append(

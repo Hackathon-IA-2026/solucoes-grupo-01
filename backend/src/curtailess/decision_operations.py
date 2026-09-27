@@ -15,6 +15,7 @@ from .provenance_service import (
 from .provenance_service import (
     validate_caller_provenance as _validate_caller_provenance_impl,
 )
+from .response_assembly import historical_window_source_records
 from .schemas import (
     MAX_PLANNING_RESULTS,
     BessScreenRequest,
@@ -88,6 +89,12 @@ def build_rank_maintenance(
             status_code=422,
             detail=f"Resultado excede o limite de {MAX_PLANNING_RESULTS} janelas.",
         )
+    historical_window_source_records(
+        candidates,
+        asset_id=request.asset_id,
+        duration_hours=request.duration_hours,
+        reason=None,
+    )
     for candidate in candidates:
         candidate["curtailed_mwh"] = _checked_float(
             candidate.get("curtailed_mwh"), "expected_curtailed_energy"
@@ -118,7 +125,9 @@ def build_rank_maintenance(
                     "end": candidate["end"].isoformat(),
                     "curtailed_mwh": candidate["curtailed_mwh"],
                     "period": candidate["period"],
+                    "source_key": candidate["source_key"],
                     "source_sha256": candidate["source_sha256"],
+                    "source_record": candidate["source_record"],
                     "method": candidate["method"],
                 }
                 for candidate in candidates
@@ -148,7 +157,7 @@ def build_rank_maintenance(
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[candidate["source_sha256"]],
-            source_item=asset_item,
+            source_item=candidate["source_record"],
             source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
         )
 
@@ -167,7 +176,7 @@ def build_rank_maintenance(
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[candidate["source_sha256"]],
-            source_item=asset_item,
+            source_item=candidate["source_record"],
             source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[
                 energy_provenance.evidence_id,
@@ -181,7 +190,8 @@ def build_rank_maintenance(
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[candidate["source_sha256"], baseline_candidate["source_sha256"]],
-            source_item=asset_item,
+            source_item=candidate["source_record"],
+            source_items=[candidate["source_record"], baseline_candidate["source_record"]],
             source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[
                 energy_provenance.evidence_id,
@@ -195,7 +205,8 @@ def build_rank_maintenance(
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[candidate["source_sha256"], baseline_candidate["source_sha256"]],
-            source_item=asset_item,
+            source_item=candidate["source_record"],
+            source_items=[candidate["source_record"], baseline_candidate["source_record"]],
             source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[
                 energy_provenance.evidence_id,
@@ -209,7 +220,7 @@ def build_rank_maintenance(
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[candidate["source_sha256"]],
-            source_item=asset_item,
+            source_item=candidate["source_record"],
             source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[energy_provenance.evidence_id, *decision_parent_ids],
         )
@@ -220,7 +231,7 @@ def build_rank_maintenance(
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[candidate["source_sha256"]],
-            source_item=asset_item,
+            source_item=candidate["source_record"],
             source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[energy_provenance.evidence_id, *decision_parent_ids],
         )
@@ -231,7 +242,7 @@ def build_rank_maintenance(
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[candidate["source_sha256"]],
-            source_item=asset_item,
+            source_item=candidate["source_record"],
             source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[energy_provenance.evidence_id, *decision_parent_ids],
         )
@@ -315,7 +326,7 @@ def build_rank_maintenance(
             for window in response.ranked_windows
             for provenance in window.field_provenance.values()
         ],
-        source_records=[asset_item],
+        source_records=[candidate["source_record"] for candidate in candidates],
     )
     return response
 

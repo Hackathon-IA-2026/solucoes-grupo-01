@@ -149,7 +149,9 @@ def test_historical_windows_supports_dynamodb_decimal_interval_count() -> None:
                 "interval_count": Decimal("1488"),
                 "limited_interval_count": Decimal("296"),
                 "curtailed_mwh": Decimal("23968.0945"),
+                "source_key": "raw/ons/2026/08/source.parquet",
                 "source_sha256": "abc123",
+                "method": "monthly materialization",
             }
         ]
     )
@@ -159,6 +161,8 @@ def test_historical_windows_supports_dynamodb_decimal_interval_count() -> None:
     )
 
     assert windows[0]["curtailed_mwh"] == 2319.493016
+    assert windows[0]["source_key"] == "raw/ons/2026/08/source.parquet"
+    assert windows[0]["source_record"] is table.items[0]
 
 
 def test_scan_paginates_until_evidence_beyond_first_megabyte_page() -> None:

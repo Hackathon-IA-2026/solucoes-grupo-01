@@ -147,8 +147,13 @@ class ExposureRepository:
             window_start = datetime.fromisoformat(item["period_start"]).replace(tzinfo=UTC)
             window_end = window_start + timedelta(hours=duration_hours)
             observed_hours = Decimal(str(item["interval_count"])) * Decimal("0.5")
+            source_value = (
+                item.get("curtailed_mwh_by_reason", {}).get(reason, Decimal("0"))
+                if reason
+                else item["curtailed_mwh"]
+            )
             curtailed_mwh = (
-                Decimal(str(item["curtailed_mwh"])) * Decimal(duration_hours) / observed_hours
+                Decimal(str(source_value)) * Decimal(duration_hours) / observed_hours
                 if observed_hours
                 else Decimal(0)
             )
@@ -158,12 +163,14 @@ class ExposureRepository:
                     "end": window_end,
                     "curtailed_mwh": round(float(curtailed_mwh), 6),
                     "period": item["period"],
+                    "source_key": item["source_key"],
                     "source_sha256": item["source_sha256"],
                     "method": (
                         "monthly_observed_reason_rate_prorated_to_window_v1"
                         if reason
                         else "monthly_observed_rate_prorated_to_window_v1"
                     ),
+                    "source_record": item,
                 }
             )
         return windows

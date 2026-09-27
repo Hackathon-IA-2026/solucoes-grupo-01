@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+from datetime import timedelta
 
 import pytest
 from boto3.dynamodb.types import TypeSerializer
@@ -528,6 +529,38 @@ MATERIALIZED_ITEM = {
     "source_sha256": "45fa63e984245c17862bf8cc028437311ee7e1ca8a7cd0a6550226432ccbe2fa",
     "method": "sum(apurada * 0.5) when val_geracaolimitada is not null",
 }
+
+
+def historical_window(
+    source_record: dict,
+    *,
+    start: main.datetime,
+    curtailed_mwh: float,
+    duration_hours: int = 72,
+    reason: str | None = None,
+) -> dict:
+    source_record = {
+        **source_record,
+        "period_start": start.replace(tzinfo=None).isoformat(),
+        "interval_count": duration_hours * 2,
+        "curtailed_mwh": curtailed_mwh,
+        **({"curtailed_mwh_by_reason": {reason: curtailed_mwh}} if reason else {}),
+    }
+    method = (
+        "monthly_observed_reason_rate_prorated_to_window_v1"
+        if reason
+        else "monthly_observed_rate_prorated_to_window_v1"
+    )
+    return {
+        "start": start,
+        "end": start + timedelta(hours=duration_hours),
+        "curtailed_mwh": curtailed_mwh,
+        "period": source_record["period"],
+        "source_key": source_record["source_key"],
+        "source_sha256": source_record["source_sha256"],
+        "method": method,
+        "source_record": source_record,
+    }
 
 
 def mixed_point_context_records() -> list[dict]:
@@ -1165,14 +1198,11 @@ def test_get_historical_windows_uses_materialized_monthly_signal(monkeypatch) ->
         main.repository,
         "get_historical_windows",
         lambda asset_id, start, end, duration_hours, reason=None: [
-            {
-                "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
-                "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
-                "curtailed_mwh": 2319.493016,
-                "period": "2026-08",
-                "source_sha256": item["source_sha256"],
-                "method": "monthly_observed_rate_prorated_to_window_v1",
-            }
+            historical_window(
+                item,
+                start=main.datetime(2026, 8, 1, tzinfo=main.UTC),
+                curtailed_mwh=2319.493016,
+            )
         ],
     )
 
@@ -1198,6 +1228,77 @@ def test_get_historical_windows_uses_materialized_monthly_signal(monkeypatch) ->
     assert "não é previsão" in " ".join(payload["limitations"]).lower()
 
 
+def test_historical_windows_preserve_each_period_source_and_restart_resolution(
+    monkeypatch, issued_provenance_table
+) -> None:
+    august = {
+        **MATERIALIZED_ITEM,
+        "period": "2026-08",
+        "source_key": "raw/ons/2026/08/august.parquet",
+        "source_sha256": "1" * 64,
+    }
+    september = {
+        **MATERIALIZED_ITEM,
+        "period": "2026-09",
+        "source_key": "raw/ons/2026/09/september.parquet",
+        "source_sha256": "2" * 64,
+        "period_end": "2026-09-30T23:30:00",
+    }
+    candidates = [
+        historical_window(
+            august, start=main.datetime(2026, 8, 1, tzinfo=main.UTC), curtailed_mwh=10.0
+        ),
+        historical_window(
+            september, start=main.datetime(2026, 9, 1, tzinfo=main.UTC), curtailed_mwh=20.0
+        ),
+    ]
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: september)
+    monkeypatch.setattr(
+        main.repository, "get_historical_windows", lambda *args, **kwargs: candidates
+    )
+
+    response = client.get(
+        "/v1/assets/CJU_BAOUR/windows",
+        params={"start": "2026-08-01", "end": "2026-09-29", "duration_hours": 72},
+    )
+
+    assert response.status_code == 200
+    windows = response.json()["windows"]
+    assert [
+        (
+            window["expected_curtailed_energy"]["provenance"]["source_key"],
+            window["expected_curtailed_energy"]["provenance"]["source_sha256"],
+        )
+        for window in windows
+    ] == [
+        (august["source_key"], august["source_sha256"]),
+        (september["source_key"], september["source_sha256"]),
+    ]
+    operation = next(
+        item
+        for item in issued_provenance_table.items.values()
+        if item["record_type"] == "provenance_operation"
+    )
+    assert {record["period"] for record in operation["source_records"]} == {
+        "2026-08",
+        "2026-09",
+    }
+    assert all(
+        "curtailed_mwh" in record and "interval_count" in record
+        for record in operation["source_records"]
+    )
+
+    monkeypatch.setattr(
+        main,
+        "issued_provenance_repository",
+        IssuedProvenanceRepository(issued_provenance_table),
+    )
+    fresh_client = fresh_api_client()
+    for window in windows:
+        evidence_id = window["expected_curtailed_energy"]["provenance_id"]
+        assert fresh_client.get(f"/v1/provenances/{evidence_id}").status_code == 200
+
+
 def test_get_asset_windows_passes_reason_filter(monkeypatch) -> None:
     monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
     captured = {}
@@ -1205,14 +1306,12 @@ def test_get_asset_windows_passes_reason_filter(monkeypatch) -> None:
     def fake_windows(asset_id, start, end, duration_hours, reason=None):
         captured["reason"] = reason
         return [
-            {
-                "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
-                "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
-                "curtailed_mwh": 12.5,
-                "period": "2026-08",
-                "source_sha256": MATERIALIZED_ITEM["source_sha256"],
-                "method": "monthly_observed_reason_rate_prorated_to_window_v1",
-            }
+            historical_window(
+                MATERIALIZED_ITEM,
+                start=main.datetime(2026, 8, 1, tzinfo=main.UTC),
+                curtailed_mwh=12.5,
+                reason=reason,
+            )
         ]
 
     monkeypatch.setattr(main.repository, "get_historical_windows", fake_windows)
@@ -1266,22 +1365,16 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(
         main.repository,
         "get_historical_windows",
         lambda asset_id, start, end, duration_hours: [
-            {
-                "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
-                "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
-                "curtailed_mwh": 20.0,
-                "period": "2026-08",
-                "source_sha256": MATERIALIZED_ITEM["source_sha256"],
-                "method": "monthly_observed_rate_prorated_to_window_v1",
-            },
-            {
-                "start": main.datetime(2026, 8, 15, tzinfo=main.UTC),
-                "end": main.datetime(2026, 8, 18, tzinfo=main.UTC),
-                "curtailed_mwh": 8.0,
-                "period": "2026-08",
-                "source_sha256": MATERIALIZED_ITEM["source_sha256"],
-                "method": "monthly_observed_rate_prorated_to_window_v1",
-            },
+            historical_window(
+                MATERIALIZED_ITEM,
+                start=main.datetime(2026, 8, 1, tzinfo=main.UTC),
+                curtailed_mwh=20.0,
+            ),
+            historical_window(
+                MATERIALIZED_ITEM,
+                start=main.datetime(2026, 8, 15, tzinfo=main.UTC),
+                curtailed_mwh=8.0,
+            ),
         ],
     )
 
@@ -1390,6 +1483,176 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(
     assert "não é previsão" in " ".join(payload["limitations"]).lower()
 
 
+def test_rank_maintenance_preserves_multi_month_sources_and_rejects_tampering(
+    monkeypatch, issued_provenance_table
+) -> None:
+    august = {
+        **MATERIALIZED_ITEM,
+        "source_key": "raw/ons/2026/08/august.parquet",
+        "source_sha256": "3" * 64,
+    }
+    september = {
+        **MATERIALIZED_ITEM,
+        "period": "2026-09",
+        "period_end": "2026-09-30T23:30:00",
+        "source_key": "raw/ons/2026/09/september.parquet",
+        "source_sha256": "4" * 64,
+    }
+    candidates = [
+        historical_window(
+            august, start=main.datetime(2026, 8, 1, tzinfo=main.UTC), curtailed_mwh=10.0
+        ),
+        historical_window(
+            september, start=main.datetime(2026, 9, 1, tzinfo=main.UTC), curtailed_mwh=20.0
+        ),
+    ]
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: september)
+    monkeypatch.setattr(
+        main.repository, "get_historical_windows", lambda *args, **kwargs: candidates
+    )
+
+    response = client.post(
+        "/v1/maintenance/rank",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "start": "2026-08-01",
+            "end": "2026-09-29",
+            "duration_hours": 72,
+            "minimum_notice_hours": 168,
+            "baseline_window_start": "2026-09-01T00:00:00Z",
+            "constraints": {"weekdays_only": False, "unavailable_periods": []},
+            "energy_price": energy_price_payload(),
+        },
+    )
+
+    assert response.status_code == 200
+    ranked = response.json()["ranked_windows"]
+    august_ranked = next(item for item in ranked if item["start"].startswith("2026-08"))
+    difference = august_ranked["difference_from_baseline"]["provenance"]
+    assert {
+        (item["source_key"], item["source_sha256"]) for item in difference["source_artifacts"]
+    } == {
+        (august["source_key"], august["source_sha256"]),
+        (september["source_key"], september["source_sha256"]),
+    }
+    operation = next(
+        item
+        for item in issued_provenance_table.items.values()
+        if item["record_type"] == "provenance_operation"
+    )
+    assert {record["period"] for record in operation["source_records"]} == {
+        "2026-08",
+        "2026-09",
+    }
+
+    monkeypatch.setattr(
+        main,
+        "issued_provenance_repository",
+        IssuedProvenanceRepository(issued_provenance_table),
+    )
+    evidence_id = august_ranked["expected_curtailed_energy"]["provenance_id"]
+    assert fresh_api_client().get(f"/v1/provenances/{evidence_id}").status_code == 200
+    operation["source_records"][0]["curtailed_mwh"] += 1
+    assert fresh_api_client().get(f"/v1/provenances/{evidence_id}").status_code == 404
+
+
+def test_rank_maintenance_same_hash_periods_keep_both_source_records(
+    monkeypatch, issued_provenance_table
+) -> None:
+    shared = {
+        **MATERIALIZED_ITEM,
+        "source_key": "raw/ons/shared.parquet",
+        "source_sha256": "5" * 64,
+    }
+    september = {**shared, "period": "2026-09", "period_end": "2026-09-30T23:30:00"}
+    candidates = [
+        historical_window(
+            shared, start=main.datetime(2026, 8, 1, tzinfo=main.UTC), curtailed_mwh=10.0
+        ),
+        historical_window(
+            september, start=main.datetime(2026, 9, 1, tzinfo=main.UTC), curtailed_mwh=20.0
+        ),
+    ]
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: september)
+    monkeypatch.setattr(
+        main.repository, "get_historical_windows", lambda *args, **kwargs: candidates
+    )
+
+    response = client.post(
+        "/v1/maintenance/rank",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "start": "2026-08-01",
+            "end": "2026-09-29",
+            "duration_hours": 72,
+            "minimum_notice_hours": 168,
+            "baseline_window_start": "2026-09-01T00:00:00Z",
+            "constraints": {"weekdays_only": False, "unavailable_periods": []},
+            "energy_price": energy_price_payload(),
+        },
+    )
+
+    assert response.status_code == 200
+    operation = next(
+        item
+        for item in issued_provenance_table.items.values()
+        if item["record_type"] == "provenance_operation"
+    )
+    assert [record["period"] for record in operation["source_records"]] == [
+        "2026-08",
+        "2026-09",
+    ]
+    for ranked in response.json()["ranked_windows"]:
+        evidence_id = ranked["expected_curtailed_energy"]["provenance_id"]
+        assert client.get(f"/v1/provenances/{evidence_id}").status_code == 200
+
+
+@pytest.mark.parametrize("mutation", ["missing", "key_mismatch", "value_mismatch"])
+@pytest.mark.parametrize("endpoint", ["windows", "maintenance"])
+def test_historical_endpoints_reject_incomplete_or_mismatched_lineage(
+    monkeypatch, issued_provenance_table, mutation, endpoint
+) -> None:
+    candidate = historical_window(
+        MATERIALIZED_ITEM,
+        start=main.datetime(2026, 8, 1, tzinfo=main.UTC),
+        curtailed_mwh=20.0,
+    )
+    if mutation == "missing":
+        candidate.pop("source_record")
+    elif mutation == "key_mismatch":
+        candidate["source_record"]["source_key"] = "raw/ons/other.parquet"
+    else:
+        candidate["source_record"]["curtailed_mwh"] = 21.0
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    monkeypatch.setattr(
+        main.repository, "get_historical_windows", lambda *args, **kwargs: [candidate]
+    )
+
+    if endpoint == "windows":
+        response = client.get(
+            "/v1/assets/CJU_BAOUR/windows",
+            params={"start": "2026-08-01", "end": "2026-08-31", "duration_hours": 72},
+        )
+    else:
+        response = client.post(
+            "/v1/maintenance/rank",
+            json={
+                "asset_id": "CJU_BAOUR",
+                "start": "2026-08-01",
+                "end": "2026-08-31",
+                "duration_hours": 72,
+                "minimum_notice_hours": 168,
+                "baseline_window_start": "2026-08-01T00:00:00Z",
+                "constraints": {"weekdays_only": False, "unavailable_periods": []},
+                "energy_price": energy_price_payload(),
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Linhagem mensal materializada inválida ou incompleta."
+    assert not issued_provenance_table.items
+
+
 def test_rank_maintenance_changed_values_get_new_immutable_ids(
     monkeypatch, issued_provenance_table
 ) -> None:
@@ -1398,14 +1661,11 @@ def test_rank_maintenance_changed_values_get_new_immutable_ids(
         main.repository,
         "get_historical_windows",
         lambda asset_id, start, end, duration_hours: [
-            {
-                "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
-                "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
-                "curtailed_mwh": 20.0,
-                "period": "2026-08",
-                "source_sha256": MATERIALIZED_ITEM["source_sha256"],
-                "method": "monthly_observed_rate_prorated_to_window_v1",
-            }
+            historical_window(
+                MATERIALIZED_ITEM,
+                start=main.datetime(2026, 8, 1, tzinfo=main.UTC),
+                curtailed_mwh=20.0,
+            )
         ],
     )
     request = {
@@ -1458,14 +1718,11 @@ def test_rank_maintenance_accepts_legacy_payload_and_infers_client_lineage(monke
         main.repository,
         "get_historical_windows",
         lambda asset_id, start, end, duration_hours: [
-            {
-                "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
-                "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
-                "curtailed_mwh": 20.0,
-                "period": "2026-08",
-                "source_sha256": MATERIALIZED_ITEM["source_sha256"],
-                "method": "monthly_observed_rate_prorated_to_window_v1",
-            }
+            historical_window(
+                MATERIALIZED_ITEM,
+                start=main.datetime(2026, 8, 1, tzinfo=main.UTC),
+                curtailed_mwh=20.0,
+            )
         ],
     )
 

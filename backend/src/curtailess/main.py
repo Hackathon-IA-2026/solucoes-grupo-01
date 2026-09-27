@@ -463,7 +463,7 @@ def get_asset_windows(
     if not materialized_windows:
         raise HTTPException(status_code=404, detail="Sem sinal histórico materializado.")
     response = build_historical_windows_response(
-        asset_id, duration_hours, reason, asset_item, materialized_windows
+        asset_id, duration_hours, reason, materialized_windows
     )
     _persist_operation(
         issued_provenance_repository,
@@ -476,7 +476,7 @@ def get_asset_windows(
             "reason": reason,
         },
         provenances=[window.expected_curtailed_energy.provenance for window in response.windows],
-        source_records=[asset_item],
+        source_records=[window["source_record"] for window in materialized_windows],
     )
     return response
 
