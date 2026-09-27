@@ -126,6 +126,14 @@ def test_simulated_telemetry_and_point_context_validate_against_the_schema():
     assert view.point_context.entity_count == len(view.point_context.simulated_entities)
     assert view.point_context.envelope.slope >= 0
     assert all(entity.origin == "SIMULADO" for entity in view.point_context.simulated_entities)
+    # Every entity of the point declares its own ONS group, and the selected plant's own
+    # entity carries the group of the selected asset.
+    groups = {
+        entity.plant_id: entity.ons_group_id
+        for entity in view.point_context.simulated_entities
+    }
+    assert all(groups.values())
+    assert groups["RNEM13"] == view.asset.ons_group_id
 
 
 def test_view_rejects_incoherent_simulated_telemetry_and_point_population(monkeypatch):

@@ -43,6 +43,7 @@ def plant_spec(
     capacity_mw: float = 100.0,
     weather_level: float = 10.0,
     technology: str = "wind",
+    ons_group_id: str = "CJU_TEST",
 ) -> PlantSimulationSpec:
     """A plant whose potential grows linearly with the weather up to its capacity."""
     lookup = tuple(
@@ -53,6 +54,7 @@ def plant_spec(
         name=plant_id,
         capacity_mw=capacity_mw,
         technology=technology,
+        ons_group_id=ons_group_id,
         month_hour_climatology=(weather_level,) * (12 * INTERVALS_PER_DAY),
         potential_lookup=lookup,
         lookup_step=LOOKUP_STEP,

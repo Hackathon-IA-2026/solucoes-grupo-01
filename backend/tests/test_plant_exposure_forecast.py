@@ -79,13 +79,18 @@ def synthetic_history(
 
 
 def plant_spec(
-    *, plant_id: str, capacity_mw: float = 100.0, level: float = 12.0
+    *,
+    plant_id: str,
+    capacity_mw: float = 100.0,
+    level: float = 12.0,
+    ons_group_id: str = "CJU_TEST",
 ) -> PlantSimulationSpec:
     return PlantSimulationSpec(
         plant_id=plant_id,
         name=plant_id,
         capacity_mw=capacity_mw,
         technology="wind",
+        ons_group_id=ons_group_id,
         month_hour_climatology=(level,) * (12 * INTERVALS_PER_DAY),
         potential_lookup=tuple(min(capacity_mw, index * 10.0) for index in range(41)),
         lookup_step=1.0,
@@ -109,8 +114,8 @@ def build_forecast(
     spec = PointSimulationSpec(
         point_id="POINT-1",
         plants=(
-            plant_spec(plant_id=history.asset_id, level=level),
-            plant_spec(plant_id="OTHER", capacity_mw=50.0),
+            plant_spec(plant_id=history.asset_id, level=level, ons_group_id="CJU_SEL"),
+            plant_spec(plant_id="OTHER", capacity_mw=50.0, ons_group_id="CJU_OTHER"),
         ),
         envelope_intercept_mw=intercept_mw,
         envelope_slope=slope,
@@ -659,6 +664,19 @@ def test_point_context_simulates_every_entity_without_attributing_their_energy()
     assert selected["mean_available_generation_mw"] <= context["potential_generation_mw"] + 1e-6
 
 
+def test_point_context_publishes_the_authoritative_ons_group_per_entity() -> None:
+    """Each entity keeps its own ONS group; the selected group is never stamped on every peer."""
+    payload = build_forecast(history=synthetic_history(), slope=0.2, intercept_mw=300.0)
+
+    groups = {
+        entity["plant_id"]: entity["ons_group_id"]
+        for entity in payload["point_context"]["simulated_entities"]
+    }
+
+    assert groups == {"PLANT1": "CJU_SEL", "OTHER": "CJU_OTHER"}
+    assert len(set(groups.values())) == 2
+
+
 def test_simulated_telemetry_separates_physical_quantities() -> None:
     """I1: installed capacity, availability, operational capacity, resource potential, accepted
     envelope and delivered generation are distinct physical quantities in a fixed order."""
@@ -1100,6 +1118,13 @@ def test_bundled_forecast_has_five_plants_sixty_consecutive_days_and_three_windo
         )
         assert any(
             entity["scheduled_maintenance_intervals"] > 0
+            for entity in context["simulated_entities"]
+        )
+        # Every entity of the point declares the authoritative ONS generation group it belongs
+        # to, so same-group peers can be identified without the selectable catalog.
+        assert all(entity["ons_group_id"] for entity in context["simulated_entities"])
+        assert any(
+            entity["ons_group_id"] == plant["ons_group_id"]
             for entity in context["simulated_entities"]
         )
     assert payload["checks"]["all_plants_have_days_below_95_pct"] is True

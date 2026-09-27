@@ -171,6 +171,7 @@ class PlantSimulationSpec:
     name: str
     capacity_mw: float
     technology: str
+    ons_group_id: str
     month_hour_climatology: tuple[float, ...]
     potential_lookup: tuple[float, ...]
     lookup_step: float

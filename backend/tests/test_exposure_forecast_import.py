@@ -166,3 +166,9 @@ def test_individual_conversion_validates_the_telemetry_and_point_context():
     assert asset["point_context"]["entity_count"] == len(
         asset["point_context"]["simulated_entities"]
     )
+    entities = asset["point_context"]["simulated_entities"]
+    assert entities
+    # Every point entity carries its own authoritative ONS group, and the selected plant's
+    # own entity carries the group of the selected asset.
+    assert all(entity["ons_group_id"] for entity in entities)
+    assert any(entity["ons_group_id"] == asset["ons_group_id"] for entity in entities)

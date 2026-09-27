@@ -2211,6 +2211,7 @@ def _point_context_payload(
                 "plant_id": plant.plant_id,
                 "name": plant.name,
                 "technology": plant.technology,
+                "ons_group_id": plant.ons_group_id,
                 "capacity_mw": round(plant.capacity_mw, 6),
                 "mean_available_generation_mw": round(
                     scheduled.plant_mean_available_mw.get(plant.plant_id, 0.0), 6
@@ -2663,6 +2664,7 @@ def _build_point_specs(
                     name=name,
                     capacity_mw=capacity,
                     technology=technology,
+                    ons_group_id=group,
                     month_hour_climatology=tuple(climatology),
                     potential_lookup=build_potential_lookup(
                         curve,
@@ -2826,6 +2828,16 @@ def validate_forecast_artifact(payload: Mapping[str, Any]) -> None:
     contexts = payload.get("point_contexts") or {}
     if len(contexts) != 5:
         raise ValueError("a previsão individual precisa de um contexto por ponto")
+    for point_id, context in contexts.items():
+        if not isinstance(context, dict):
+            raise ValueError(f"o contexto do ponto {point_id} precisa ser um objeto")
+        for entity in context.get("simulated_entities") or []:
+            group_id = entity.get("ons_group_id")
+            if not isinstance(group_id, str) or not group_id.strip():
+                raise ValueError(
+                    f"a entidade {entity.get('plant_id')} do ponto {point_id} precisa "
+                    "declarar o conjunto ONS de origem"
+                )
     for plant in plants:
         asset_id = str(plant.get("asset_id", ""))
         if not asset_id or asset_id.startswith("CJU_"):

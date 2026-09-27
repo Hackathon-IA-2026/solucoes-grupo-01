@@ -216,6 +216,7 @@ export type ExposurePointEntity = {
   plantId: string;
   name: string;
   technology: "wind" | "solar";
+  onsGroupId: string;
   capacityMw: number;
   meanAvailableGenerationMw: number;
   meanCurtailedGenerationMw: number;

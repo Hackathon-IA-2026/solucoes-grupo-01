@@ -1183,6 +1183,7 @@ class ExposurePointEntity(BaseModel):
     plant_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
     name: BoundedText
     technology: Literal["wind", "solar"]
+    ons_group_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
     capacity_mw: FiniteFloat = Field(ge=0)
     mean_available_generation_mw: FiniteFloat = Field(ge=0)
     mean_curtailed_generation_mw: FiniteFloat = Field(ge=0)

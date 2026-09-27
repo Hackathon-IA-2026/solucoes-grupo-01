@@ -227,6 +227,7 @@ const view: ExposureView = {
         plantId: "RNEM13",
         name: "Ventos de Santa Martina 13",
         technology: "wind",
+        onsGroupId: "CJU_RNRDV",
         capacityMw: 67.2,
         meanAvailableGenerationMw: 32.1,
         meanCurtailedGenerationMw: 12.4,
@@ -238,6 +239,7 @@ const view: ExposureView = {
         plantId: "RNEM14",
         name: "Ventos de Santa Martina 14",
         technology: "wind",
+        onsGroupId: "CJU_RNRDV",
         capacityMw: 44.1,
         meanAvailableGenerationMw: 21.3,
         meanCurtailedGenerationMw: 8.2,
@@ -269,12 +271,12 @@ const view: ExposureView = {
   limitations: ["Cenário demonstrativo."],
 };
 
-function renderScreen() {
+function renderScreen(override: ExposureView = view) {
   vi.mocked(useExposure).mockReturnValue({
     assets,
-    selectedAssetId: view.asset.assetId,
+    selectedAssetId: override.asset.assetId,
     selectAsset: vi.fn(),
-    view,
+    view: override,
     loading: false,
     error: null,
     retry: vi.fn(),
@@ -437,5 +439,45 @@ describe("tela de Exposição por usina", () => {
     expect(text).toContain("Reconciliação no conjunto (1)");
     expect(text).toContain("Pressão sistêmica no ponto (1)");
     expect(text).toContain("1 usinas únicas somando conjunto e ponto, sem dupla contagem.");
+  });
+
+  it("separa a vizinha de mesmo conjunto da vizinha de outro conjunto no ponto", () => {
+    const baseEntities = view.pointContext?.entities ?? [];
+    const otherGroupEntity = {
+      plantId: "RNEM15",
+      name: "Ventos de Santa Martina 15",
+      technology: "wind" as const,
+      onsGroupId: "CJU_OTHER",
+      capacityMw: 30.0,
+      meanAvailableGenerationMw: 12.0,
+      meanCurtailedGenerationMw: 4.0,
+      restrictedDayShare: 0.5,
+      scheduledMaintenanceIntervals: 100,
+      scheduledMaintenanceDerate: 0.5,
+    };
+    const customView: ExposureView = {
+      ...view,
+      pointContext: {
+        ...view.pointContext!,
+        entityCount: baseEntities.length + 1,
+        entities: [...baseEntities, otherGroupEntity],
+      },
+    };
+
+    const { container } = renderScreen(customView);
+    const topology = section(container, "secao-ativo").querySelector("[data-topology-list]");
+    expect(topology).not.toBeNull();
+    const text = topology?.textContent ?? "";
+
+    // One same-group peer and one other-group point peer classify separately.
+    expect(text).toContain("Reconciliação no conjunto (1)");
+    expect(text).toContain("Pressão sistêmica no ponto (2)");
+    expect(text).toContain("2 usinas únicas somando conjunto e ponto, sem dupla contagem.");
+    expect(text).toContain("Ventos de Santa Martina 14");
+    expect(text).toContain("Mesmo conjunto e mesmo ponto");
+    expect(text).toContain("Ventos de Santa Martina 15");
+    expect(text).toContain("Mesmo ponto (pressão sistêmica)");
+    // The selected plant heads the hierarchy exactly once and is never listed as a peer.
+    expect(text.split("Ventos de Santa Martina 13").length).toBe(2);
   });
 });

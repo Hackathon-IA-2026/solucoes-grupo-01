@@ -166,7 +166,7 @@ function CriticalWindows({ windows }: { windows: ExposureCriticalWindow[] }) {
 }
 
 export function ExposureScreen() {
-  const { view, assets, loading, error, retry } = useExposure();
+  const { view, loading, error, retry } = useExposure();
 
   if (loading && !view) return <ExposureLoading />;
   if (error && !view) {
@@ -192,19 +192,25 @@ export function ExposureScreen() {
     telemetry: asset.operationalDataStatus === "simulated" ? "simulada" : "fornecida",
   };
   const selectedPlant: PlantTopologyPlant = { id: asset.assetId, name: asset.name, technology: asset.technology, groupId: asset.onsGroupId };
+  // Every plant of the point keeps its own authoritative ONS group; the group of the
+  // selected plant is never stamped onto its peers.
+  const pointEntities = pointContext?.entities ?? [];
   const pointPlants: PlantTopologyPlant[] = [
-    ...(pointContext?.entities ?? []).map((entity) => ({
+    ...pointEntities.map((entity) => ({
       id: entity.plantId,
       name: entity.name,
       technology: entity.technology,
-      groupId: asset.onsGroupId,
+      groupId: entity.onsGroupId,
     })),
     selectedPlant,
   ];
+  // The reconciliation scope is derived from the point entities whose own ONS group matches
+  // the selected plant's group. The five-item selectable catalog holds one plant per group,
+  // so it cannot describe the same-group peers.
   const groupPlants: PlantTopologyPlant[] = [
-    ...assets
-      .filter((candidate) => candidate.assetId !== asset.assetId && candidate.onsGroupId !== null && candidate.onsGroupId === asset.onsGroupId)
-      .map((candidate) => ({ id: candidate.assetId, name: candidate.name, technology: candidate.technology, groupId: candidate.onsGroupId })),
+    ...pointEntities
+      .filter((entity) => entity.plantId !== asset.assetId && entity.onsGroupId === asset.onsGroupId)
+      .map((entity) => ({ id: entity.plantId, name: entity.name, technology: entity.technology, groupId: entity.onsGroupId })),
     selectedPlant,
   ];
   const topologyContext: PlantTopologyContext = {

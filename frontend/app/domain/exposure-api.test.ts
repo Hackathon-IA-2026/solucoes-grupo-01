@@ -179,6 +179,7 @@ const pointContext = {
       plant_id: "RNEM13",
       name: "Ventos de Santa Martina 13",
       technology: "wind",
+      ons_group_id: "CJU_RNRDV",
       capacity_mw: 67.2,
       mean_available_generation_mw: 32.1,
       mean_curtailed_generation_mw: 12.4,
@@ -192,6 +193,7 @@ const pointContext = {
       plant_id: "RNEM14",
       name: "Ventos de Santa Martina 14",
       technology: "wind",
+      ons_group_id: "CJU_RNRDV",
       capacity_mw: 44.1,
       mean_available_generation_mw: 21.3,
       mean_curtailed_generation_mw: 8.2,
@@ -351,6 +353,11 @@ describe("cliente da API de Exposição", () => {
     expect(result.asset.onsGroupName).toBe("Rio do Vento");
     expect(result.asset.ceg).toBe("EOL.CV.RN.038322-8.01");
     expect(result.pointContext?.entities).toHaveLength(2);
+    expect(result.pointContext?.entities[0]).toMatchObject({
+      plantId: "RNEM13",
+      onsGroupId: "CJU_RNRDV",
+    });
+    expect(result.pointContext?.entities[1].onsGroupId).toBe("CJU_RNRDV");
     expect(result.pointContext?.envelopeSlope).toBe(0.3);
     expect(result.pointContext?.entities[0]).not.toHaveProperty("origin");
     expect(result.simulatedTelemetry?.acceptedGenerationLimitMw).toBe(15.9);
