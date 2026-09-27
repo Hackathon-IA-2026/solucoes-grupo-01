@@ -2806,9 +2806,12 @@ def validate_forecast_artifact(payload: Mapping[str, Any]) -> None:
         diagnostics = plant.get("probability_diagnostics") or {}
         published = diagnostics.get("published") or {}
         frozen_support = published.get("frozen_support") or {}
-        if frozen_support.get("low") is not None and frozen_support.get("high") is not None:
-            if float(frozen_support["high"]) < float(frozen_support["low"]):
-                raise ValueError(f"o suporte congelado de {asset_id} é inválido")
+        if (
+            frozen_support.get("low") is not None
+            and frozen_support.get("high") is not None
+            and float(frozen_support["high"]) < float(frozen_support["low"])
+        ):
+            raise ValueError(f"o suporte congelado de {asset_id} é inválido")
         out_of_support_days = int(published.get("future_days_outside_support") or 0)
         enforce_published_series(
             asset_id,

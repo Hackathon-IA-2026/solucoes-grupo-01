@@ -13,7 +13,6 @@ from curtailess.plant_exposure_forecast import (
     HORIZON_DAYS,
     OUT_OF_SUPPORT_TOLERANCE_DAYS,
     PUBLISHED_DOZENS_ABOVE_95,
-    BacktestPlan,
     LogisticModel,
     PlantDailyHistory,
     PlantForecastInputs,
@@ -35,13 +34,11 @@ from curtailess.plant_exposure_forecast import (
 )
 from curtailess.point_exposure_simulation import (
     INTERVALS_PER_DAY,
-    SCENARIO_NO_MAINTENANCE,
     PlantSimulationSpec,
     PointSimulationSpec,
     build_maintenance_schedule,
     build_scenario_samples,
     climatology_outlook,
-    simulate_point,
 )
 
 BUNDLED_FORECAST = (
@@ -81,7 +78,9 @@ def synthetic_history(
     )
 
 
-def plant_spec(*, plant_id: str, capacity_mw: float = 100.0, level: float = 12.0) -> PlantSimulationSpec:
+def plant_spec(
+    *, plant_id: str, capacity_mw: float = 100.0, level: float = 12.0
+) -> PlantSimulationSpec:
     return PlantSimulationSpec(
         plant_id=plant_id,
         name=plant_id,
@@ -107,13 +106,18 @@ def build_forecast(
 ) -> dict:
     spec = PointSimulationSpec(
         point_id="POINT-1",
-        plants=(plant_spec(plant_id=history.asset_id), plant_spec(plant_id="OTHER", capacity_mw=50.0)),
+        plants=(
+            plant_spec(plant_id=history.asset_id),
+            plant_spec(plant_id="OTHER", capacity_mw=50.0),
+        ),
         envelope_intercept_mw=intercept_mw,
         envelope_slope=slope,
         installed_capacity_mw=150.0,
         selected_asset_id=history.asset_id,
     )
-    days = tuple(START + timedelta(days=len(history.days) + offset) for offset in range(horizon_days))
+    days = tuple(
+        START + timedelta(days=len(history.days) + offset) for offset in range(horizon_days)
+    )
     samples = build_scenario_samples(
         spec, days=days, outlook=climatology_outlook(spec.point_id), scenario_count=scenario_count
     )
@@ -217,7 +221,9 @@ def test_expected_energy_is_not_probability_times_severity() -> None:
 
 
 def test_low_frequency_plant_never_returns_the_old_ninety_nine_percent() -> None:
-    payload = build_forecast(history=synthetic_history(event_rate=0.05), slope=0.3, intercept_mw=200.0)
+    payload = build_forecast(
+        history=synthetic_history(event_rate=0.05), slope=0.3, intercept_mw=200.0
+    )
 
     probabilities = [row["curtailment_probability"] for row in payload["forecasts"]]
 
@@ -352,7 +358,7 @@ def test_candidate_eligibility_still_refuses_saturated_baselines() -> None:
 def test_published_gate_refuses_dozens_above_95_from_out_of_support_extrapolation() -> None:
     # Dozens of days above 95% with a material out-of-support excursion: refused.
     series = [0.96] * 30 + [0.4] * 30
-    assert 30 >= PUBLISHED_DOZENS_ABOVE_95
+    assert PUBLISHED_DOZENS_ABOVE_95 <= 30
     with pytest.raises(ValueError, match="fora do suporte"):
         enforce_published_series("PLANT1", series, out_of_support_days=30)
     # The same series is allowed when the validation paths reached that range (no extrapolation).
@@ -416,8 +422,12 @@ def test_recursive_feedback_keeps_a_persistently_restricted_plant_off_saturation
     history = PlantDailyHistory(
         asset_id="BAEA52",
         days=tuple(START + timedelta(days=offset) for offset in range(days)),
-        restricted=tuple(1.0 if index >= 300 else (1.0 if index % 4 else 0.0) for index in range(days)),
-        curtailed_mwh=tuple(120.0 if index >= 300 else (120.0 if index % 4 else 0.0) for index in range(days)),
+        restricted=tuple(
+            1.0 if index >= 300 else (1.0 if index % 4 else 0.0) for index in range(days)
+        ),
+        curtailed_mwh=tuple(
+            120.0 if index >= 300 else (120.0 if index % 4 else 0.0) for index in range(days)
+        ),
     )
     plan = default_backtest_plan(days)
     result = run_backtest(
@@ -579,7 +589,7 @@ def test_three_critical_windows_of_exactly_seventy_two_hours_without_weekly_grou
     assert all(window["interval_count"] != 7 * INTERVALS_PER_DAY for window in windows)
     assert len({window["start_date"] for window in windows}) == 3
     ordered = sorted(windows, key=lambda window: window["start_date"])
-    for first, second in zip(ordered, ordered[1:]):
+    for first, second in zip(ordered, ordered[1:], strict=False):
         assert first["end_date"] < second["start_date"]
     assert all(window["expected_curtailed_mwh"] >= 0.0 for window in windows)
     assert all(window["candidate_maintenance_relief_mwh"] >= 0.0 for window in windows)
@@ -685,7 +695,11 @@ def test_artifact_validation_rejects_broken_contracts() -> None:
         )
     with pytest.raises(ValueError, match="60 pontos"):
         validate_forecast_artifact(
-            broken(lambda clone: clone["plants"][0].update({"forecasts": clone["plants"][0]["forecasts"][:59]}))
+            broken(
+                lambda clone: clone["plants"][0].update(
+                    {"forecasts": clone["plants"][0]["forecasts"][:59]}
+                )
+            )
         )
     with pytest.raises(ValueError, match="consecutivas"):
         validate_forecast_artifact(
@@ -733,7 +747,11 @@ def test_artifact_validation_rejects_broken_contracts() -> None:
         )
     with pytest.raises(ValueError, match="95%"):
         validate_forecast_artifact(
-            broken(lambda clone: clone["checks"].update({"all_plants_have_days_below_95_pct": False}))
+            broken(
+                lambda clone: clone["checks"].update(
+                    {"all_plants_have_days_below_95_pct": False}
+                )
+            )
         )
 
 
@@ -873,7 +891,9 @@ def test_bundled_schedule_is_simulated_and_keeps_the_candidate_window() -> None:
         assert payload["origin"] == "SIMULADO"
         assert payload["plant_count"] > 0
         assert payload["candidate_asset_ids"]
-        assert all(isinstance(asset_id, str) and asset_id for asset_id in payload["candidate_asset_ids"])
+        assert all(
+            isinstance(asset_id, str) and asset_id for asset_id in payload["candidate_asset_ids"]
+        )
         assert len(set(payload["candidate_asset_ids"])) == len(payload["candidate_asset_ids"])
         assert all(window["origin"] == "SIMULADO" for window in payload["windows"])
         assert all(window["interval_count"] > 0 for window in payload["windows"])

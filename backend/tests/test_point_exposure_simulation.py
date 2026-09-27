@@ -288,7 +288,7 @@ def test_critical_windows_are_exactly_72_hours_and_never_overlap() -> None:
     # Never a weekly aggregation.
     assert all(window.interval_count != 7 * INTERVALS_PER_DAY for window in selected)
     ordered = sorted(selected, key=lambda window: window.start_interval)
-    for first, second in zip(ordered, ordered[1:]):
+    for first, second in zip(ordered, ordered[1:], strict=False):
         assert first.end_interval <= second.start_interval
     assert len({window.start_interval for window in selected}) == CRITICAL_WINDOW_COUNT
 
