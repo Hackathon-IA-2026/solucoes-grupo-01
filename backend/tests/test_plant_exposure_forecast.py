@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -1168,3 +1168,101 @@ def test_bundled_schedule_is_simulated_and_keeps_the_candidate_window() -> None:
         assert all(window["origin"] == "SIMULADO" for window in payload["windows"])
         assert all(window["interval_count"] > 0 for window in payload["windows"])
         assert all(0.0 < window["derate"] <= 1.0 for window in payload["windows"])
+
+
+def test_point_envelope_fits_only_the_groups_represented_in_the_potential(monkeypatch) -> None:
+    """Regression: a mixed-technology point must fit the envelope on like-for-like series.
+
+    The potential series holds only the point's technology plants, those with a curve under the
+    point's weather column. Summing the published curtailment of every group at the point,
+    including the other technology's groups, compared unlike quantities and collapsed the
+    least-squares fit to (0, 0): a zero accepted envelope and 100% curtailment for the selected
+    solar plant. The published series must be restricted to the groups represented in the
+    potential.
+    """
+    from curtailess import plant_exposure_forecast as module
+
+    aggregates = {
+        "SOL1": module.PlantAggregates(
+            plant_id="SOL1",
+            weather_column="val_irradianciaverificado",
+            daily_restricted={},
+            daily_weather_mean={},
+            month_hour_weather={},
+            curve_bins={200.0: 40.0, 400.0: 80.0},
+            last_interval_weather=None,
+            last_interval_accepted=None,
+            last_observed_at=None,
+        )
+    }
+    point_plants = {
+        "CJU_SOL": {"SOL1": ("Solar 1", "CEG-SOL")},
+        "CJU_WIND": {"WIN1": ("Wind 1", "CEG-WIND")},
+    }
+    instants = tuple(
+        datetime(2024, 4, 1) + timedelta(minutes=30 * index) for index in range(1600)
+    )
+    captured: list[list[str]] = []
+
+    def fake_potential(*_args, **_kwargs):
+        return {instant: 35.0 for instant in instants}
+
+    def fake_published(_paths, *, group_ids, window_start, window_end):
+        captured.append(list(group_ids))
+        # The wind group curtails far more than the solar subset can produce; including it is
+        # exactly what drove the fit to (0, 0).
+        extra = 77.0 if "CJU_WIND" in group_ids else 0.0
+        return {instant: extra + 9.8 for instant in instants}
+
+    monkeypatch.setattr(module, "load_point_interval_potential", fake_potential)
+    monkeypatch.setattr(module, "load_point_published_curtailment", fake_published)
+
+    intercept, slope = module._fit_point_envelope(
+        point_id="POINT-1",
+        point_group_list=["CJU_SOL", "CJU_WIND"],
+        aggregates=aggregates,
+        capacities={},
+        point_plants=point_plants,
+        detail_path="unused",
+        weather_column="val_irradianciaverificado",
+        flag="flg_dadoirradianciainvalido",
+        supervision="flg_dadoirradianciasupervisaoinvalido",
+        bin_size=5.0,
+        wind_aggregate="wind/*.parquet",
+        solar_aggregate="solar/*.parquet",
+        window_start=date(2024, 4, 1),
+        window_end=date(2024, 6, 1),
+    )
+
+    assert captured == [["CJU_SOL"]]
+    assert (intercept, slope) != (0.0, 0.0)
+    assert slope > 0.0
+
+
+def test_published_curtailment_reads_an_identical_source_only_once(tmp_path) -> None:
+    """Wind and solar arguments may point at one mixed aggregate directory."""
+    from curtailess import plant_exposure_forecast as module
+
+    source = tmp_path / "aggregate.parquet"
+    with module.duckdb.connect() as connection:
+        connection.execute(
+            """
+            COPY (
+                SELECT
+                    TIMESTAMP '2024-04-01 00:00:00' AS din_instante,
+                    'CJU_SOL' AS id_ons,
+                    7.5::DOUBLE AS val_geracaonaorealizadaapurada,
+                    10.0::DOUBLE AS val_geracaolimitada
+            ) TO ? (FORMAT PARQUET)
+            """,
+            [str(source)],
+        )
+
+    result = module.load_point_published_curtailment(
+        [str(source), str(source)],
+        group_ids=["CJU_SOL"],
+        window_start=date(2024, 4, 1),
+        window_end=date(2024, 4, 1),
+    )
+
+    assert list(result.values()) == [7.5]

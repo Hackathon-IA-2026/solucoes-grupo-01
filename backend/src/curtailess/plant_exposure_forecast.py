@@ -1561,11 +1561,19 @@ def load_point_published_curtailment(
         ORDER BY 1
     """
     totals: dict[datetime, float] = {}
+    seen: set[str] = set()
     with duckdb.connect() as connection:
         for path in paths:
-            source = f"read_parquet('{path}', union_by_name=true)"
-            for instant, value in connection.execute(query.format(source=source)).fetchall():
-                totals[instant] = totals.get(instant, 0.0) + float(value or 0.0)
+            # The same aggregate base can be passed for both technologies. Reading the same file
+            # twice would sum the same group twice, doubling the published curtailment and
+            # biasing the acceptance envelope towards more curtailment than the data supports.
+            for resolved in sorted(glob.glob(path)) or [path]:
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                source = f"read_parquet('{resolved}', union_by_name=true)"
+                for instant, value in connection.execute(query.format(source=source)).fetchall():
+                    totals[instant] = totals.get(instant, 0.0) + float(value or 0.0)
     return totals
 
 
@@ -2718,6 +2726,18 @@ def _fit_point_envelope(
             plant_ids.append(plant_id)
     if not plant_ids:
         raise ValueError(f"o ponto {point_id} não tem curvas para ajustar o envelope")
+    # The potential series only holds the plants that have a curve under this point's weather
+    # column, i.e. the plants of the point's technology. A connection point can host groups of
+    # both technologies; summing the published curtailment of the other technology's groups
+    # compares unlike quantities (their whole curtailment against a partial potential) and drives
+    # the least-squares fit to (0, 0), a zero accepted envelope and 100% curtailment for the
+    # selected plant. The published series is therefore restricted to the groups whose plants are
+    # actually represented in the potential.
+    represented_groups = [
+        group
+        for group in point_group_list
+        if any(plant_id in curves for plant_id in point_plants.get(group, {}))
+    ]
     potential_by_interval = load_point_interval_potential(
         detail_path,
         plant_ids=plant_ids,
@@ -2731,7 +2751,7 @@ def _fit_point_envelope(
     )
     published = load_point_published_curtailment(
         [wind_aggregate, solar_aggregate],
-        group_ids=point_group_list,
+        group_ids=represented_groups,
         window_start=window_start,
         window_end=window_end,
     )
