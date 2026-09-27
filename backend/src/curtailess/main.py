@@ -19,9 +19,6 @@ from .decision_operations import build_rank_maintenance, build_screen_bess
 from .provenance import build_evidence_id as build_evidence_id
 from .provenance import create_issued_provenance_repository
 from .provenance_service import (
-    aware as _aware,
-)
-from .provenance_service import (
     field_provenance as _field_provenance,
 )
 from .provenance_service import (
@@ -30,7 +27,13 @@ from .provenance_service import (
 from .provenance_service import (
     resolve_server_evidence as _resolve_server_evidence_impl,
 )
+from .response_assembly import (
+    build_exposure_response,
+    build_historical_windows_response,
+    materialized_asset,
+)
 from .schemas import (
+    MAX_PLANNING_DAYS,
     ApiInfo,
     Asset,
     AssetList,
@@ -42,7 +45,6 @@ from .schemas import (
     DataQualityResponse,
     ExposureResponse,
     HealthResponse,
-    HistoricalWindow,
     HistoricalWindowsResponse,
     MaintenanceRankRequest,
     MaintenanceRankResponse,
@@ -114,86 +116,6 @@ def health() -> HealthResponse:
         service=settings.app_name,
         version=__version__,
         environment=settings.app_env,
-    )
-
-
-def _optional_aware(item: dict, key: str) -> datetime | None:
-    value = item.get(key)
-    return _aware(value) if value else None
-
-
-def materialized_asset(item: dict) -> Asset:
-    asset_id = item["asset_id"]
-    capacity = item.get("capacity_mw")
-    common_limitations = ["Campo cadastral materializado de fonte pública do ONS."]
-    field_provenance = {
-        field_name: _field_provenance(
-            field_name=field_name,
-            method_version="ons_materialized_asset_v1",
-            context=asset_id,
-            origin=DataOrigin.ONS_PUBLICO,
-            limitations=common_limitations,
-            source_hashes=[item["source_sha256"]],
-            source_item=item,
-            source_uri="s3://ons-aws-prod-opendata/dataset/restricao_coff_eolica_tm/",
-        )
-        for field_name in ("asset_id", "name", "technology", "ons_group", "connection_point")
-    }
-    capacity_provenance = None
-    if capacity is not None:
-        capacity_limitations = list(item.get("capacity_limitations", []))
-        capacity_valid_from = _optional_aware(item, "capacity_valid_from")
-        capacity_valid_to = _optional_aware(item, "capacity_valid_to")
-        capacity_observed_at = _optional_aware(item, "capacity_observed_at")
-        capacity_effective_at = _optional_aware(item, "capacity_effective_at")
-        if not capacity_observed_at and not capacity_effective_at:
-            capacity_limitations.append(
-                "Metadados de validade temporal da fonte de capacidade indisponíveis; "
-                "validade aberta/desconhecida."
-            )
-        if bool(capacity_valid_from) != bool(capacity_valid_to):
-            capacity_limitations.append(
-                "Intervalo temporal da capacidade incompleto; validade tratada como "
-                "aberta/desconhecida."
-            )
-            capacity_valid_from = capacity_valid_to = None
-        capacity_provenance = _field_provenance(
-            field_name="capacity_mw",
-            method_version="ons_capacity_source_v1",
-            context=asset_id,
-            origin=DataOrigin.ONS_PUBLICO,
-            limitations=capacity_limitations,
-            source_hashes=[item["capacity_source_sha256"]],
-            source_uri="s3://ons-aws-prod-opendata/dataset/capacidade-geracao/",
-            source_key=item["capacity_source_key"],
-            use_source_period=False,
-            observed_at=capacity_observed_at,
-            effective_at=capacity_effective_at,
-            valid_from=capacity_valid_from,
-            valid_to=capacity_valid_to,
-        )
-        field_provenance["capacity_mw"] = capacity_provenance
-    else:
-        field_provenance["capacity_mw"] = _field_provenance(
-            field_name="capacity_mw",
-            method_version="asset_capacity_unavailable_v1",
-            context=asset_id,
-            origin=DataOrigin.PROXY_CALCULADO,
-            limitations=["Capacidade não materializada para este ativo."],
-            source_hashes=[item["source_sha256"]],
-            source_item=item,
-            source_uri=f"curtailess://assets/{asset_id}",
-        )
-    return Asset(
-        asset_id=asset_id,
-        name=item["asset_name"],
-        technology="wind",
-        capacity_mw=capacity,
-        capacity_provenance=capacity_provenance,
-        ons_group=asset_id,
-        connection_point=item["point_id"],
-        data_mode="ons_materialized",
-        field_provenance=field_provenance,
     )
 
 
@@ -347,48 +269,7 @@ def get_asset_exposure(
     if exposure is None:
         raise HTTPException(status_code=404, detail="Sem dados materializados para o período.")
 
-    limitation = (
-        "Agregado mensal materializado de dados públicos do ONS; períodos mensais "
-        "sobrepostos são incluídos integralmente."
-    )
-    first_item = exposure["items"][0]
-    data_version = ",".join(exposure["periods"])
-    method_version = "curtailed_energy_sum_v1"
-    provenance = _field_provenance(
-        field_name="total_curtailed_energy",
-        method_version=method_version,
-        context=f"{asset_id}:{start}:{end}:{reason or 'all'}",
-        origin=DataOrigin.PROXY_CALCULADO,
-        limitations=[limitation],
-        source_hashes=exposure["source_sha256s"],
-        source_item=first_item,
-        source_uri=f"curtailess://assets/{asset_id}/exposure",
-        observed_at=max(_aware(item["period_end"]) for item in exposure["items"]),
-        valid_from=datetime.combine(start, datetime.min.time(), tzinfo=UTC),
-        valid_to=datetime.combine(end, datetime.max.time(), tzinfo=UTC),
-    )
-    response = ExposureResponse(
-        asset_id=asset_id,
-        perspective_type="historical_observed",
-        data_mode="ons_materialized",
-        granularity="period",
-        reason=reason,
-        technology="wind",
-        total_curtailed_energy=NumericEvidence(
-            value=float(exposure["curtailed_mwh"]),
-            unit="MWh",
-            period=Period(start=start, end=end),
-            source="ONS/restricao_coff_eolica_tm",
-            data_version=data_version,
-            method=first_item["method"],
-            value_status="calculado",
-            origin=DataOrigin.PROXY_CALCULADO,
-            limitations=[limitation],
-            provenance_id=provenance.evidence_id,
-            provenance=provenance,
-        ),
-        limitations=[limitation],
-    )
+    response, provenance = build_exposure_response(asset_id, start, end, reason, exposure)
     _persist_operation(
         issued_provenance_repository,
         operation="exposure",
@@ -408,9 +289,11 @@ def get_asset_point_context(asset_id: str) -> PointContextResponse:
     asset_item = repository.get_asset(asset_id)
     if asset_item is None:
         raise HTTPException(status_code=404, detail="Ativo não encontrado.")
-    context = repository.get_point_context(asset_id)
+    context = repository.get_point_context(asset_id, asset_item)
     if context is None:
         raise HTTPException(status_code=404, detail="Contexto materializado não encontrado.")
+    if len(context["source_sha256s"]) > 32:
+        raise HTTPException(status_code=422, detail="Contexto excede o limite de 32 fontes.")
     period = Period(
         start=date.fromisoformat(context["period_start"]),
         end=date.fromisoformat(context["period_end"]),
@@ -501,8 +384,16 @@ def get_asset_windows(
 ) -> HistoricalWindowsResponse:
     if start > end:
         raise HTTPException(status_code=422, detail="start deve ser anterior ou igual a end.")
-    if duration_hours <= 0:
-        raise HTTPException(status_code=422, detail="duration_hours deve ser positivo.")
+    if (end - start).days + 1 > MAX_PLANNING_DAYS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Período de planejamento excede {MAX_PLANNING_DAYS} dias.",
+        )
+    if duration_hours <= 0 or duration_hours > MAX_PLANNING_DAYS * 24:
+        raise HTTPException(
+            status_code=422,
+            detail=f"duration_hours deve estar entre 1 e {MAX_PLANNING_DAYS * 24}.",
+        )
     asset_item = repository.get_asset(asset_id)
     if asset_item is None:
         raise HTTPException(status_code=404, detail="Ativo não encontrado.")
@@ -511,55 +402,8 @@ def get_asset_windows(
     )
     if not materialized_windows:
         raise HTTPException(status_code=404, detail="Sem sinal histórico materializado.")
-    limitation = (
-        "Sinal derivado da taxa mensal histórica materializada; não é previsão "
-        "operacional ex ante nem preserva a distribuição intramensal."
-    )
-
-    def historical_window(window: dict) -> HistoricalWindow:
-        provenance = _field_provenance(
-            field_name="expected_curtailed_energy",
-            method_version=window["method"],
-            context=_json_context(
-                "historical_window",
-                asset_id=asset_id,
-                start=window["start"].isoformat(),
-                end=window["end"].isoformat(),
-                reason=reason,
-            ),
-            origin=DataOrigin.PROXY_CALCULADO,
-            limitations=[limitation],
-            source_hashes=[window["source_sha256"]],
-            source_item=asset_item,
-            source_uri=f"curtailess://assets/{asset_id}/windows",
-        )
-        return HistoricalWindow(
-            start=window["start"],
-            end=window["end"],
-            expected_curtailed_energy=NumericEvidence(
-                value=window["curtailed_mwh"],
-                unit="MWh",
-                period=Period(start=window["start"].date(), end=window["end"].date()),
-                source="ONS/restricao_coff_eolica_tm",
-                data_version=window["period"],
-                method=window["method"],
-                value_status="calculado",
-                origin=DataOrigin.PROXY_CALCULADO,
-                limitations=[limitation],
-                provenance_id=provenance.evidence_id,
-                provenance=provenance,
-            ),
-        )
-
-    response = HistoricalWindowsResponse(
-        asset_id=asset_id,
-        perspective_type="historical_seasonal",
-        validation_status="historical_signal",
-        data_mode="ons_materialized",
-        duration_hours=duration_hours,
-        reason=reason,
-        windows=[historical_window(window) for window in materialized_windows],
-        limitations=[limitation],
+    response = build_historical_windows_response(
+        asset_id, duration_hours, reason, asset_item, materialized_windows
     )
     _persist_operation(
         issued_provenance_repository,

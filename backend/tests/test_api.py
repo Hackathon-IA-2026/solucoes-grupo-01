@@ -166,6 +166,22 @@ def test_operation_item_size_guard_runs_before_dynamodb_write() -> None:
     assert not table.items
 
 
+def test_operation_provenance_count_is_capped_before_writes() -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    ids = [
+        build_evidence_id("a", f"field-{index}", "bess_screen_v1", "ctx") for index in range(225)
+    ]
+    with pytest.raises(ValueError, match="224"):
+        repository.put_operation(
+            operation="bess_screen",
+            request_digest="b" * 64,
+            provenances={value: _stored_provenance(value) for value in ids},
+            source_records=[{"asset_id": "A"}],
+        )
+    assert table.put_count == 0
+
+
 def test_throttling_propagates_without_false_commit() -> None:
     table = FakeScenariosTable()
     table.throttle = True
@@ -190,7 +206,7 @@ def fresh_api_client() -> TestClient:
 
 def client_provenance(field_name: str) -> dict:
     return {
-        "evidence_id": f"client:{field_name}:v1",
+        "evidence_id": build_evidence_id("client", field_name, "client_input_v1", field_name),
         "field_name": field_name,
         "origin": "CLIENTE_INFORMADO",
         "source_uri": f"client://scenario/{field_name}",
@@ -679,7 +695,7 @@ def test_get_point_context_returns_materialized_anonymized_aggregates(monkeypatc
     monkeypatch.setattr(
         main.repository,
         "get_point_context",
-        lambda asset_id: {
+        lambda asset_id, asset=None: {
             "connection_point": "point-" + MATERIALIZED_ITEM["source_sha256"][:12],
             "entity_count": 3,
             "limited_entity_count": 2,
@@ -1358,7 +1374,11 @@ def test_report_lifecycle_uses_frozen_materialized_evidence(monkeypatch) -> None
         "/v1/reports",
         json={
             "asset_id": "CJU_BAOUR",
-            "evidence_ids": [f"sha256:{MATERIALIZED_ITEM['source_sha256']}"],
+            "evidence_ids": [
+                build_evidence_id(
+                    MATERIALIZED_ITEM["source_sha256"], "report", "report_input_v1", "test"
+                )
+            ],
             "report_type": "decision_support",
             "format": "json",
         },
@@ -1502,3 +1522,150 @@ def test_maintenance_rejects_oversized_client_provenance_with_422(
     )
     assert response.status_code == 422
     assert not issued_provenance_table.items
+
+
+def test_decision_requests_reject_extreme_finite_inputs_before_writes(
+    issued_provenance_table,
+) -> None:
+    bess = client.post(
+        "/v1/bess/screen",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "maintenance_result_id": "result-1",
+            "power_mw": 1e308,
+            "energy_mwh": 80,
+            "capex_brl": 1000000,
+            "annualized_cost_brl": 100000,
+            "round_trip_efficiency": 0.85,
+            "cycles_per_year": 200,
+            "energy_price_brl_mwh": 250,
+        },
+    )
+    maintenance = client.post(
+        "/v1/maintenance/rank",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "start": "2026-08-01",
+            "end": "2026-08-31",
+            "duration_hours": 72,
+            "minimum_notice_hours": 168,
+            "baseline_window_start": "2026-08-15T00:00:00Z",
+            "constraints": {"weekdays_only": False, "unavailable_periods": []},
+            "energy_price": energy_price_payload(1e308),
+        },
+    )
+    assert bess.status_code == 422
+    assert maintenance.status_code == 422
+    assert not issued_provenance_table.items
+
+
+def test_maintenance_overflow_from_materialized_value_returns_422_before_write(
+    monkeypatch, issued_provenance_table
+) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    monkeypatch.setattr(
+        main.repository,
+        "get_historical_windows",
+        lambda asset_id, start, end, duration_hours: [
+            {
+                "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
+                "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
+                "curtailed_mwh": 1e308,
+                "period": "2026-08",
+                "source_sha256": MATERIALIZED_ITEM["source_sha256"],
+                "method": "monthly_observed_rate_prorated_to_window_v1",
+            }
+        ],
+    )
+    response = client.post(
+        "/v1/maintenance/rank",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "start": "2026-08-01",
+            "end": "2026-08-31",
+            "duration_hours": 72,
+            "minimum_notice_hours": 168,
+            "baseline_window_start": "2026-08-01T00:00:00Z",
+            "constraints": {"weekdays_only": False, "unavailable_periods": []},
+            "energy_price": energy_price_payload(1e100),
+        },
+    )
+    assert response.status_code == 422
+    assert not issued_provenance_table.items
+
+
+def test_decision_numeric_boundary_is_accepted(monkeypatch) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    response = client.post(
+        "/v1/bess/screen",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "maintenance_result_id": "result-1",
+            "power_mw": 1e100,
+            "energy_mwh": 1e100,
+            "capex_brl": 1e100,
+            "annualized_cost_brl": 1e100,
+            "round_trip_efficiency": 1,
+            "cycles_per_year": 1_000_000,
+            "energy_price_brl_mwh": 1e100,
+        },
+    )
+    assert response.status_code == 200
+
+
+def test_planning_horizon_and_36_window_result_are_bounded(monkeypatch) -> None:
+    oversized_horizon = client.get(
+        "/v1/assets/CJU_BAOUR/windows",
+        params={"start": "2026-01-01", "end": "2026-03-02", "duration_hours": 72},
+    )
+    assert oversized_horizon.status_code == 422
+
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    window = {
+        "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
+        "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
+        "curtailed_mwh": 20.0,
+        "period": "2026-08",
+        "source_sha256": MATERIALIZED_ITEM["source_sha256"],
+        "method": "monthly_observed_rate_prorated_to_window_v1",
+    }
+    monkeypatch.setattr(
+        main.repository,
+        "get_historical_windows",
+        lambda asset_id, start, end, duration_hours, reason=None: [dict(window) for _ in range(36)],
+    )
+    windows = client.get(
+        "/v1/assets/CJU_BAOUR/windows",
+        params={"start": "2026-08-01", "end": "2026-08-31", "duration_hours": 72},
+    )
+    assert windows.status_code == 422
+
+    maintenance = client.post(
+        "/v1/maintenance/rank",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "start": "2026-08-01",
+            "end": "2026-08-31",
+            "duration_hours": 72,
+            "minimum_notice_hours": 168,
+            "baseline_window_start": "2026-08-01T00:00:00Z",
+            "constraints": {"weekdays_only": False, "unavailable_periods": []},
+            "energy_price": energy_price_payload(),
+        },
+    )
+    assert maintenance.status_code == 422
+
+
+def test_caller_evidence_ids_must_match_exact_compact_registry() -> None:
+    malformed = "evd1." + "a" * 65
+    response = client.post(
+        "/v1/reports",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "evidence_ids": [malformed],
+            "report_type": "decision_support",
+            "format": "json",
+        },
+    )
+    assert len(malformed) == 70
+    assert response.status_code == 422

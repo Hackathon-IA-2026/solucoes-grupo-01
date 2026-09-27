@@ -1,3 +1,4 @@
+import math
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -15,6 +16,7 @@ from .provenance_service import (
     validate_caller_provenance as _validate_caller_provenance_impl,
 )
 from .schemas import (
+    MAX_PLANNING_RESULTS,
     BessScreenRequest,
     BessScreenResponse,
     DataOrigin,
@@ -30,6 +32,28 @@ from .schemas import (
 
 def _json_context(kind: str, **values: object) -> str:
     return _canonical_json({"kind": kind, **values})
+
+
+def _checked_float(value: Any, field_name: str) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Valor numérico inválido: {field_name}."
+        ) from exc
+    if not math.isfinite(result):
+        raise HTTPException(
+            status_code=422, detail=f"Valor numérico fora do domínio: {field_name}."
+        )
+    return result
+
+
+def _checked_multiply(left: float, right: float, field_name: str) -> float:
+    return _checked_float(left * right, field_name)
+
+
+def _checked_subtract(left: float, right: float, field_name: str) -> float:
+    return _checked_float(left - right, field_name)
 
 
 def build_rank_maintenance(
@@ -59,6 +83,15 @@ def build_rank_maintenance(
     )
     if not candidates:
         raise HTTPException(status_code=404, detail="Sem sinal histórico materializado.")
+    if len(candidates) > MAX_PLANNING_RESULTS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Resultado excede o limite de {MAX_PLANNING_RESULTS} janelas.",
+        )
+    for candidate in candidates:
+        candidate["curtailed_mwh"] = _checked_float(
+            candidate.get("curtailed_mwh"), "expected_curtailed_energy"
+        )
 
     limitation = (
         "Ranking baseado em taxa mensal histórica materializada do ONS: não é previsão "
@@ -123,6 +156,8 @@ def build_rank_maintenance(
     ranked_windows = []
     for rank, candidate in enumerate(candidates, start=1):
         energy = candidate["curtailed_mwh"]
+        opportunity_cost = _checked_multiply(energy, request.energy_price.value, "opportunity_cost")
+        difference = _checked_subtract(energy, baseline_energy, "difference_from_baseline_mwh")
         context = candidate_context(candidate)
         energy_provenance = candidate_energy_provenance(candidate)
         cost_provenance = _field_provenance(
@@ -222,7 +257,7 @@ def build_rank_maintenance(
                     provenance=energy_provenance,
                 ),
                 opportunity_cost=MonetaryEvidence(
-                    value=energy * request.energy_price.value,
+                    value=opportunity_cost,
                     unit="BRL",
                     source=request.energy_price.source,
                     value_status="calculado",
@@ -230,9 +265,9 @@ def build_rank_maintenance(
                     provenance_id=cost_provenance.evidence_id,
                     provenance=cost_provenance,
                 ),
-                difference_from_baseline_mwh=energy - baseline_energy,
+                difference_from_baseline_mwh=difference,
                 difference_from_baseline=NumericEvidence(
-                    value=energy - baseline_energy,
+                    value=difference,
                     unit="MWh",
                     period=Period(
                         start=candidate["start"].date(),
@@ -293,13 +328,21 @@ def build_screen_bess(
     item = repository.get_asset(request.asset_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Ativo não encontrado.")
-    residual_exposure = float(item["curtailed_mwh"])
-    annual_energy_capacity = (
-        request.energy_mwh * request.cycles_per_year * request.round_trip_efficiency
+    residual_exposure = _checked_float(item.get("curtailed_mwh"), "residual_exposure_mwh")
+    if residual_exposure < 0:
+        raise HTTPException(status_code=422, detail="Exposição residual não pode ser negativa.")
+    annual_energy_capacity = _checked_multiply(
+        _checked_multiply(request.energy_mwh, request.cycles_per_year, "annual_energy_capacity"),
+        request.round_trip_efficiency,
+        "annual_energy_capacity",
     )
     absorbable = min(residual_exposure, annual_energy_capacity)
-    annual_benefit = absorbable * request.energy_price_brl_mwh
-    annual_net_benefit = annual_benefit - request.annualized_cost_brl
+    annual_benefit = _checked_multiply(
+        absorbable, request.energy_price_brl_mwh, "annual_benefit_brl"
+    )
+    annual_net_benefit = _checked_subtract(
+        annual_benefit, request.annualized_cost_brl, "annual_net_benefit_brl"
+    )
     limitation = (
         "Triagem determinística sobre exposição histórica: não é dimensionamento, previsão "
         "de despacho ou garantia de corte evitado."

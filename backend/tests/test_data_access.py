@@ -9,6 +9,20 @@ class FakeTable:
         self.items = items
         self.pages = pages
         self.scan_calls = []
+        self.query_calls = []
+
+    def query(self, **kwargs):
+        self.query_calls.append(kwargs)
+        values = kwargs["ExpressionAttributeValues"]
+        items = [item for item in self.items if item["asset_id"] == values[":asset_id"]]
+        if ":period_start" in values:
+            items = [
+                item
+                for item in items
+                if values[":period_start"] <= item["period"] <= values[":period_end"]
+            ]
+        items.sort(key=lambda item: item["period"], reverse=not kwargs["ScanIndexForward"])
+        return {"Items": items}
 
     def scan(self, **kwargs):
         self.scan_calls.append(kwargs)
@@ -118,6 +132,8 @@ def test_get_exposure_sums_overlapping_materialized_months() -> None:
     assert exposure["curtailed_mwh"] == Decimal("31.00")
     assert exposure["periods"] == ["2026-07", "2026-08"]
     assert exposure["source_sha256s"] == ["hash-jul", "hash-aug"]
+    assert len(table.query_calls) == 1
+    assert table.scan_calls == []
 
 
 def test_historical_windows_supports_dynamodb_decimal_interval_count() -> None:
@@ -165,4 +181,65 @@ def test_scan_paginates_until_evidence_beyond_first_megabyte_page() -> None:
 
     assert found is not None
     assert found["asset_id"] == "TARGET"
+    assert table.scan_calls == [{}, {"ExclusiveStartKey": {"page": 1}}]
+
+
+def test_get_asset_uses_partition_query_without_scan() -> None:
+    table = FakeTable(
+        [
+            {"asset_id": "A", "period": "2026-07"},
+            {"asset_id": "A", "period": "2026-08"},
+            {"asset_id": "B", "period": "2026-09"},
+        ]
+    )
+
+    found = ExposureRepository(table).get_asset("A")
+
+    assert found == {"asset_id": "A", "period": "2026-08"}
+    assert len(table.query_calls) == 1
+    assert table.scan_calls == []
+
+
+def test_point_context_reuses_asset_and_fully_paginates_unavoidable_scan() -> None:
+    asset = {
+        "asset_id": "A",
+        "period": "2026-08",
+        "point_id": "POINT",
+        "period_start": "2026-08-01T00:00:00",
+        "period_end": "2026-08-31T23:30:00",
+        "limited_interval_count": 0,
+        "source_sha256": "a" * 64,
+    }
+    peer = {
+        **asset,
+        "asset_id": "B",
+        "limited_interval_count": 1,
+        "source_sha256": "b" * 64,
+    }
+    table = FakeTable([], pages=[[asset], [peer]])
+
+    context = ExposureRepository(table).get_point_context("A", asset)
+
+    assert context is not None
+    assert context["entity_count"] == 2
+    assert table.query_calls == []
+    assert table.scan_calls == [{}, {"ExclusiveStartKey": {"page": 1}}]
+
+
+def test_source_hash_lookup_batches_one_fully_paginated_scan() -> None:
+    first = {
+        "asset_id": "A",
+        "period": "2026-07",
+        "source_sha256": "a" * 64,
+    }
+    second = {
+        "asset_id": "B",
+        "period": "2026-08",
+        "source_sha256": "b" * 64,
+    }
+    table = FakeTable([], pages=[[first], [second]])
+
+    found = ExposureRepository(table).get_provenances({"a" * 64, "b" * 64})
+
+    assert set(found) == {"a" * 64, "b" * 64}
     assert table.scan_calls == [{}, {"ExclusiveStartKey": {"page": 1}}]

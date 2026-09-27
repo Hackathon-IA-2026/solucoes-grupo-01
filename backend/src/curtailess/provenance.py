@@ -9,8 +9,10 @@ from botocore.exceptions import ClientError
 
 from .canonical import canonical_digest
 
-EVIDENCE_ID_MAX_LENGTH = 96
+EVIDENCE_ID_MAX_LENGTH = 69
 MAX_DYNAMO_ITEM_BYTES = 350 * 1024
+MAX_OPERATION_PROVENANCES = 224
+MAX_OPERATION_SOURCE_RECORDS = 32
 _ID_REGISTRY = {
     "evd1": ("derived", re.compile(r"^evd1\.[0-9a-f]{64}$")),
     "evp1": ("public_materialized", re.compile(r"^evp1\.[0-9a-f]{64}$")),
@@ -125,10 +127,14 @@ class IssuedProvenanceRepository:
             raise ValueError("operation must be a non-empty string of at most 64 characters")
         if not re.fullmatch(r"[0-9a-f]{64}", request_digest):
             raise ValueError("request_digest must be a SHA-256 hex digest")
-        if not 1 <= len(provenances) <= 512:
-            raise ValueError("operation requires between 1 and 512 provenance records")
-        if len(source_records) > 32:
-            raise ValueError("operation source record count exceeds 32")
+        if not 1 <= len(provenances) <= MAX_OPERATION_PROVENANCES:
+            raise ValueError(
+                f"operation requires between 1 and {MAX_OPERATION_PROVENANCES} provenance records"
+            )
+        if len(source_records) > MAX_OPERATION_SOURCE_RECORDS:
+            raise ValueError(
+                f"operation source record count exceeds {MAX_OPERATION_SOURCE_RECORDS}"
+            )
         for evidence_id, provenance in provenances.items():
             if evidence_id != provenance.get("evidence_id"):
                 raise ValueError("provenance map key must exactly match evidence_id")

@@ -19,8 +19,19 @@ from .provenance import EVIDENCE_ID_MAX_LENGTH, build_evidence_id
 from .provenance import parse_evidence_id as parse_evidence_id
 
 BoundedText = Annotated[str, StringConstraints(min_length=1, max_length=512)]
-EvidenceId = Annotated[str, StringConstraints(min_length=1, max_length=EVIDENCE_ID_MAX_LENGTH)]
+EvidenceId = Annotated[
+    str,
+    StringConstraints(
+        min_length=EVIDENCE_ID_MAX_LENGTH,
+        max_length=EVIDENCE_ID_MAX_LENGTH,
+        pattern=r"^(?:evd1|evp1)\.[0-9a-f]{64}$",
+    ),
+]
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+
+MAX_DECISION_INPUT = 1e100
+MAX_PLANNING_DAYS = 60
+MAX_PLANNING_RESULTS = 32
 
 
 class DataOrigin(StrEnum):
@@ -197,7 +208,7 @@ class Asset(BaseModel):
     asset_id: str
     name: str
     technology: Literal["wind", "solar"]
-    capacity_mw: float | None
+    capacity_mw: FiniteFloat | None
     capacity_provenance: EvidenceProvenance | None
     ons_group: str
     connection_point: str
@@ -242,7 +253,7 @@ class Period(BaseModel):
 
 
 class NumericEvidence(BaseModel):
-    value: float
+    value: FiniteFloat
     unit: str
     period: Period
     source: str
@@ -283,7 +294,7 @@ class DataQualityResponse(BaseModel):
     period: Period
     observed_interval_count: int
     expected_interval_count: int
-    coverage_percent: float
+    coverage_percent: FiniteFloat
     null_count: int | None
     duplicate_count: int | None
     source: str
@@ -349,7 +360,7 @@ class MaintenanceConstraints(BaseModel):
 
 
 class EnergyPrice(BaseModel):
-    value: FiniteFloat = Field(ge=0)
+    value: FiniteFloat = Field(ge=0, le=MAX_DECISION_INPUT)
     unit: Literal["BRL/MWh"]
     source: BoundedText
     value_status: Literal["informado"]
@@ -394,8 +405,8 @@ class MaintenanceRankRequest(BaseModel):
     asset_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
     start: date
     end: date
-    duration_hours: int = Field(gt=0, le=8760)
-    minimum_notice_hours: int = Field(ge=0, le=8760)
+    duration_hours: int = Field(gt=0, le=MAX_PLANNING_DAYS * 24)
+    minimum_notice_hours: int = Field(ge=0, le=MAX_PLANNING_DAYS * 24)
     baseline_window_start: datetime
     constraints: MaintenanceConstraints = Field(default_factory=MaintenanceConstraints)
     energy_price: EnergyPrice
@@ -403,6 +414,10 @@ class MaintenanceRankRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_input_provenance(self) -> Self:
+        if self.start > self.end:
+            raise ValueError("start deve ser anterior ou igual a end")
+        if (self.end - self.start).days + 1 > MAX_PLANNING_DAYS:
+            raise ValueError(f"maintenance planning horizon exceeds {MAX_PLANNING_DAYS} days")
         if self.input_provenance is None:
             values = {
                 "asset_id": self.asset_id,
@@ -446,7 +461,7 @@ class MaintenanceRankRequest(BaseModel):
 
 
 class MonetaryEvidence(BaseModel):
-    value: float
+    value: FiniteFloat
     unit: Literal["BRL"]
     source: str
     value_status: Literal["calculado", "simulado"]
@@ -472,7 +487,7 @@ class RankedMaintenanceWindow(BaseModel):
     end: datetime
     expected_curtailed_energy: NumericEvidence
     opportunity_cost: MonetaryEvidence
-    difference_from_baseline_mwh: float
+    difference_from_baseline_mwh: FiniteFloat
     difference_from_baseline: NumericEvidence
     field_provenance: dict[str, EvidenceProvenance]
 
@@ -525,13 +540,13 @@ class MaintenanceRankResponse(BaseModel):
 class BessScreenRequest(BaseModel):
     asset_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
     maintenance_result_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
-    power_mw: FiniteFloat = Field(gt=0)
-    energy_mwh: FiniteFloat = Field(gt=0)
-    capex_brl: FiniteFloat = Field(ge=0)
-    annualized_cost_brl: FiniteFloat = Field(ge=0)
+    power_mw: FiniteFloat = Field(gt=0, le=MAX_DECISION_INPUT)
+    energy_mwh: FiniteFloat = Field(gt=0, le=MAX_DECISION_INPUT)
+    capex_brl: FiniteFloat = Field(ge=0, le=MAX_DECISION_INPUT)
+    annualized_cost_brl: FiniteFloat = Field(ge=0, le=MAX_DECISION_INPUT)
     round_trip_efficiency: FiniteFloat = Field(gt=0, le=1)
     cycles_per_year: int = Field(gt=0, le=1_000_000)
-    energy_price_brl_mwh: FiniteFloat = Field(ge=0)
+    energy_price_brl_mwh: FiniteFloat = Field(ge=0, le=MAX_DECISION_INPUT)
     input_provenance: dict[str, EvidenceProvenance] | None = None
 
     @model_validator(mode="after")
@@ -575,10 +590,10 @@ class BessScreenResponse(BaseModel):
     maintenance_result_id: str
     screening_mode: Literal["historical_deterministic"]
     data_mode: Literal["ons_materialized"]
-    residual_exposure_mwh: float
-    technically_absorbable_mwh: float
-    annual_benefit_brl: float
-    annual_net_benefit_brl: float
+    residual_exposure_mwh: FiniteFloat
+    technically_absorbable_mwh: FiniteFloat
+    annual_benefit_brl: FiniteFloat
+    annual_net_benefit_brl: FiniteFloat
     preliminary_viable: bool
     input_provenance: dict[str, EvidenceProvenance]
     source_observation: EvidenceProvenance
@@ -618,7 +633,7 @@ class ModelRunResponse(BaseModel):
     period: str
     asset_count: int
     source_sha256s: list[str]
-    metrics: dict[str, float] | None
+    metrics: dict[str, FiniteFloat] | None
     limitations: list[str]
 
 

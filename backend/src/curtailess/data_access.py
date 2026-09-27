@@ -5,6 +5,8 @@ from typing import Any
 
 import boto3
 
+MAX_EXPOSURE_QUERY_ITEMS = 33
+
 
 class ExposureRepository:
     def __init__(self, table: Any):
@@ -21,6 +23,40 @@ class ExposureRepository:
                 return items
             request = {"ExclusiveStartKey": last_key}
 
+    def _query_asset(
+        self,
+        asset_id: str,
+        *,
+        period_start: str | None = None,
+        period_end: str | None = None,
+        descending: bool = False,
+        max_items: int | None = None,
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        values = {":asset_id": asset_id}
+        condition = "asset_id = :asset_id"
+        if period_start is not None and period_end is not None:
+            condition += " AND period BETWEEN :period_start AND :period_end"
+            values.update({":period_start": period_start, ":period_end": period_end})
+        request: dict[str, Any] = {
+            "KeyConditionExpression": condition,
+            "ExpressionAttributeValues": values,
+            "ScanIndexForward": not descending,
+        }
+        if max_items is not None:
+            request["Limit"] = max_items
+        while True:
+            response = self.table.query(**request)
+            items.extend(
+                item for item in response.get("Items", []) if "#" not in item.get("period", "")
+            )
+            if max_items is not None and len(items) >= max_items:
+                return items[:max_items]
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                return items
+            request["ExclusiveStartKey"] = last_key
+
     def list_assets(self) -> list[dict[str, Any]]:
         latest: dict[str, dict[str, Any]] = {}
         for item in self._scan_all():
@@ -33,7 +69,7 @@ class ExposureRepository:
         return [latest[asset_id] for asset_id in sorted(latest)]
 
     def get_asset(self, asset_id: str) -> dict[str, Any] | None:
-        items = [item for item in self.list_assets() if item["asset_id"] == asset_id]
+        items = self._query_asset(asset_id, descending=True, max_items=1)
         return items[0] if items else None
 
     def get_exposure(
@@ -41,10 +77,13 @@ class ExposureRepository:
     ) -> dict[str, Any] | None:
         items = [
             item
-            for item in self._scan_all()
-            if item["asset_id"] == asset_id
-            and "#" not in item["period"]
-            and date.fromisoformat(item["period_start"][:10]) <= end
+            for item in self._query_asset(
+                asset_id,
+                period_start=start.strftime("%Y-%m"),
+                period_end=f"{end.strftime('%Y-%m')}\uffff",
+                max_items=MAX_EXPOSURE_QUERY_ITEMS,
+            )
+            if date.fromisoformat(item["period_start"][:10]) <= end
             and date.fromisoformat(item["period_end"][:10]) >= start
         ]
         if not items:
@@ -62,8 +101,10 @@ class ExposureRepository:
             "items": items,
         }
 
-    def get_point_context(self, asset_id: str) -> dict[str, Any] | None:
-        asset = self.get_asset(asset_id)
+    def get_point_context(
+        self, asset_id: str, asset: dict[str, Any] | None = None
+    ) -> dict[str, Any] | None:
+        asset = asset or self.get_asset(asset_id)
         if asset is None:
             return None
         items = [
@@ -129,19 +170,26 @@ class ExposureRepository:
     def get_data_quality(self, asset_id: str) -> dict[str, Any] | None:
         return self.get_asset(asset_id)
 
+    def get_provenances(self, source_sha256s: set[str]) -> dict[str, dict[str, Any]]:
+        matches: dict[str, list[dict[str, Any]]] = {value: [] for value in source_sha256s}
+        for item in self._scan_all():
+            if "#" in item["period"]:
+                continue
+            item_hashes = {item.get("source_sha256"), item.get("capacity_source_sha256")}
+            for source_sha256 in source_sha256s.intersection(item_hashes):
+                matches[source_sha256].append(item)
+        results = {}
+        for source_sha256, items in matches.items():
+            if not items:
+                continue
+            items.sort(key=lambda item: (item["period"], item["asset_id"]), reverse=True)
+            result = dict(items[0])
+            result["asset_ids"] = sorted({item["asset_id"] for item in items})
+            results[source_sha256] = result
+        return results
+
     def get_provenance(self, source_sha256: str) -> dict[str, Any] | None:
-        items = [
-            item
-            for item in self._scan_all()
-            if "#" not in item["period"]
-            and source_sha256 in {item.get("source_sha256"), item.get("capacity_source_sha256")}
-        ]
-        if not items:
-            return None
-        items.sort(key=lambda item: (item["period"], item["asset_id"]), reverse=True)
-        result = dict(items[0])
-        result["asset_ids"] = sorted({item["asset_id"] for item in items})
-        return result
+        return self.get_provenances({source_sha256}).get(source_sha256)
 
     def get_materialization_run(self, period: str) -> dict[str, Any] | None:
         items = [item for item in self._scan_all() if item.get("period") == period]
@@ -168,8 +216,8 @@ class UnconfiguredExposureRepository:
         del asset_id, start, end, reason
         return None
 
-    def get_point_context(self, asset_id: str) -> None:
-        del asset_id
+    def get_point_context(self, asset_id: str, asset: dict[str, Any] | None = None) -> None:
+        del asset_id, asset
         return None
 
     def get_historical_windows(
@@ -186,6 +234,10 @@ class UnconfiguredExposureRepository:
     def get_data_quality(self, asset_id: str) -> None:
         del asset_id
         return None
+
+    def get_provenances(self, source_sha256s: set[str]) -> dict[str, dict[str, Any]]:
+        del source_sha256s
+        return {}
 
     def get_provenance(self, source_sha256: str) -> None:
         del source_sha256

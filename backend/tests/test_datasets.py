@@ -173,7 +173,7 @@ def test_dataset_spec_is_strict_and_forbids_unknown_metadata() -> None:
 
 def public_evidence() -> EvidenceProvenance:
     return EvidenceProvenance(
-        evidence_id="ons:restricao:2026-09:abc",
+        evidence_id=build_evidence_id("ons-restricao", "curtailed_mwh", "ons_source_v1", "2026-09"),
         field_name="curtailed_mwh",
         origin=DataOrigin.ONS_PUBLICO,
         source_key=("dataset/restricao_coff_eolica_tm/RESTRICAO_COFF_EOLICA_2026_09.parquet"),
@@ -201,7 +201,7 @@ def test_evidence_provenance_requires_origin_source_and_method_metadata() -> Non
         )
     with pytest.raises(ValidationError, match="source_uri ou source_key"):
         EvidenceProvenance(
-            evidence_id="no-source",
+            evidence_id=build_evidence_id("none", "test_field", "ons_source_v1", "none"),
             field_name="test_field",
             origin=DataOrigin.ONS_PUBLICO,
             method_version="ons_source_v1",
@@ -237,7 +237,11 @@ def test_parent_lineage_is_structured_unique_and_deterministic() -> None:
         EvidenceProvenance.model_validate(
             {
                 **public_evidence().model_dump(),
-                "parent_evidence_ids": ["parent-b", "parent-a", "parent-a"],
+                "parent_evidence_ids": [
+                    build_evidence_id("b", "parent", "test_v1", "b"),
+                    build_evidence_id("a", "parent", "test_v1", "a"),
+                    build_evidence_id("a", "parent", "test_v1", "a"),
+                ],
             }
         )
 
@@ -245,7 +249,7 @@ def test_parent_lineage_is_structured_unique_and_deterministic() -> None:
 def test_public_observation_and_simulation_require_distinct_ids_and_origins() -> None:
     public = public_evidence()
     simulated = EvidenceProvenance(
-        evidence_id="simulation:plant-state:v1:def",
+        evidence_id=build_evidence_id("simulation", "plant_state", "simulation_v1", "test"),
         field_name="plant_state",
         origin=DataOrigin.SIMULADO,
         source_uri="curtailess://plant-state/CJU_TESTE/2026-09-01T00:00:00Z",
