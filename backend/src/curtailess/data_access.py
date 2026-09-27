@@ -76,6 +76,16 @@ class ExposureRepository:
         items = self._query_asset(asset_id, descending=True, max_items=1)
         return items[0] if items else None
 
+    def get_asset_history(self, asset_id: str) -> list[dict[str, Any]]:
+        return sorted(
+            (
+                item
+                for item in self._query_asset(asset_id)
+                if item.get("fact_type") in {None, "constrained_off_monthly"}
+            ),
+            key=lambda item: item["period"],
+        )
+
     def get_exposure(
         self, asset_id: str, start: date, end: date, reason: str | None = None
     ) -> dict[str, Any] | None:
@@ -332,6 +342,10 @@ class UnconfiguredExposureRepository:
     def get_asset(self, asset_id: str) -> dict[str, Any] | None:
         del asset_id
         return None
+
+    def get_asset_history(self, asset_id: str) -> list[dict[str, Any]]:
+        del asset_id
+        return []
 
     def get_exposure(
         self, asset_id: str, start: date, end: date, reason: str | None = None

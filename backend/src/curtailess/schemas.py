@@ -618,6 +618,81 @@ class MaintenanceRankResponse(BaseModel):
     limitations: list[str]
 
 
+class MaintenanceWindowEvaluation(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    candidate_id: Annotated[str, StringConstraints(pattern=r"^mw1\.[0-9a-f]{64}$")]
+    rank: int | None = Field(default=None, ge=1)
+    start: datetime
+    end: datetime
+    eligible: bool
+    rejection_reasons: tuple[
+        Literal[
+            "MINIMUM_NOTICE_NOT_MET",
+            "NON_BUSINESS_DAY",
+            "UNAVAILABLE_PERIOD_OVERLAP",
+            "MISSING_HISTORICAL_DISTRIBUTION",
+            "PLANT_STATE_REVIEW_REQUIRED",
+        ],
+        ...,
+    ] = ()
+    energy_not_injected_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    expected_curtailment_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    residual_saleable_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    uncertainty_penalty_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    opportunity_cost_brl: FiniteFloat | None = Field(default=None, ge=0)
+    objective_score_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    data_quality_risk: Literal["low", "medium", "high"]
+    risk_reasons: tuple[BoundedText, ...] = ()
+    source_snapshot_ids: tuple[Sha256, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_window(self) -> Self:
+        if self.end <= self.start:
+            raise ValueError("maintenance window end must be after start")
+        metric_values = (
+            self.energy_not_injected_mwh,
+            self.expected_curtailment_mwh,
+            self.residual_saleable_mwh,
+            self.uncertainty_penalty_mwh,
+            self.opportunity_cost_brl,
+            self.objective_score_mwh,
+        )
+        if self.eligible and (
+            self.rejection_reasons or any(value is None for value in metric_values)
+        ):
+            raise ValueError(
+                "eligible maintenance window requires metrics and no rejection reasons"
+            )
+        if not self.eligible and (not self.rejection_reasons or self.rank is not None):
+            raise ValueError("rejected maintenance window requires reasons and no rank")
+        if tuple(sorted(set(self.source_snapshot_ids))) != self.source_snapshot_ids:
+            raise ValueError("source_snapshot_ids must be sorted and unique")
+        return self
+
+
+class MaintenanceEngineResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    asset_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
+    status: Literal["RANKED", "REVIEW_REQUIRED", "NO_ELIGIBLE_WINDOW"]
+    method_version: Literal["residual_saleable_energy_v1"] = "residual_saleable_energy_v1"
+    eligible_windows: tuple[MaintenanceWindowEvaluation, ...]
+    rejected_windows: tuple[MaintenanceWindowEvaluation, ...]
+    limitations: tuple[BoundedText, ...]
+
+    @model_validator(mode="after")
+    def validate_result(self) -> Self:
+        if self.status == "RANKED" and not self.eligible_windows:
+            raise ValueError("RANKED result requires at least one eligible window")
+        if self.status != "RANKED" and self.eligible_windows:
+            raise ValueError("non-ranked result cannot expose eligible windows")
+        ranks = [window.rank for window in self.eligible_windows]
+        if ranks != list(range(1, len(ranks) + 1)):
+            raise ValueError("eligible windows must have contiguous ranks")
+        return self
+
+
 class PlantStateFact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
