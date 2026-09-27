@@ -159,20 +159,12 @@ export function SimpleHistoricalBarSlot({ title, description, data, showHeader =
   </ChartSlot>;
 }
 
-/**
- * One plotted day of the 60-day forecast. `bandBase`/`bandSpan` split the
- * published uncertainty interval so it can be drawn as one shaded band around
- * the expected line without changing any value.
- */
+/** One plotted day of potential generation and the operational limit. */
 export type ForecastSeriesPoint = {
   label: string;
   date: string;
-  expected: number;
-  lower: number;
-  upper: number;
-  bandBase: number;
-  bandSpan: number;
-  riskPercent: number;
+  potential: number;
+  operationalLimit: number;
 };
 
 const forecastDateFormatter = new Intl.DateTimeFormat("pt-BR", {
@@ -182,97 +174,65 @@ const forecastDateFormatter = new Intl.DateTimeFormat("pt-BR", {
   timeZone: "UTC",
 });
 
-/** Full date of a forecast day, used by the tooltip and the equivalent table. */
 function formatForecastDate(date: string) {
   const parsed = new Date(`${date}T00:00:00Z`);
   return Number.isNaN(parsed.getTime()) ? date : forecastDateFormatter.format(parsed);
 }
 
-/**
- * Maps the published 60 points to the plotted series. Every value is a direct
- * source value: only the uncertainty interval is split into a base and a span so
- * recharts can stack it as a band.
- */
 function buildForecastSeries(points: ExposureForecastPoint[]): ForecastSeriesPoint[] {
   return points.map((point) => ({
     label: point.displayLabel,
     date: point.forecastDate,
-    expected: point.expectedCurtailedMwh,
-    lower: point.lowerMwh,
-    upper: point.upperMwh,
-    bandBase: point.lowerMwh,
-    bandSpan: Math.max(0, point.upperMwh - point.lowerMwh),
-    riskPercent: point.curtailmentProbability * 100,
+    potential: point.potentialGenerationMwh,
+    operationalLimit: point.acceptedGenerationEnvelopeMwh,
   }));
 }
 
-/** Tooltip of one day: full date, expected MWh and the daily curtailment risk. */
 export function ForecastPointTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: ForecastSeriesPoint }> }) {
   const point = payload?.[0]?.payload;
   if (!active || !point) return null;
   return (
     <div data-forecast-tooltip className="rounded-lg border border-line bg-white px-3 py-2 text-xs leading-5 shadow-sm">
       <p className="font-semibold text-ink">{formatForecastDate(point.date)}</p>
-      <p className="text-ink-soft">Energia restringida esperada: <span className="num font-semibold text-ink">{numberFormatter.format(point.expected)} MWh</span></p>
-      <p className="text-ink-soft">Risco de curtailment no dia: <span className="num font-semibold text-ink">{numberFormatter.format(point.riskPercent)}%</span></p>
+      <p className="text-ink-soft">Geração potencial: <span className="num font-semibold text-ink">{numberFormatter.format(point.potential)} MWh</span></p>
+      <p className="text-ink-soft">Limite operacional: <span className="num font-semibold text-ink">{numberFormatter.format(point.operationalLimit)} MWh</span></p>
     </div>
   );
 }
 
-/** Visible marker of a single forecast day. */
-function ForecastMarker({ cx, cy, payload }: { cx?: number; cy?: number; payload?: ForecastSeriesPoint }) {
-  const plotted = typeof cx === "number" && typeof cy === "number";
-  return <circle cx={plotted ? cx : 0} cy={plotted ? cy : 0} r={plotted ? 2.5 : 0} fill={colors.primary} data-forecast-marker data-forecast-date={payload?.date ?? ""} />;
-}
-
-/**
- * Daily line of expected restricted energy with its uncertainty band. All 60
- * days keep a marker and a DD/MM label; on narrow screens the plot keeps its
- * width inside a controlled horizontal scroll so no label is dropped and the
- * page never overflows.
- */
 function forecastGraph(points: ExposureForecastPoint[]) {
   const data = buildForecastSeries(points);
   return (
-    <div data-chart-kind="line" className="h-full">
-      <div data-chart-scroll className="h-full overflow-x-auto overscroll-x-contain">
-        <div data-forecast-point-count={data.length} className="h-full w-[960px] min-w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={data} margin={{ top: 16, right: 12, bottom: 0, left: -18 }}>
-              <CartesianGrid stroke="#d7ddd8" vertical={false} />
-              <XAxis dataKey="label" axisLine={false} tickLine={false} fontSize={10} interval={0} angle={-90} textAnchor="end" height={56} />
-              <YAxis axisLine={false} tickLine={false} fontSize={11} tickCount={4} width={46} />
-              <Tooltip content={<ForecastPointTooltip />} />
-              <Area dataKey="bandBase" stackId="uncertainty" stroke="none" fill="transparent" isAnimationActive={false} />
-              <Area dataKey="bandSpan" stackId="uncertainty" stroke="none" fill="#d8eeea" fillOpacity={0.9} isAnimationActive={false} />
-              <Line dataKey="expected" name="MWh/dia" stroke={colors.primary} strokeWidth={2.5} isAnimationActive={false} dot={<ForecastMarker />} activeDot={{ r: 5 }} />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
+    <div data-chart-kind="line" data-chart-lines="2" className="h-full min-w-0">
+      <div data-forecast-point-count={data.length} className="h-full min-w-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 16, right: 12, bottom: 0, left: -18 }}>
+            <CartesianGrid stroke="#d7ddd8" vertical={false} />
+            <XAxis dataKey="label" axisLine={false} tickLine={false} fontSize={10} interval={6} minTickGap={20} />
+            <YAxis axisLine={false} tickLine={false} fontSize={11} tickCount={4} width={46} />
+            <Tooltip content={<ForecastPointTooltip />} />
+            <Legend formatter={(label) => <span className="text-ink">{label}</span>} />
+            <Line dataKey="potential" name="Geração potencial diária" stroke={colors.primary} strokeWidth={2.5} isAnimationActive={false} dot={false} activeDot={{ r: 4 }} />
+            <Line dataKey="operationalLimit" name="Limite operacional diário" stroke={colors.secondary} strokeWidth={2.5} strokeDasharray="5 4" isAnimationActive={false} dot={false} activeDot={{ r: 4 }} />
+          </ComposedChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );
 }
 
-/**
- * Daily line chart of the 60-day forecast. Replaces the former bar chart: the
- * uncertainty band is shaded around the line and every day keeps its marker and
- * DD/MM label.
- */
 export function Forecast60dSlot({ points, description, evidence }: { points: ExposureForecastPoint[]; description: string; evidence: EvidenceMetadata }) {
-  const title = "Energia restringida estimada para 60 dias";
+  const title = "Geração potencial e limite operacional para 60 dias";
   const rows = points.map((point) => [
     formatForecastDate(point.forecastDate),
-    numberFormatter.format(point.expectedCurtailedMwh),
-    numberFormatter.format(point.lowerMwh),
-    numberFormatter.format(point.upperMwh),
-    `${numberFormatter.format(point.curtailmentProbability * 100)}%`,
+    numberFormatter.format(point.potentialGenerationMwh),
+    numberFormatter.format(point.acceptedGenerationEnvelopeMwh),
   ]);
   return <div data-exposure-forecast="60d">
     <ChartSlot title={title} description={description} evidence={evidence} showHeader={false}>
       <ChartBody
         evidence={evidence}
-        table={<DataTable caption="Energia restringida estimada por dia e risco de curtailment" headers={["Data", "MWh esperados", "Limite inferior (MWh)", "Limite superior (MWh)", "Risco diário"]} rows={rows} fitContainer />}
+        table={<DataTable caption="Geração potencial e limite operacional por dia" headers={["Data", "Geração potencial (MWh)", "Limite operacional (MWh)"]} rows={rows} fitContainer />}
         showProvenance={false}
         switchView
         chartClassName="h-80"

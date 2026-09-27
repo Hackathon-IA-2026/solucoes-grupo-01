@@ -4,7 +4,6 @@ import { HighlightList, type HighlightItem } from "~/components/evidence/highlig
 import { EnergyNetworkIllustration } from "~/components/illustrations/energy-network-illustration";
 import { AnalysisSection } from "~/components/layout/analysis-section";
 import { SectionNav, type SectionNavItem } from "~/components/layout/section-nav";
-import { AssetTopologyBody, type PlantTopologyContext, type PlantTopologyPlant } from "~/components/topology/asset-topology";
 import { Panel } from "~/components/ui/panel";
 import type {
   Asset,
@@ -15,11 +14,11 @@ import type {
   ExposureMetric,
   ExposureNarrativeSectionId,
 } from "~/domain/types";
-import { formatEvidence, numberFormatter } from "~/lib/format";
+import { numberFormatter } from "~/lib/format";
 import { useExposure } from "~/state/use-exposure";
 
 const sections: SectionNavItem[] = [
-  { id: "secao-ativo", title: "Usina, conjunto e ponto de conexão" },
+  { id: "secao-ativo", title: "Usina selecionada" },
   { id: "secao-resumo", title: "Impacto observado na usina" },
   { id: "secao-previsao", title: "Previsão de curtailment para 60 dias" },
   { id: "secao-razao-origem", title: "Condições do conjunto e do ponto" },
@@ -82,19 +81,33 @@ function displayMetric(value: ExposureMetric) {
   return metric(value.value, value.unit);
 }
 
-function technologyLabel(technology: "wind" | "solar") {
-  return technology === "wind" ? "Eólica" : "Solar";
+const monthNames = [
+  "janeiro",
+  "fevereiro",
+  "março",
+  "abril",
+  "maio",
+  "junho",
+  "julho",
+  "agosto",
+  "setembro",
+  "outubro",
+  "novembro",
+  "dezembro",
+];
+
+function parseIsoDay(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return { year, month, day };
 }
 
-/** Renders the exact ISO parts published by the API, without reinterpreting them. */
-function formatIsoMinute(value: string) {
-  const [date, time = "00:00"] = value.split("T");
-  const [year, month, day] = date.split("-");
-  return `${day}/${month}/${year} ${time.slice(0, 5)}`;
-}
-
-function formatWindowRange(startsAt: string, endsAt: string) {
-  return `${formatIsoMinute(startsAt)} a ${formatIsoMinute(endsAt)}`;
+function formatWindowRange(start: string, end: string) {
+  const first = parseIsoDay(start);
+  const last = parseIsoDay(end);
+  if (first.year === last.year && first.month === last.month) {
+    return `${first.day} a ${last.day} de ${monthNames[first.month - 1]}`;
+  }
+  return `${first.day} de ${monthNames[first.month - 1]} a ${last.day} de ${monthNames[last.month - 1]}`;
 }
 
 function meanBandWidth(points: { lowerMwh: number; upperMwh: number }[], from: number, to: number) {
@@ -134,31 +147,16 @@ function ExposureLoading() {
   );
 }
 
-/**
- * The three non-overlapping 72-hour critical windows of the selected plant.
- * Each window shows its own period, expected MWh, restriction risk and the
- * impact of the already scheduled simulated maintenance.
- */
+/** Three concise, non-overlapping 72-hour windows of the selected plant. */
 function CriticalWindows({ windows }: { windows: ExposureCriticalWindow[] }) {
   return (
     <ol data-critical-windows={windows.length} className="divide-y divide-line">
       {windows.map((window) => (
-        <li key={window.rank} data-critical-window={window.rank} data-window-hours={window.windowHours} className="py-4 first:pt-0 last:pb-0">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-sm font-semibold text-ink">{`${window.rank}º período crítico`}</p>
-            <p className="num text-2xl font-semibold leading-none text-ink">
-              {numberFormatter.format(window.expectedCurtailedMwh)} <span className="font-sans text-xs font-semibold tracking-normal text-ink-soft">MWh</span>
-            </p>
-          </div>
-          <p className="mt-1 text-sm leading-6 text-ink-soft">
-            {formatWindowRange(window.startsAt, window.endsAt)} · {window.windowHours} horas · {window.intervalCount} intervalos de 30 min
+        <li key={window.rank} data-critical-window={window.rank} data-window-hours={window.windowHours} className="flex flex-wrap items-baseline justify-between gap-3 py-4 first:pt-0 last:pb-0">
+          <p className="text-sm font-semibold text-ink">{formatWindowRange(window.start, window.end)}</p>
+          <p className="text-sm text-ink-soft">
+            Perda: <span className="num font-semibold text-ink">{numberFormatter.format(window.expectedCurtailedMwh)} MWh</span>
           </p>
-          <dl className="mt-3 grid gap-x-4 gap-y-1 text-xs leading-5 text-ink-soft sm:grid-cols-2">
-            <div><dt className="inline">Risco de restrição: </dt><dd className="num inline text-ink">{numberFormatter.format(window.curtailmentProbability * 100)}%</dd></div>
-            <div><dt className="inline">Alívio das manutenções agendadas: </dt><dd className="num inline text-ink">{numberFormatter.format(window.scheduledMaintenanceReliefMwh)} MWh</dd></div>
-            <div><dt className="inline">Curtailment evitado: </dt><dd className="num inline text-ink">{numberFormatter.format(window.avoidedCurtailmentMwh)} MWh</dd></div>
-            <div><dt className="inline">Alívio adicional da janela candidata: </dt><dd className="num inline text-ink">{window.candidateMaintenanceReliefMwh === null ? "Indisponível" : `${numberFormatter.format(window.candidateMaintenanceReliefMwh)} MWh`}</dd></div>
-          </dl>
         </li>
       ))}
     </ol>
@@ -182,43 +180,6 @@ export function ExposureScreen() {
 
   const { asset, observedImpact, forecast60d, associatedConditions, recurrence, quality, pointContext, simulatedTelemetry, narrative } = view;
   const technology: Asset["technology"] = asset.technology === "wind" ? "Eólica" : "Solar";
-  const topologyAsset: Asset = {
-    id: asset.assetId,
-    name: asset.name,
-    technology,
-    location: asset.state,
-    connectionPoint: asset.connectionPoint,
-    anonymousEntities: asset.connectedAssetCount,
-    telemetry: asset.operationalDataStatus === "simulated" ? "simulada" : "fornecida",
-  };
-  const selectedPlant: PlantTopologyPlant = { id: asset.assetId, name: asset.name, technology: asset.technology, groupId: asset.onsGroupId };
-  // Every plant of the point keeps its own authoritative ONS group; the group of the
-  // selected plant is never stamped onto its peers.
-  const pointEntities = pointContext?.entities ?? [];
-  const pointPlants: PlantTopologyPlant[] = [
-    ...pointEntities.map((entity) => ({
-      id: entity.plantId,
-      name: entity.name,
-      technology: entity.technology,
-      groupId: entity.onsGroupId,
-    })),
-    selectedPlant,
-  ];
-  // The reconciliation scope is derived from the point entities whose own ONS group matches
-  // the selected plant's group. The five-item selectable catalog holds one plant per group,
-  // so it cannot describe the same-group peers.
-  const groupPlants: PlantTopologyPlant[] = [
-    ...pointEntities
-      .filter((entity) => entity.plantId !== asset.assetId && entity.onsGroupId === asset.onsGroupId)
-      .map((entity) => ({ id: entity.plantId, name: entity.name, technology: entity.technology, groupId: entity.onsGroupId })),
-    selectedPlant,
-  ];
-  const topologyContext: PlantTopologyContext = {
-    onsGroupId: asset.onsGroupId,
-    onsGroupName: asset.onsGroupName,
-    pointPlants,
-    groupPlants,
-  };
   const analysis = (id: ExposureNarrativeSectionId) => narrative[id].map((paragraph) => <p key={paragraph}>{paragraph}</p>);
   const illustration = (sectionId: string) => (
     <EnergyNetworkIllustration technology={technology} sectionId={sectionId} connectedCount={asset.connectedAssetCount} />
@@ -242,19 +203,6 @@ export function ExposureScreen() {
   const nearHorizonBand = meanBandWidth(forecastPoints, 0, USEFUL_WEATHER_HORIZON_DAYS);
   const farHorizonBand = meanBandWidth(forecastPoints, USEFUL_WEATHER_HORIZON_DAYS, forecastPoints.length);
 
-  const identificationItems: HighlightItem[] = [
-    { label: "Usina selecionada", value: asset.name },
-    { label: "Identificador ONS da usina", value: asset.assetId },
-    { label: "Tecnologia de geração", value: technology },
-    { label: "Estado", value: asset.state },
-    { label: "Capacidade cadastrada", ...metric(asset.capacityMw, "MW") },
-    { label: "Capacidade operacional estimada", ...(simulatedTelemetry ? metric(simulatedTelemetry.operationalCapacityMw, "MW") : { value: "Indisponível" }) },
-    { label: "Conjunto ONS", value: asset.onsGroupName ?? asset.onsGroupId ?? "Indisponível" },
-    { label: "Ponto de conexão usado nesta análise", value: asset.connectionPoint },
-    { label: "CEG da usina", value: asset.ceg ?? "Indisponível" },
-    { label: "Última atualização do panorama", value: formatUpdate(view.lastDataUpdate) },
-  ];
-
   const telemetryItems: HighlightItem[] = simulatedTelemetry
     ? [
         { label: "Geração atual estimada", ...metric(simulatedTelemetry.generationMw, "MW"), emphasis: "primary" },
@@ -277,7 +225,7 @@ export function ExposureScreen() {
   ];
 
   const forecastEvidence = evidence("MWh/dia", forecast60d.start ?? periodStart, forecast60d.end ?? periodEnd, "simulado");
-  const forecastDescription = "Um ponto por dia, com marcador e data, e a faixa de incerteza publicada ao redor da linha. O risco diário é a probabilidade de a usina sofrer alguma restrição naquele dia.";
+  const forecastDescription = "Geração potencial e limite operacional por dia, com uma marca de data por semana.";
 
   const maintenanceComparisonItems: HighlightItem[] = pointContext
     ? [
@@ -288,13 +236,6 @@ export function ExposureScreen() {
         { label: "Excesso estimado no ponto", ...metric(pointContext.estimatedExcessMw, "MW") },
         { label: "Janelas de manutenção agendadas no ponto", ...metric(pointContext.scheduledMaintenanceWindowCount, "janelas") },
         { label: "Energia restringida evitada no horizonte", ...metric(forecastTotals.avoided, "MWh") },
-      ]
-    : [];
-
-  const weatherItems: HighlightItem[] = simulatedTelemetry
-    ? [
-        { label: `Condição meteorológica estimada (${simulatedTelemetry.weatherUnit})`, ...metric(simulatedTelemetry.weatherValue, simulatedTelemetry.weatherUnit), emphasis: "primary" },
-        { label: "Participação de dias observados com restrição", ...displayMetric(curtailedDayShare), emphasis: "supporting" },
       ]
     : [];
 
@@ -316,16 +257,32 @@ export function ExposureScreen() {
       <h1 className="sr-only">Exposição</h1>
       <SectionNav items={sections} />
       <div>
-        <AnalysisSection id="secao-ativo" title="Usina, conjunto e ponto de conexão" illustration={illustration("secao-ativo")} analysis={analysis("secao-ativo")}>
-          <Panel data-section-card aria-label="Usina selecionada, seus vínculos e sua telemetria">
-            <CardSlot showHeader={false} title="Posição da usina na rede"><AssetTopologyBody asset={topologyAsset} context={topologyContext} /></CardSlot>
-            <CardSlot title="Identificação e vínculos da usina" description="A usina é a entidade principal desta análise. O conjunto e o ponto aparecem como contexto.">
-              <HighlightList label="Identificação e vínculos da usina" items={identificationItems} />
-            </CardSlot>
-            <CardSlot title="Telemetria operacional disponível" description="Estado operacional estimado da usina selecionada.">
+        <AnalysisSection
+          id="secao-ativo"
+          title="Usina selecionada"
+          illustration={(
+            <EnergyNetworkIllustration
+              technology={technology}
+              sectionId="secao-ativo"
+              connectedCount={asset.connectedAssetCount}
+              details={{
+                name: asset.name,
+                groupName: asset.onsGroupName ?? "Conjunto não informado",
+                state: asset.state,
+                registeredCapacity: asset.capacityMw === null ? "Capacidade indisponível" : `${numberFormatter.format(asset.capacityMw)} MW cadastrados`,
+                operationalCapacity: simulatedTelemetry === null ? "Estimativa indisponível" : `${numberFormatter.format(simulatedTelemetry.operationalCapacityMw)} MW estimados`,
+                connectionPoint: asset.connectionPoint,
+                lastDataUpdate: formatUpdate(view.lastDataUpdate),
+              }}
+            />
+          )}
+          analysis={<p>A análise considera somente a usina selecionada.</p>}
+        >
+          <Panel data-section-card aria-label="Estimativas operacionais da usina selecionada">
+            <CardSlot title="Estimativas operacionais" description="Valores estimados para a usina selecionada.">
               {telemetryItems.length ? (
-                <HighlightList variant="metrics" label="Telemetria operacional da usina" items={telemetryItems} />
-              ) : unavailable("A telemetria operacional desta usina não está disponível neste panorama.")}
+                <HighlightList variant="metrics" label="Estimativas operacionais da usina" items={telemetryItems} />
+              ) : unavailable("As estimativas operacionais desta usina não estão disponíveis neste panorama.")}
             </CardSlot>
           </Panel>
         </AnalysisSection>
@@ -340,16 +297,6 @@ export function ExposureScreen() {
           <Panel data-section-card aria-label="Previsão de curtailment da usina para 60 dias">
             {forecast60d.status === "unavailable" || forecastPoints.length === 0 ? unavailable("O horizonte de 60 dias ainda não foi materializado para esta usina.") : <Forecast60dSlot points={forecastPoints} description={forecastDescription} evidence={forecastEvidence} />}
             <div className="mt-5 border-t border-line pt-5">
-              <HighlightList variant="metrics" label="Faixa estimada acumulada no horizonte" items={[
-                { label: "Estimativa central", ...metric(forecast60d.totalExpectedMwh, "MWh"), emphasis: "primary" },
-                { label: "Limite inferior da faixa", ...metric(forecast60d.totalLowerMwh, "MWh"), emphasis: "supporting" },
-                { label: "Limite superior da faixa", ...metric(forecast60d.totalUpperMwh, "MWh"), emphasis: "supporting" },
-                { label: "Geração potencial prevista da usina", ...metric(forecastTotals.potential, "MWh"), emphasis: "supporting" },
-                { label: "Limite operacional estimado da usina", ...metric(forecastTotals.envelope, "MWh"), emphasis: "supporting" },
-                { label: "Alívio das manutenções agendadas no horizonte", ...metric(forecastTotals.maintenanceRelief, "MWh"), emphasis: "supporting" },
-              ]} />
-            </div>
-            <div className="mt-5 border-t border-line pt-5">
               <h3 className="mb-3 text-sm font-semibold text-ink">Janelas críticas de 72 horas</h3>
               {forecast60d.criticalWindows72h.length ? <CriticalWindows windows={forecast60d.criticalWindows72h} /> : unavailable("O horizonte desta usina ainda não sustenta janelas críticas de 72 horas.")}
             </div>
@@ -357,34 +304,10 @@ export function ExposureScreen() {
         </AnalysisSection>
 
         <AnalysisSection id="secao-razao-origem" title="Condições do conjunto e do ponto de conexão" illustration={illustration("secao-razao-origem")} analysis={analysis("secao-razao-origem")}>
-          <Panel data-section-card aria-label="Condições do conjunto e telemetria das usinas do ponto">
-            <p className="mb-4 rounded-lg bg-canvas p-3 text-xs leading-5 text-ink-soft">As razões publicadas pertencem ao conjunto gerador e a energia das demais usinas do ponto é contexto sistêmico: ela não é atribuída à usina selecionada.</p>
+          <Panel data-section-card aria-label="Condições e estimativas operacionais">
             {reasons.points.length ? <SimpleHistoricalBarSlot compactHeader showTable={false} slotClassName="pb-6 last:pb-0" variant="horizontal" title="Condição associada ao corte no conjunto" description="Distribuição histórica por condição informada." data={reasons} /> : unavailable("O resumo diário usado no teste local não contém a classificação intervalar por motivo.")}
             {origins.points.length ? <SimpleHistoricalBarSlot compactHeader showTable={false} slotClassName="pb-6 last:pb-0" variant="horizontal" title="Abrangência registrada no conjunto" description="Origem registrada para os intervalos limitados." data={origins} /> : unavailable("O resumo diário usado no teste local não contém a classificação intervalar por origem.")}
             {modalities.points.length ? <SimpleHistoricalBarSlot compactHeader showTable={false} slotClassName="pb-6 last:pb-0" variant="horizontal" title="Forma de restrição registrada" description="Classificação apresentada separadamente das demais condições." data={modalities} /> : null}
-            <div data-point-entities={pointContext?.entities.length ?? 0} className="mt-6 border-t border-line pt-5">
-              <h3 className="text-sm font-semibold text-ink">Telemetria das usinas do ponto de conexão</h3>
-              <p className="mt-1 text-sm leading-6 text-ink-soft">Todas as usinas ligadas ao ponto entram na pressão sistêmica estimada, com seus próprios valores.</p>
-              {pointContext?.entities.length ? (
-                <ul className="mt-4 divide-y divide-line text-sm">
-                  {pointContext.entities.map((entity) => (
-                    <li key={entity.plantId} data-point-entity={entity.plantId} className="py-3 first:pt-0 last:pb-0">
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <span className="font-medium text-ink">{entity.name}</span>
-                        <span className="text-xs uppercase tracking-wide text-ink-soft">{technologyLabel(entity.technology)} · {numberFormatter.format(entity.capacityMw)} MW</span>
-                      </div>
-                      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs leading-5 text-ink-soft sm:grid-cols-3">
-                        <div><dt className="inline">Geração disponível: </dt><dd className="num inline text-ink">{numberFormatter.format(entity.meanAvailableGenerationMw)} MW</dd></div>
-                        <div><dt className="inline">Restrição média: </dt><dd className="num inline text-ink">{numberFormatter.format(entity.meanCurtailedGenerationMw)} MW</dd></div>
-                        <div><dt className="inline">Dias com restrição: </dt><dd className="num inline text-ink">{formatEvidence(entity.restrictedDayShare * 100, "%")}</dd></div>
-                        <div><dt className="inline">Manutenção agendada: </dt><dd className="num inline text-ink">{entity.scheduledMaintenanceIntervals} intervalos</dd></div>
-                        <div><dt className="inline">Fator de manutenção aplicado: </dt><dd className="num inline text-ink">{numberFormatter.format(entity.scheduledMaintenanceDerate)}</dd></div>
-                      </dl>
-                    </li>
-                  ))}
-                </ul>
-              ) : unavailable("A telemetria das usinas do ponto não está disponível neste panorama.")}
-            </div>
             <div data-maintenance-comparison className="mt-6 border-t border-line pt-5">
               <h3 className="mb-3 text-sm font-semibold text-ink">Comparação com e sem as manutenções já agendadas</h3>
               {maintenanceComparisonItems.length ? (
@@ -395,16 +318,9 @@ export function ExposureScreen() {
         </AnalysisSection>
 
         <AnalysisSection id="secao-recorrencia" title="Em quais dias e horários os cortes mais se repetem" illustration={illustration("secao-recorrencia")} analysis={analysis("secao-recorrencia")}>
-          <Panel data-section-card aria-label="Recorrência da usina e relação com a meteorologia">
+          <Panel data-section-card aria-label="Recorrência da usina">
             {weekdays.points.length ? <SimpleHistoricalBarSlot compactHeader chartClassName="h-64" emphasizeCount={2} slotClassName="pb-6 last:pb-0" title="Distribuição por dia da semana" description="Participação da estimativa histórica de energia restringida em cada dia da semana." data={weekdays} /> : unavailable("A série disponível não sustenta a distribuição por dia da semana.")}
             {hours.points.length ? <SimpleHistoricalBarSlot compactHeader chartClassName="h-64" slotClassName="pb-6 last:pb-0" variant="line" title="Recorrência ao longo do dia" description="Frequência histórica das restrições por horário." data={hours} /> : unavailable("A série diária disponível não permite calcular uma distribuição por horário.")}
-            <div data-weather-relationship className="mt-6 border-t border-line pt-5">
-              <h3 className="mb-3 text-sm font-semibold text-ink">Relação com a condição meteorológica</h3>
-              {weatherItems.length ? (
-                <HighlightList variant="metrics" label="Condição meteorológica associada à usina" items={weatherItems} />
-              ) : unavailable("A condição meteorológica desta usina não está disponível neste panorama.")}
-              <p className="mt-3 text-xs leading-5 text-ink-soft">A série histórica disponível é diária: ela sustenta a recorrência por dia da semana, mas não permite afirmar uma relação horária entre vento ou irradiância e os cortes.</p>
-            </div>
           </Panel>
         </AnalysisSection>
 

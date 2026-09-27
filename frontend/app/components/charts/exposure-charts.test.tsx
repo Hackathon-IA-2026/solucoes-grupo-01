@@ -63,24 +63,20 @@ const evidence: EvidenceMetadata = {
 const seriesPoint = {
   label: "12/10",
   date: "2026-10-12",
-  expected: 130.5,
-  lower: 90,
-  upper: 180,
-  bandBase: 90,
-  bandSpan: 90,
-  riskPercent: 82,
+  potential: 130.5,
+  operationalLimit: 90,
 };
 
 describe("gráfico em linha da previsão de 60 dias", () => {
-  it("mostra data completa, MWh esperados e risco diário no tooltip", () => {
+  it("mostra data, geração potencial e limite operacional no tooltip", () => {
     const { container } = render(<ForecastPointTooltip active payload={[{ payload: seriesPoint }]} />);
     const tooltip = within(container);
 
     expect(tooltip.getByText("12/10/2026")).toBeInTheDocument();
     expect(tooltip.getByText("130,5 MWh")).toBeInTheDocument();
-    expect(tooltip.getByText("82%")).toBeInTheDocument();
-    expect(tooltip.getByText(/Energia restringida esperada/)).toBeInTheDocument();
-    expect(tooltip.getByText(/Risco de curtailment no dia/)).toBeInTheDocument();
+    expect(tooltip.getByText("90 MWh")).toBeInTheDocument();
+    expect(tooltip.getByText(/Geração potencial/)).toBeInTheDocument();
+    expect(tooltip.getByText(/Limite operacional/)).toBeInTheDocument();
   });
 
   it("não renderiza tooltip sem dia ativo", () => {
@@ -89,50 +85,43 @@ describe("gráfico em linha da previsão de 60 dias", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("desenha uma linha, não barras, com marcador e label em todos os 60 dias", () => {
+  it("desenha duas linhas e mostra somente uma data por semana", () => {
     const { container } = render(<Forecast60dSlot points={points} description="Descrição" evidence={evidence} />);
 
     expect(container.querySelector('[data-chart-kind="line"]')).not.toBeNull();
+    expect(container.querySelector('[data-chart-lines="2"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-chart-kind="columns"]')).toHaveLength(0);
     expect(container.querySelectorAll(".recharts-bar")).toHaveLength(0);
     expect(container.querySelector('[data-forecast-point-count="60"]')).not.toBeNull();
 
-    const markers = Array.from(container.querySelectorAll("[data-forecast-marker]"));
-    expect(markers).toHaveLength(60);
-    expect(markers.map((marker) => marker.getAttribute("data-forecast-date"))).toEqual(points.map((point) => point.forecastDate));
-    expect(markers.every((marker) => Number(marker.getAttribute("r")) > 0)).toBe(true);
-
     const labels = Array.from(container.querySelectorAll("text"))
       .map((node) => node.textContent ?? "")
       .filter((text) => /^\d{2}\/\d{2}$/.test(text));
-    expect(labels).toHaveLength(60);
-    expect(labels).toEqual(points.map((point) => point.displayLabel));
+    expect(labels.length).toBeGreaterThanOrEqual(8);
+    expect(labels.length).toBeLessThanOrEqual(9);
+    expect(labels[0]).toBe(points[0].displayLabel);
   });
 
-  it("mantém a faixa de incerteza e o gráfico dentro de uma rolagem horizontal controlada", () => {
+  it("remove a faixa de incerteza e a rolagem horizontal", () => {
     const { container } = render(<Forecast60dSlot points={points} description="Descrição" evidence={evidence} />);
 
-    const scroll = container.querySelector("[data-chart-scroll]");
-    expect(scroll).not.toBeNull();
-    expect(scroll?.className).toContain("overflow-x-auto");
-
-    // The uncertainty band is the two stacked areas around the expected line.
-    expect(container.querySelectorAll(".recharts-area")).toHaveLength(2);
-    expect(container.querySelectorAll(".recharts-line")).toHaveLength(1);
-    expect(container.querySelector(".recharts-line-curve")).not.toBeNull();
+    expect(container.querySelector("[data-chart-scroll]")).toBeNull();
+    expect(container.querySelectorAll(".recharts-area")).toHaveLength(0);
+    expect(container.querySelectorAll(".recharts-line")).toHaveLength(2);
   });
 
-  it("oferece a tabela equivalente com 60 dias, faixa e risco", () => {
+  it("oferece a tabela equivalente com potencial e limite operacional", () => {
     const { container } = render(<Forecast60dSlot points={points} description="Descrição" evidence={evidence} />);
     const scope = within(container);
 
     fireEvent.click(scope.getByRole("button", { name: "Mostrar tabela" }));
 
-    const table = scope.getByRole("table", { name: "Energia restringida estimada por dia e risco de curtailment" });
-    expect(within(table).getByRole("columnheader", { name: "MWh esperados" })).toBeInTheDocument();
-    expect(within(table).getByRole("columnheader", { name: "Risco diário" })).toBeInTheDocument();
+    const table = scope.getByRole("table", { name: "Geração potencial e limite operacional por dia" });
     expect(within(table).getAllByRole("row")).toHaveLength(61);
-    expect(within(table).getByText("26/09/2026")).toBeInTheDocument();
-    expect(container.querySelector(".recharts-line")).toBeNull();
+    expect(within(table).getByRole("columnheader", { name: "Geração potencial (MWh)" })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Limite operacional (MWh)" })).toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: "Risco diário" })).not.toBeInTheDocument();
+    expect(within(table).getAllByText("01/10/2026").length).toBeGreaterThan(0);
+    expect(within(table).getAllByText("20/11/2026").length).toBeGreaterThan(0);
   });
 });
