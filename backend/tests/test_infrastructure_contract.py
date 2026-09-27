@@ -60,10 +60,25 @@ def test_sam_exposes_frontend_bucket_and_website_url() -> None:
     assert outputs["FrontendBucketName"]["Value"] == {"Ref": "FrontendBucket"}
     assert "FrontendWebsiteUrl" in outputs
     api_environment = template["Resources"]["ApiFunction"]["Properties"]["Environment"]["Variables"]
-    assert api_environment["CORS_ORIGINS"] == {
+    cors_origins = api_environment["CORS_ORIGINS"]["Fn::Join"][1]
+    assert {
         "Fn::Sub": "http://${FrontendBucket}.s3-website-${AWS::Region}.${AWS::URLSuffix}"
-    }
+    } in cors_origins
     assert "AllowedOrigin" not in template["Parameters"]
+
+
+def test_sam_keeps_the_legacy_frontend_origin_during_migration() -> None:
+    template = load_template()
+    api_environment = template["Resources"]["ApiFunction"]["Properties"]["Environment"]["Variables"]
+    cors_origins = api_environment["CORS_ORIGINS"]["Fn::Join"][1]
+
+    legacy_origin = "http://curtailess-frontend-290278850174-us-west-2." + (
+        "s3-website-us-west-2.amazonaws.com"
+    )
+    assert legacy_origin in cors_origins
+    assert {
+        "Fn::Sub": "http://${FrontendBucket}.s3-website-${AWS::Region}.${AWS::URLSuffix}"
+    } in cors_origins
 
 
 def test_samconfig_centralizes_non_secret_deploy_parameters() -> None:
