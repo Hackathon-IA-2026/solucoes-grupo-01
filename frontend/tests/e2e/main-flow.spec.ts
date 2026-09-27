@@ -28,23 +28,71 @@ test("percorre exposição, manutenção, bateria e relatório sem perder o modo
   await expect(page.getByText("91.000 R$/ano")).toHaveCount(0);
 });
 
-test("troca o ativo real somente na tela de exposição", async ({ page }) => {
+test("troca a usina somente na tela de exposição", async ({ page }) => {
   await page.goto("/exposicao");
   const screen = page.locator("[data-exposure-screen]");
-  await expect(screen).toHaveAttribute("data-asset-id", "CJU_RNRDV");
+  await expect(screen).toHaveAttribute("data-asset-id", "RNEM13");
   const windIllustrations = screen.locator('[data-energy-illustration="wind"]');
   await expect(windIllustrations).toHaveCount(6);
-  await expect(windIllustrations.first().locator("[data-connected-plant]")).toHaveCount(1);
 
-  await selectAsset(page, "Monte Verde Solar");
-  await expect(screen).toHaveAttribute("data-asset-id", "CJU_RNMVS");
+  await selectAsset(page, "Monte Verde Solar II");
+  await expect(screen).toHaveAttribute("data-asset-id", "RNMVS2");
   const solarIllustrations = screen.locator('[data-energy-illustration="solar"]');
   await expect(solarIllustrations).toHaveCount(6);
-  await expect(solarIllustrations.first().locator("[data-connected-plant]")).toHaveCount(3);
   await expect(screen.locator('[data-energy-illustration="wind"]')).toHaveCount(0);
 
   await page.getByRole("link", { name: "Manutenção", exact: true }).click();
   await expect(page.locator("button[data-asset-picker]")).toContainText("Ativo Eólico RN-01");
+});
+
+test("valida catálogo, contexto e narrativas da exposição por usina", async ({ page }) => {
+  await page.goto("/exposicao");
+  const screen = page.locator("[data-exposure-screen]");
+  await expect(screen).toHaveAttribute("data-asset-id", "RNEM13");
+
+  await page.locator("button[data-asset-picker]").click();
+  const dialog = page.getByRole("dialog");
+  const options = dialog.locator("ul button");
+  await expect(options).toHaveCount(5);
+  const optionText = await options.allTextContents();
+  expect(optionText.join(" ")).not.toContain("CJU_");
+  await dialog.getByRole("button", { name: "Fechar seleção de usina" }).click();
+
+  const topology = screen.locator("[data-topology-list]");
+  await expect(topology).toContainText("Ventos de Santa Martina 13");
+  await expect(topology).toContainText("Rio do Vento");
+  await expect(topology).toContainText("RNCMM-500-A");
+  await expect(topology).toContainText("Reconciliação no conjunto");
+  await expect(topology).toContainText("Pressão sistêmica no ponto");
+  await expect(screen.locator("[data-point-entity]")).toHaveCount(16);
+  await expect(screen.getByText(/não é atribuída à usina selecionada/)).toBeVisible();
+
+  await expect(screen.locator("[data-analysis-title]")).toHaveCount(6);
+  await expect(screen.locator("[data-analysis-title]")).toHaveText(Array(6).fill("Análise dos dados"));
+  const visibleText = await screen.textContent();
+  for (const forbidden of ["generation_mode", "cached_bedrock", "deterministic_fallback", "ONS_PUBLICO", "PROXY_CALCULADO", "SIMULADO"]) {
+    expect(visibleText).not.toContain(forbidden);
+  }
+});
+
+test("mostra 60 dias em linha e três janelas críticas de 72 horas", async ({ page }) => {
+  await page.goto("/exposicao");
+  const forecast = page.locator("[data-exposure-forecast='60d']");
+  await expect(forecast.locator("[data-chart-kind='line']")).toHaveCount(1);
+  await expect(forecast.locator("[data-forecast-point-count='60']")).toHaveCount(1);
+  await expect(forecast.locator("[data-forecast-marker]")).toHaveCount(60);
+
+  await forecast.locator("[data-forecast-marker]").nth(30).hover({ force: true });
+  const tooltip = forecast.locator("[data-forecast-tooltip]");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText("MWh");
+  await expect(tooltip).toContainText("Risco de curtailment no dia");
+  await expect(tooltip).toContainText("%");
+
+  const windows = page.locator("[data-critical-window]");
+  await expect(windows).toHaveCount(3);
+  for (const window of await windows.all()) await expect(window).toHaveAttribute("data-window-hours", "72");
+  await expect(page.getByText(/janela semanal/i)).toHaveCount(0);
 });
 
 test("não reutiliza ranking após parâmetros sem pacote ou ida e volta entre ativos", async ({ page }) => {
@@ -120,8 +168,24 @@ test("não cria rolagem horizontal no celular e usa lista legível para a topolo
     expect(dimensions.scroll, `${route} excedeu ${dimensions.client}px`).toBe(dimensions.client);
   }
   await page.goto("/exposicao");
-  await expect(page.locator("[data-topology-list]")).toBeVisible();
+  const topology = page.locator("[data-topology-list]");
+  await expect(topology).toBeVisible();
   await expect(page.locator(".react-flow")).toBeHidden();
+  const topologyText = await topology.locator(":scope > ul > li").evaluateAll((items) =>
+    items.slice(0, 3).map((item) => item.textContent),
+  );
+  expect(topologyText[0]).toContain("Ventos de Santa Martina 13");
+  expect(topologyText[1]).toContain("Rio do Vento");
+  expect(topologyText[2]).toContain("RNCMM-500-A");
+
+  const chartScroll = page.locator("[data-chart-scroll]");
+  await expect(chartScroll).toBeVisible();
+  const chartWidths = await chartScroll.evaluate((element) => ({
+    client: element.clientWidth,
+    content: element.scrollWidth,
+  }));
+  expect(chartWidths.content).toBeGreaterThan(chartWidths.client);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
 });
 
 test("skip link transfere foco e controles visíveis têm alvo mínimo de 44 px", async ({ page }) => {
@@ -161,7 +225,7 @@ test("estrutura a exposição em seis seções com análise e dados", async ({ p
 
   await expect(page.locator("#secao-previsao [data-exposure-forecast='60d']")).toHaveCount(1);
   await expect(page.locator("#secao-resumo [data-highlight-list]")).toHaveCount(1);
-  await expect(page.locator("#secao-qualidade [data-highlight-list]")).toHaveCount(1);
+  await expect(page.locator("#secao-qualidade [data-highlight-list]")).toHaveCount(2);
 });
 
 test("navegação lateral expande, transfere destaque e navega entre seções", async ({ page }) => {
