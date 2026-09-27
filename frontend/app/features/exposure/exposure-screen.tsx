@@ -14,6 +14,7 @@ import type {
   ExposureMetric,
   ExposureNarrativeSectionId,
 } from "~/domain/types";
+import { exposureAnalysisCopyByAsset, exposureAnalysisSupplementByAsset } from "~/domain/analysis-copy";
 import { numberFormatter } from "~/lib/format";
 import { useExposure } from "~/state/use-exposure";
 
@@ -178,9 +179,14 @@ export function ExposureScreen() {
   }
   if (!view) return null;
 
-  const { asset, observedImpact, forecast60d, associatedConditions, recurrence, quality, pointContext, simulatedTelemetry, narrative } = view;
+  const { asset, observedImpact, forecast60d, associatedConditions, recurrence, quality, pointContext, simulatedTelemetry } = view;
   const technology: Asset["technology"] = asset.technology === "wind" ? "Eólica" : "Solar";
-  const analysis = (id: ExposureNarrativeSectionId) => narrative[id].map((paragraph) => <p key={paragraph}>{paragraph}</p>);
+  const staticAnalysis = exposureAnalysisCopyByAsset[asset.assetId];
+  const staticSupplement = exposureAnalysisSupplementByAsset[asset.assetId];
+  const analysis = (id: ExposureNarrativeSectionId) => [
+    ...staticAnalysis[id],
+    ...staticSupplement[id],
+  ].map((paragraph) => <p key={paragraph}>{paragraph}</p>);
   const illustration = (sectionId: string) => (
     <EnergyNetworkIllustration technology={technology} sectionId={sectionId} connectedCount={asset.connectedAssetCount} />
   );
@@ -276,7 +282,7 @@ export function ExposureScreen() {
               }}
             />
           )}
-          analysis={<p>A análise considera somente a usina selecionada.</p>}
+          analysis={analysis("secao-ativo")}
         >
           <Panel data-section-card aria-label="Estimativas operacionais da usina selecionada">
             <CardSlot title="Estimativas operacionais" description="Valores estimados para a usina selecionada.">

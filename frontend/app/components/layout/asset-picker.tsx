@@ -18,8 +18,8 @@ export function AssetPicker() {
   const exposure = useExposure();
   const location = useLocation();
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const exposureMode = location.pathname === "/exposicao";
-  const assets: PickerAsset[] = exposureMode
+  const plantMode = ["/exposicao", "/manutencao", "/bateria"].includes(location.pathname);
+  const assets: PickerAsset[] = plantMode
     ? exposure.assets
         .filter((asset) => !asset.assetId.startsWith(GROUP_ID_PREFIX))
         .slice(0, MAX_PLANT_OPTIONS)
@@ -37,7 +37,7 @@ export function AssetPicker() {
         name: asset.name,
         detail: `${asset.technology} | ${asset.location} | Telemetria ${asset.telemetry}`,
       }));
-  const selectedId = exposureMode ? exposure.selectedAssetId : analysis.state.assetId;
+  const selectedId = plantMode ? exposure.selectedAssetId : analysis.state.assetId;
   const activeAsset = assets.find((asset) => asset.id === selectedId) ?? assets[0];
   const open = () => {
     const dialog = dialogRef.current;
@@ -49,7 +49,7 @@ export function AssetPicker() {
   };
   const choose = (assetId: string) => {
     if (assetId !== selectedId) {
-      if (exposureMode) exposure.selectAsset(assetId);
+      if (plantMode) exposure.selectAsset(assetId);
       else analysis.selectAsset(assetId);
     }
     close();
@@ -76,7 +76,7 @@ export function AssetPicker() {
         <div className="flex items-start justify-between gap-3 border-b border-line p-4 sm:p-5">
           <div>
             <h2 id="asset-picker-title" className="text-lg font-semibold">Usina em análise</h2>
-            <p className="mt-1 text-sm leading-6 text-ink-soft">Selecione a usina individual para atualizar toda a análise de Exposição.</p>
+            <p className="mt-1 text-sm leading-6 text-ink-soft">Selecione a usina individual para atualizar as análises de Exposição, Manutenção e Bateria.</p>
           </div>
           <button type="button" onClick={close} aria-label="Fechar seleção de usina" className="grid size-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-accent-soft hover:text-ink">
             <XIcon aria-hidden="true" />

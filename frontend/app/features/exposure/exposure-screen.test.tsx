@@ -293,21 +293,24 @@ function section(container: HTMLElement, id: string) {
 beforeEach(() => vi.clearAllMocks());
 
 describe("tela de Exposição por usina", () => {
-  it("titula as seis colunas de interpretação com o mesmo texto", () => {
+  it("marca as seis colunas de interpretação com o ícone de IA", () => {
     const { container } = renderScreen();
 
     const titles = Array.from(container.querySelectorAll("[data-analysis-title]"));
     expect(titles).toHaveLength(6);
-    for (const title of titles) expect(title.textContent).toBe("Análise dos dados");
+    for (const title of titles) {
+      expect(title).toHaveAttribute("aria-label", "Análise gerada por IA");
+      expect(title.textContent).toBe("");
+    }
     expect(container.querySelectorAll("[data-analysis-section]")).toHaveLength(6);
   });
 
-  it("renderiza a narrativa validada de cada seção sem expor procedência nem modos", () => {
+  it("renderiza a análise estática da usina em cada seção sem expor procedência nem modos", () => {
     const { container } = renderScreen();
     const text = container.textContent ?? "";
 
-    expect(text).toContain("A análise considera somente a usina selecionada.");
-    expect(text).toContain("A faixa cresce depois do horizonte útil.");
+    expect(text).toContain("Ventos de Santa Martina 13 gera 28,5 MW diante de um potencial de 36,1 MW.");
+    expect(text).toContain("A amplitude média da faixa passa de 69,2 MWh/dia nos primeiros 16 dias para 187,0 MWh/dia");
     for (const forbidden of [
       "ONS_PUBLICO",
       "PROXY_CALCULADO",

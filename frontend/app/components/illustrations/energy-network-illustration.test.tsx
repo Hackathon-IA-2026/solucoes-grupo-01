@@ -1,7 +1,12 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { EnergyNetworkIllustration } from "./energy-network-illustration";
-import { getConnectedPlantSlots, getNetworkConnectionPath } from "./network-layout";
+import {
+  MAIN_NETWORK_CONNECTION,
+  SOLAR_MAIN_NETWORK_CONNECTION,
+  getConnectedPlantSlots,
+  getNetworkConnectionPath,
+} from "./network-layout";
 
 const sectionIds = ["secao-ativo", "secao-resumo"];
 
@@ -23,45 +28,61 @@ describe("EnergyNetworkIllustration", () => {
 
   it.each([
     [0, 0],
+    [1, 1],
     [3, 3],
-    [6, 6],
-    [8, 8],
-    [12, 8],
-  ])("renderiza %i conexões como %i usinas menores", (connectedCount, expectedCount) => {
+    [8, 3],
+    [66, 3],
+  ])("representa %i conexões com %i símbolos e um contador", (connectedCount, expectedCount) => {
     const { container } = render(
       <EnergyNetworkIllustration technology="Eólica" sectionId="secao-ativo" connectedCount={connectedCount} />,
     );
 
     expect(container.querySelectorAll("[data-connected-plant]")).toHaveLength(expectedCount);
-    expect(container.querySelectorAll("[data-network-connection]")).toHaveLength(expectedCount + 1);
+    expect(container.querySelectorAll("[data-network-connection]")).toHaveLength(expectedCount + 2);
+    expect(container.querySelector("[data-connected-count]")).toHaveAttribute("data-connected-count", String(connectedCount));
   });
 
-  it("mantém as seis primeiras usinas inteiras e reserva cortes somente para sete e oito", () => {
-    const slots = getConnectedPlantSlots(8);
+  it("mantém os três símbolos à direita dentro da composição", () => {
+    const slots = getConnectedPlantSlots(66);
 
-    for (const slot of slots.slice(0, 6)) {
-      expect(slot.edge).not.toBe(true);
-      expect(slot.x - 120 * slot.scale).toBeGreaterThanOrEqual(0);
-      expect(slot.x + 120 * slot.scale).toBeLessThanOrEqual(600);
+    expect(slots).toHaveLength(3);
+    for (const slot of slots) {
+      expect(slot.x).toBeGreaterThan(800);
+      expect(slot.x + 150 * slot.scale).toBeLessThanOrEqual(1200);
       expect(slot.y - 120 * slot.scale).toBeGreaterThanOrEqual(0);
       expect(slot.y + 246 * slot.scale).toBeLessThanOrEqual(900);
     }
-    expect(slots.slice(6)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ edge: true }),
-      expect.objectContaining({ edge: true }),
-    ]));
   });
 
-  it("conecta cada usina com um joelho ortogonal no plano isométrico", () => {
+  it("conecta o contador aos símbolos com joelhos isométricos de 90 graus", () => {
     const isometricSlope = 1 / Math.sqrt(3);
 
-    for (const slot of getConnectedPlantSlots(8)) {
-      const coordinates = getNetworkConnectionPath(slot).match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+    for (const slot of getConnectedPlantSlots(66)) {
+      const path = getNetworkConnectionPath(slot);
+      const coordinates = path.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
       const [startX, startY, elbowX, elbowY, endX, endY] = coordinates;
-      const firstSlope = Math.abs((elbowY - startY) / (elbowX - startX));
-      const secondSlope = Math.abs((endY - elbowY) / (endX - elbowX));
-      expect(firstSlope).toBeCloseTo(isometricSlope, 2);
-      expect(secondSlope).toBeCloseTo(isometricSlope, 2);
+      const firstSlope = (elbowY - startY) / (elbowX - startX);
+      const secondSlope = (endY - elbowY) / (endX - elbowX);
+
+      expect(path).toMatch(/^M [-\d.]+ [-\d.]+ L [-\d.]+ [-\d.]+ L [-\d.]+ [-\d.]+$/);
+      expect(Math.abs(firstSlope)).toBeCloseTo(isometricSlope, 2);
+      expect(Math.abs(secondSlope)).toBeCloseTo(isometricSlope, 2);
+      expect(firstSlope * secondSlope).toBeLessThan(0);
+    }
+  });
+
+  it("liga a rede às usinas principais nos eixos isométricos, sem curvas Bézier", () => {
+    const isometricSlope = 1 / Math.sqrt(3);
+
+    for (const path of [MAIN_NETWORK_CONNECTION, SOLAR_MAIN_NETWORK_CONNECTION]) {
+      const coordinates = path.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+      const [startX, startY, firstX, firstY, secondX, secondY, endX, endY] = coordinates;
+
+      expect(path).toMatch(/^M [-\d.]+ [-\d.]+ L [-\d.]+ [-\d.]+ L [-\d.]+ [-\d.]+ L [-\d.]+ [-\d.]+$/);
+      expect(path).not.toContain(" C ");
+      expect(Math.abs((firstY - startY) / (firstX - startX))).toBeCloseTo(isometricSlope, 2);
+      expect(secondX).toBe(firstX);
+      expect(Math.abs((endY - secondY) / (endX - secondX))).toBeCloseTo(isometricSlope, 2);
     }
   });
 
@@ -72,7 +93,7 @@ describe("EnergyNetworkIllustration", () => {
 
     expect(container.querySelector("button")).not.toBeInTheDocument();
     expect(container.querySelectorAll("[data-connected-plant]")).toHaveLength(3);
-    expect(container.querySelectorAll('animate[attributeName="stroke-dashoffset"]')).toHaveLength(4);
+    expect(container.querySelectorAll('animate[attributeName="stroke-dashoffset"]')).toHaveLength(5);
     expect(container.querySelectorAll("animateTransform")).toHaveLength(12);
   });
 });

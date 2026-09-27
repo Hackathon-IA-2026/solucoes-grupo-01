@@ -150,10 +150,24 @@ describe("AssetPicker na Exposição", () => {
     expect(selectAnalysisAsset).not.toHaveBeenCalled();
   });
 
-  it("mantém o catálogo de demonstração e o AnalysisProvider fora da Exposição", () => {
+  it.each(["/manutencao", "/bateria"])("mantém as cinco usinas individuais em %s", (path) => {
     const { optionNames, options, selectExposureAsset, selectAnalysisAsset } = renderPicker({
       assets: exposureCatalogue,
-      path: "/manutencao",
+      selectedAssetId: "RNEM13",
+      path,
+    });
+
+    expect(optionNames()).toEqual(["Ventos de Santa Martina 13", "Monte Verde Solar II", "Usina P3", "Usina P4", "Usina P5"]);
+    fireEvent.click(options()[1]);
+
+    expect(selectExposureAsset).toHaveBeenCalledWith("RNMVS2");
+    expect(selectAnalysisAsset).not.toHaveBeenCalled();
+  });
+
+  it("mantém o catálogo de demonstração e o AnalysisProvider fora das três análises", () => {
+    const { optionNames, options, selectExposureAsset, selectAnalysisAsset } = renderPicker({
+      assets: exposureCatalogue,
+      path: "/relatorio",
     });
 
     expect(optionNames()).toEqual(["Ativo Eólico RN-01", "Ativo Solar MG-02"]);

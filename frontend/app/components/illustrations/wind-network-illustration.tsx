@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useId, useRef } from "react";
 
 import {
+  COUNT_NETWORK_CONNECTION,
   MAIN_NETWORK_CONNECTION,
+  NETWORK_COUNT_ANCHOR,
+  NETWORK_COUNT_SIZE,
   NETWORK_MAIN_ANCHOR,
+  NETWORK_MAIN_SCALE,
   NETWORK_SUBSTATION_ANCHOR,
+  NETWORK_SUBSTATION_SCALE,
   NETWORK_VIEW_BOX,
   getConnectedPlantSlots,
   getNetworkConnectionPath,
@@ -22,8 +27,8 @@ export function WindNetworkIllustration({
   connectedCount: number;
 }) {
   const connectedPlantSlots = getConnectedPlantSlots(connectedCount);
-  const connectedPlantCount = connectedPlantSlots.length;
-  const connectedPlantLabel = connectedPlantCount === 1 ? "1 outra usina conectada" : `${connectedPlantCount} outras usinas conectadas`;
+  const representedCount = Number.isFinite(connectedCount) ? Math.max(0, Math.trunc(connectedCount)) : 0;
+  const connectedPlantLabel = representedCount === 1 ? "1 outra usina conectada" : `${representedCount} outras usinas conectadas`;
   const reactId = useId();
   const instanceId = `wind-${reactId.replace(/:/g, "")}`;
   const titleId = `${instanceId}-title`;
@@ -176,7 +181,7 @@ export function WindNetworkIllustration({
         aria-labelledby={`${titleId} ${descriptionId}`}
       >
         <title id={titleId}>Rede eólica com 1 usina principal e {connectedPlantLabel}</title>
-        <desc id={descriptionId}>Uma usina eólica principal e {connectedPlantLabel} convergem para uma subestação coletora detalhada. Conexões seguem os eixos isométricos, as pás giram e pulsos verdes mostram a energia chegando à rede.</desc>
+        <desc id={descriptionId}>Uma usina eólica principal se conecta a uma subestação coletora. Um agrupador mostra {connectedPlantLabel} e se liga a três símbolos de usinas à direita. A conexão principal faz duas curvas e as conexões do agrupador usam joelhos de 90 graus.</desc>
         <defs>
           <filter id={glowId} x="-500%" y="-500%" width="1000%" height="1000%">
             <feGaussianBlur stdDeviation="4" result="b" />
@@ -228,6 +233,10 @@ export function WindNetworkIllustration({
           <path className="wind-flow" d={MAIN_NETWORK_CONNECTION}>
             <animate attributeName="stroke-dashoffset" from="0" to="-198" dur="2.4s" repeatCount="indefinite" />
           </path>
+          <path data-network-connection="connected-count" className="wind-wire" d={COUNT_NETWORK_CONNECTION} />
+          <path className="wind-flow" d={COUNT_NETWORK_CONNECTION}>
+            <animate attributeName="stroke-dashoffset" from="0" to="-198" dur="2.6s" begin="-.7s" repeatCount="indefinite" />
+          </path>
           {connectedPlantSlots.map((slot) => {
             const connectionPath = getNetworkConnectionPath(slot);
             const connectionKey = `${slot.x}-${slot.y}`;
@@ -245,14 +254,14 @@ export function WindNetworkIllustration({
           })}
         </g>
 
-        <g transform={`translate(${NETWORK_MAIN_ANCHOR.x} 120) scale(1.12)`}>
+        <g transform={`translate(${NETWORK_MAIN_ANCHOR.x} 329.58) scale(${NETWORK_MAIN_SCALE})`}>
           <use className="wind-equipment" href={`#${turbineBodyId}`} x="-120" y="-30" width="240" height="280" />
           <g className="rotor-live"><use className="wind-equipment" href={`#${rotorId}`} x="-120" y="-120" width="240" height="240" /><animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="8s" repeatCount="indefinite" /></g>
         </g>
 
         <g
           aria-label="Subestação coletora"
-          transform={`translate(${NETWORK_SUBSTATION_ANCHOR.x - 330} ${NETWORK_SUBSTATION_ANCHOR.y - 324.5}) scale(.55)`}
+          transform={`translate(${NETWORK_SUBSTATION_ANCHOR.x - 600 * NETWORK_SUBSTATION_SCALE} ${NETWORK_SUBSTATION_ANCHOR.y - 590 * NETWORK_SUBSTATION_SCALE}) scale(${NETWORK_SUBSTATION_SCALE})`}
         >
           <path className="wind-face" d="M600 476 L792 587 L600 698 L408 587 Z" />
           <path className="wind-side" d="M408 587 L600 698 V712 L408 601 Z" />
@@ -269,6 +278,16 @@ export function WindNetworkIllustration({
           <g><path className="wind-face" d="M676 603 L726 574 L766 597 L716 626 Z" /><path className="wind-side" d="M676 603 L716 626 V664 L676 641 Z" /><path className="wind-face" d="M716 626 L766 597 V635 L716 664 Z" /><path className="wind-detail" d="M728 630 L750 617 V638 L728 651 Z M687 614 L706 625 V644 L687 633 Z" /></g>
         </g>
 
+        <g
+          data-connected-count={representedCount}
+          aria-label={`${connectedPlantLabel} neste ponto`}
+          transform={`translate(${NETWORK_COUNT_ANCHOR.x} ${NETWORK_COUNT_ANCHOR.y})`}
+        >
+          <rect className="wind-face" x={-NETWORK_COUNT_SIZE / 2} y={-NETWORK_COUNT_SIZE / 2} width={NETWORK_COUNT_SIZE} height={NETWORK_COUNT_SIZE} rx="8" />
+          <text x="0" y="5" textAnchor="middle" fill="#26383c" fontSize="30" fontWeight="700">{representedCount}</text>
+          <text x="0" y="27" textAnchor="middle" fill="#718185" fontSize="11" fontWeight="600">USINAS</text>
+        </g>
+
         {connectedPlantSlots.map((slot) => {
           const plantKey = `${slot.x}-${slot.y}`;
           const rotationDuration = `${(8.4 + (slot.phase % 7) * 0.12).toFixed(2)}s`;
@@ -278,7 +297,7 @@ export function WindNetworkIllustration({
               key={`plant-${plantKey}`}
               data-connected-plant={plantKey}
               transform={`translate(${slot.x} ${slot.y}) scale(${slot.scale})`}
-              opacity={slot.edge ? ".76" : ".86"}
+              opacity=".86"
             >
               <use className="wind-equipment" href={`#${turbineBodyId}`} x="-120" y="-30" width="240" height="280" />
               <g className="rotor-live">
@@ -297,7 +316,7 @@ export function WindNetworkIllustration({
         })}
       </svg>
 
-      <figcaption>Rede eólica em outline isométrico, com 1 usina principal e {connectedPlantLabel}, além de uma subestação coletora detalhada conectada por circuitos sobre os eixos do plano isométrico.</figcaption>
+      <figcaption>Rede eólica com uma usina principal, uma subestação coletora e um agrupador que representa {connectedPlantLabel} por meio de três símbolos conectados à direita.</figcaption>
     </figure>
   );
 }

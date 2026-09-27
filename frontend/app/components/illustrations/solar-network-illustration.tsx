@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useId, useRef } from "react";
 import {
-  MAIN_NETWORK_CONNECTION,
+  COUNT_NETWORK_CONNECTION,
+  SOLAR_MAIN_NETWORK_CONNECTION,
+  NETWORK_COUNT_ANCHOR,
+  NETWORK_COUNT_SIZE,
+  NETWORK_SOLAR_MAIN_ANCHOR,
   NETWORK_SUBSTATION_ANCHOR,
+  NETWORK_SUBSTATION_SCALE,
   NETWORK_VIEW_BOX,
   getConnectedPlantSlots,
   getNetworkConnectionPath,
@@ -20,6 +25,8 @@ type SolarNetworkIllustrationProps = {
 export function SolarNetworkIllustration({ sectionId, connectedCount }: SolarNetworkIllustrationProps) {
   const reactId = useId().replace(/:/g, "");
   const connectedPlantSlots = getConnectedPlantSlots(connectedCount);
+  const representedCount = Number.isFinite(connectedCount) ? Math.max(0, Math.trunc(connectedCount)) : 0;
+  const connectedPlantLabel = representedCount === 1 ? "1 outra usina conectada" : `${representedCount} outras usinas conectadas`;
   const titleId = `solar-title-${reactId}`;
   const descriptionId = `solar-description-${reactId}`;
   const glowId = `solar-glow-${reactId}`;
@@ -92,12 +99,8 @@ export function SolarNetworkIllustration({ sectionId, connectedCount }: SolarNet
         aria-labelledby={`${titleId} ${descriptionId}`}
         preserveAspectRatio="xMidYMid meet"
       >
-        <title id={titleId}>
-          {`Uma usina solar principal e ${connectedPlantSlots.length} usinas conectadas a uma subestação`}
-        </title>
-        <desc id={descriptionId}>
-          {`Uma usina solar principal e ${connectedPlantSlots.length} usinas solares estão conectadas a uma subestação coletora. Painéis fazem pequenos movimentos de rastreamento e segmentos verdes mostram a energia chegando à rede.`}
-        </desc>
+        <title id={titleId}>Rede solar com uma usina principal e {connectedPlantLabel}</title>
+        <desc id={descriptionId}>Uma usina solar principal se conecta a uma subestação coletora. Um agrupador mostra {connectedPlantLabel} e se liga a três símbolos de usinas à direita. A conexão principal faz duas curvas e as conexões do agrupador usam joelhos de 90 graus.</desc>
         <defs>
           <filter id={glowId} x="-500%" y="-500%" width="1000%" height="1000%">
             <feGaussianBlur stdDeviation="4" result="b" />
@@ -140,9 +143,13 @@ export function SolarNetworkIllustration({ sectionId, connectedCount }: SolarNet
         <path className="ground" d="M35 680 L300 527 L565 680 M120 780 L385 627 M480 795 L145 602" opacity=".11" />
 
         <g aria-hidden="true">
-          <path className="wire" d={MAIN_NETWORK_CONNECTION} data-network-connection="main" />
-          <path className="flow" filter={`url(#${glowId})`} d={MAIN_NETWORK_CONNECTION}>
+          <path className="wire" d={SOLAR_MAIN_NETWORK_CONNECTION} data-network-connection="main" />
+          <path className="flow" filter={`url(#${glowId})`} d={SOLAR_MAIN_NETWORK_CONNECTION}>
             <animate attributeName="stroke-dashoffset" from="0" to="-198" dur="2.4s" repeatCount="indefinite" />
+          </path>
+          <path className="wire" d={COUNT_NETWORK_CONNECTION} data-network-connection="connected-count" />
+          <path className="flow" filter={`url(#${glowId})`} d={COUNT_NETWORK_CONNECTION}>
+            <animate attributeName="stroke-dashoffset" from="0" to="-198" dur="2.6s" begin="-.7s" repeatCount="indefinite" />
           </path>
           {connectedPlantSlots.map((slot) => {
             const connectionPath = getNetworkConnectionPath(slot);
@@ -169,19 +176,19 @@ export function SolarNetworkIllustration({ sectionId, connectedCount }: SolarNet
           })}
         </g>
 
-        <g aria-label="Usina solar principal" transform="translate(-300 0)">
+        <g aria-label="Usina solar principal" transform={`translate(${NETWORK_SOLAR_MAIN_ANCHOR.x - 600} 104.46)`}>
           <path className="ground" d="M600 92 L812 214 L600 337 L388 214 Z" opacity=".7" />
-          <g transform="translate(490 130) scale(.62)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-7 0 22;7 0 22;-7 0 22" dur="12s" repeatCount="indefinite" /></g></g>
-          <g transform="translate(600 194) scale(.62)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-5 0 22;8 0 22;-5 0 22" dur="13s" repeatCount="indefinite" /></g></g>
-          <g transform="translate(710 258) scale(.62)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-8 0 22;5 0 22;-8 0 22" dur="11s" repeatCount="indefinite" /></g></g>
-          <g transform="translate(430 228) scale(.62)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-6 0 22;7 0 22;-6 0 22" dur="12.5s" repeatCount="indefinite" /></g></g>
-          <g transform="translate(540 292) scale(.62)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-7 0 22;6 0 22;-7 0 22" dur="11.8s" repeatCount="indefinite" /></g></g>
-          <g transform="translate(650 356) scale(.62)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-5 0 22;7 0 22;-5 0 22" dur="13.2s" repeatCount="indefinite" /></g></g>
+          <g transform="translate(490 130) scale(.82)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-7 0 22;7 0 22;-7 0 22" dur="12s" repeatCount="indefinite" /></g></g>
+          <g transform="translate(600 194) scale(.82)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-5 0 22;8 0 22;-5 0 22" dur="13s" repeatCount="indefinite" /></g></g>
+          <g transform="translate(710 258) scale(.82)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-8 0 22;5 0 22;-8 0 22" dur="11s" repeatCount="indefinite" /></g></g>
+          <g transform="translate(430 228) scale(.82)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-6 0 22;7 0 22;-6 0 22" dur="12.5s" repeatCount="indefinite" /></g></g>
+          <g transform="translate(540 292) scale(.82)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-7 0 22;6 0 22;-7 0 22" dur="11.8s" repeatCount="indefinite" /></g></g>
+          <g transform="translate(650 356) scale(.82)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-5 0 22;7 0 22;-5 0 22" dur="13.2s" repeatCount="indefinite" /></g></g>
         </g>
 
         <g
           aria-label="Subestação coletora"
-          transform={`translate(${NETWORK_SUBSTATION_ANCHOR.x - 330} ${NETWORK_SUBSTATION_ANCHOR.y - 330}) scale(.55)`}
+          transform={`translate(${NETWORK_SUBSTATION_ANCHOR.x - 600 * NETWORK_SUBSTATION_SCALE} ${NETWORK_SUBSTATION_ANCHOR.y - 600 * NETWORK_SUBSTATION_SCALE}) scale(${NETWORK_SUBSTATION_SCALE})`}
         >
           <path className="face" d="M600 476 L792 587 L600 698 L408 587 Z" />
           <path className="side" d="M408 587 L600 698 V712 L408 601 Z" />
@@ -198,6 +205,16 @@ export function SolarNetworkIllustration({ sectionId, connectedCount }: SolarNet
           <g><path className="face" d="M676 603 L726 574 L766 597 L716 626 Z" /><path className="side" d="M676 603 L716 626 V664 L676 641 Z" /><path className="face" d="M716 626 L766 597 V635 L716 664 Z" /><path className="detail" d="M728 630 L750 617 V638 L728 651 Z M687 614 L706 625 V644 L687 633 Z" /></g>
         </g>
 
+        <g
+          data-connected-count={representedCount}
+          aria-label={`${connectedPlantLabel} neste ponto`}
+          transform={`translate(${NETWORK_COUNT_ANCHOR.x} ${NETWORK_COUNT_ANCHOR.y})`}
+        >
+          <rect className="face" x={-NETWORK_COUNT_SIZE / 2} y={-NETWORK_COUNT_SIZE / 2} width={NETWORK_COUNT_SIZE} height={NETWORK_COUNT_SIZE} rx="8" />
+          <text x="0" y="5" textAnchor="middle" fill="#26383c" fontSize="30" fontWeight="700">{representedCount}</text>
+          <text x="0" y="27" textAnchor="middle" fill="#718185" fontSize="11" fontWeight="600">USINAS</text>
+        </g>
+
         {connectedPlantSlots.map((slot, index) => {
           const firstDuration = 11.4 + (slot.phase % 7) * 0.27;
           const secondDuration = 12.1 + (slot.phase % 5) * 0.31;
@@ -208,7 +225,7 @@ export function SolarNetworkIllustration({ sectionId, connectedCount }: SolarNet
               data-connected-plant={`plant-${index + 1}`}
               aria-label={`Usina solar conectada ${index + 1}`}
               transform={`translate(${slot.x} ${slot.y}) scale(${slot.scale})`}
-              opacity={slot.edge ? 0.76 : 0.86}
+              opacity={0.86}
             >
               <path className="ground" d="M0 -110 L150 -24 L0 62 L-150 -24 Z" />
               <g transform="translate(-52 -55)">
