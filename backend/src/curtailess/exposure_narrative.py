@@ -35,7 +35,6 @@ from curtailess.schemas import (
 )
 
 logger = logging.getLogger(__name__)
-NARRATIVE_SCHEMA_VERSION = "exposure-narrative-v1"
 
 SECTION_IDS: tuple[str, ...] = (
     "secao-ativo",

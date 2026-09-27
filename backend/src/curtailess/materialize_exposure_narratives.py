@@ -5,8 +5,13 @@ import sys
 
 from curtailess.config import get_settings
 from curtailess.data_access import create_exposure_repository
-from curtailess.exposure_narrative import generate_exposure_narrative
-from curtailess.exposure_narrative_repository import create_exposure_narrative_repository
+from curtailess.exposure_narrative import SECTION_IDS, generate_exposure_narrative
+from curtailess.exposure_narrative_repository import (
+    create_exposure_narrative_repository,
+    merge_narrative_sections,
+    resolve_cached_sections,
+    section_evidence_digests,
+)
 from curtailess.exposure_view import APPROVED_ASSET_IDS, build_exposure_view
 
 
@@ -18,6 +23,29 @@ def build_parser() -> argparse.ArgumentParser:
     selection.add_argument("--asset-id", choices=APPROVED_ASSET_IDS)
     selection.add_argument("--all", action="store_true")
     return parser
+
+
+def materialize_asset(asset_id: str, settings, data_repository, narrative_repository) -> str:
+    """Resolve compatible sections, generate only what is missing, and persist the merge."""
+
+    view = build_exposure_view(asset_id, data_repository)
+    evidence_digests = section_evidence_digests(view)
+    cached = resolve_cached_sections(view, narrative_repository)
+    missing = [section_id for section_id in SECTION_IDS if section_id not in cached]
+    model_id: str | None = None
+    generated = None
+    if missing:
+        generated, model_id = generate_exposure_narrative(view, settings=settings)
+    narrative = merge_narrative_sections(view, cached, generated)
+    version = narrative_repository.save(
+        asset_id,
+        view.input_digest,
+        narrative,
+        model_id,
+        section_evidence_digests=evidence_digests,
+    )
+    cached_count = len(SECTION_IDS) - len(missing)
+    return f"{asset_id}: stored {version} cached={cached_count} generated={len(missing)}"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,15 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     identifiers = APPROVED_ASSET_IDS if args.all else (args.asset_id,)
     for asset_id in identifiers:
-        view = build_exposure_view(asset_id, data_repository)
-        existing = narrative_repository.get_exact(asset_id, view.input_digest)
-        if existing is not None:
-            print(f"{asset_id}: unchanged {view.input_digest}")
-            continue
-        narrative, model_id = generate_exposure_narrative(view, settings=settings)
-        version = narrative_repository.save(asset_id, view.input_digest, narrative, model_id)
-        mode = "bedrock" if model_id else "deterministic_fallback"
-        print(f"{asset_id}: stored {version} {mode}")
+        print(materialize_asset(asset_id, settings, data_repository, narrative_repository))
     return 0
 
 

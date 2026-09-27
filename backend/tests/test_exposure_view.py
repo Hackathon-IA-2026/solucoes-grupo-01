@@ -5,6 +5,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 import curtailess.exposure_view as exposure_view
+import curtailess.main as main_module
+from curtailess.exposure_narrative import SECTION_IDS
+from curtailess.exposure_narrative_repository import (
+    InMemoryExposureNarrativeRepository,
+    section_evidence_digests,
+)
 from curtailess.exposure_view import (
     APPROVED_ASSET_IDS,
     UnknownExposureAssetError,
@@ -14,6 +20,17 @@ from curtailess.exposure_view import (
     load_plant_catalog,
 )
 from curtailess.main import app
+from curtailess.schemas import ExposureNarrative
+
+_CACHED_TEXT = "A leitura desta seção usa somente os fatos fornecidos para ela."
+
+
+class ExplodingNarrativeRepository:
+    def get_section(self, *args, **kwargs):
+        raise RuntimeError("narrative cache is unavailable")
+
+    def get_current_record(self, *args, **kwargs):
+        raise RuntimeError("narrative cache is unavailable")
 
 
 class FakeRepository:
@@ -222,3 +239,54 @@ def test_exposure_api_returns_404_for_group_and_unknown_asset():
 
     assert client.get("/v1/assets/CJU_RNRDV/exposure-view").status_code == 404
     assert client.get("/v1/assets/UNKNOWN/exposure-view").status_code == 404
+
+
+def test_exposure_api_serves_cached_bedrock_sections_without_calling_bedrock(monkeypatch):
+    view = build_exposure_view("RNEM13", main_module.repository)
+    repository = InMemoryExposureNarrativeRepository()
+    narrative = ExposureNarrative.model_validate(
+        {
+            section_id: {"paragraphs": [_CACHED_TEXT], "generation_mode": "bedrock"}
+            for section_id in SECTION_IDS
+        }
+    )
+    repository.save(
+        view.asset.asset_id,
+        view.input_digest,
+        narrative,
+        "model-primary",
+        section_evidence_digests=section_evidence_digests(view),
+    )
+    monkeypatch.setattr(main_module, "exposure_narrative_repository", repository)
+
+    response = TestClient(app).get("/v1/assets/RNEM13/exposure-view")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["asset"]["asset_id"] == "RNEM13"
+    assert len(payload["forecast_60d"]["points"]) == 60
+    assert payload["observed_impact"]["total_curtailed_energy"]["value"] is not None
+    for section_id in SECTION_IDS:
+        assert payload["narrative"][section_id]["generation_mode"] == "cached_bedrock"
+
+
+def test_exposure_api_hides_repository_failure_and_keeps_metrics_and_charts(monkeypatch):
+    monkeypatch.setattr(
+        main_module, "exposure_narrative_repository", ExplodingNarrativeRepository()
+    )
+
+    response = TestClient(app).get("/v1/assets/RNEM13/exposure-view")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["forecast_60d"]["points"]) == 60
+    assert len(payload["forecast_60d"]["critical_windows_72h"]) == 3
+    assert payload["observed_impact"]["total_curtailed_energy"]["value"] is not None
+    assert payload["quality"]["coverage"]["value"] is not None
+    assert set(payload["narrative"]) == set(SECTION_IDS)
+    assert all(
+        payload["narrative"][section_id]["generation_mode"] == "deterministic_fallback"
+        for section_id in SECTION_IDS
+    )
+    for marker in ("RuntimeError", "narrative cache is unavailable", "Traceback"):
+        assert marker not in response.text

@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import uuid
 from datetime import UTC, date, datetime
 from typing import Annotated, Literal
@@ -16,8 +17,10 @@ from .canonical import canonical_json as _canonical_json
 from .config import get_settings
 from .data_access import create_exposure_repository
 from .decision_operations import build_rank_maintenance, build_screen_bess
-from .exposure_narrative import _evidence_payload, validate_exposure_narrative
-from .exposure_narrative_repository import create_exposure_narrative_repository
+from .exposure_narrative_repository import (
+    create_exposure_narrative_repository,
+    resolve_exposure_narrative,
+)
 from .exposure_view import (
     UnknownExposureAssetError,
     build_exposure_view,
@@ -79,6 +82,7 @@ from .schemas import (
 )
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 repository = create_exposure_repository(settings.exposure_table, settings.aws_region)
 artifact_repository = create_artifact_repository(
     settings.scenarios_table, settings.data_bucket, settings.aws_region
@@ -219,19 +223,14 @@ def get_exposure_view(asset_id: str) -> ExposureViewResponse:
         deterministic_view = build_exposure_view(asset_id, repository)
     except UnknownExposureAssetError as exc:
         raise HTTPException(status_code=404, detail="Ativo de Exposição não encontrado.") from exc
-    narrative = exposure_narrative_repository.get_exact(asset_id, deterministic_view.input_digest)
-    if narrative is None:
-        current = exposure_narrative_repository.get_current_record(asset_id)
-        if current and current.get("validation_status") == "validated":
-            try:
-                narrative = validate_exposure_narrative(
-                    ExposureNarrative.model_validate(current["narrative"]).model_dump(
-                        mode="json", by_alias=True
-                    ),
-                    _evidence_payload(deterministic_view),
-                )
-            except (KeyError, TypeError, ValueError):
-                narrative = None
+    narrative: ExposureNarrative | None = None
+    try:
+        narrative = resolve_exposure_narrative(deterministic_view, exposure_narrative_repository)
+    except Exception:
+        # A storage or cache failure must never surface to the customer: the deterministic
+        # metrics, charts and fallback text stay available without any technical detail.
+        logger.exception("Narrativa armazenada indisponível para %s", asset_id)
+        narrative = None
     return build_exposure_view(asset_id, repository, narrative)
 
 
