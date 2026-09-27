@@ -76,22 +76,72 @@ def test_monthly_constrained_off_period_parsing_is_dataset_specific() -> None:
         )
 
 
+VALID_DATASET_FILENAMES = {
+    "restricao_coff_eolica_tm": "RESTRICAO_COFF_EOLICA_2026_09.parquet",
+    "restricao_coff_fotovoltaica_tm": "RESTRICAO_COFF_FOTOVOLTAICA_2026_09.parquet",
+    "programacao_x_previsao": "PROGRAMACAO_X_PREVISAO_2026_09_01.parquet",
+    "geracao_usina_2_ho": "GERACAO_USINA-2_2026_09.parquet",
+    "usina_conjunto": "RELACIONAMENTO_USINA_CONJUNTO.parquet",
+    "capacidade-geracao": "CAPACIDADE_GERACAO.parquet",
+}
+
+
+@pytest.mark.parametrize("dataset_id", sorted(DATASET_REGISTRY))
+def test_period_parsers_accept_canonical_registered_dataset_keys(dataset_id: str) -> None:
+    spec = get_dataset_spec(dataset_id)
+
+    assert spec.period_parser(f"{spec.s3_prefix}{VALID_DATASET_FILENAMES[dataset_id]}")
+
+
 @pytest.mark.parametrize("dataset_id", sorted(DATASET_REGISTRY))
 def test_period_parsers_reject_valid_basename_under_another_prefix(dataset_id: str) -> None:
     spec = get_dataset_spec(dataset_id)
-    examples = {
-        "restricao_coff_eolica_tm": "RESTRICAO_COFF_EOLICA_2026_09.parquet",
-        "restricao_coff_fotovoltaica_tm": "RESTRICAO_COFF_FOTOVOLTAICA_2026_09.parquet",
-        "programacao_x_previsao": "PROGRAMACAO_X_PREVISAO_2026_09_01.parquet",
-        "geracao_usina_2_ho": "GERACAO_USINA-2_2026_09.parquet",
-        "usina_conjunto": "RELACIONAMENTO_USINA_CONJUNTO.parquet",
-        "capacidade-geracao": "CAPACIDADE_GERACAO.parquet",
-    }
+    filename = VALID_DATASET_FILENAMES[dataset_id]
 
     with pytest.raises(ValueError, match="prefixo ONS"):
-        spec.period_parser(f"dataset/attacker/{examples[dataset_id]}")
+        spec.period_parser(f"dataset/attacker/{filename}")
     with pytest.raises(ValueError, match="prefixo ONS"):
-        spec.period_parser(examples[dataset_id])
+        spec.period_parser(filename)
+
+
+@pytest.mark.parametrize("dataset_id", sorted(DATASET_REGISTRY))
+@pytest.mark.parametrize(
+    "malformed_key",
+    [
+        lambda prefix, filename: f"{prefix}/{filename}",
+        lambda prefix, filename: f"{prefix.rstrip('/')}{filename}",
+        lambda prefix, filename: f"{prefix.replace('dataset/', 'dataset//')}{filename}",
+        lambda prefix, filename: f"{prefix.replace('/', '\\', 1)}{filename}",
+        lambda prefix, filename: f"{prefix}{filename.replace('.parquet', '\\.parquet')}",
+        lambda prefix, filename: f"{prefix}./{filename}",
+        lambda prefix, filename: f"{prefix}../{prefix.split('/')[1]}/{filename}",
+        lambda prefix, filename: f"{prefix}nested/{filename}",
+        lambda prefix, filename: f"{prefix}{filename}?download=1",
+        lambda prefix, filename: f"{prefix}{filename}#latest",
+        lambda prefix, filename: f"{prefix.rstrip('/')}-lookalike/{filename}",
+        lambda prefix, filename: f"/{prefix}{filename}",
+    ],
+    ids=[
+        "double-separator",
+        "missing-separator",
+        "empty-prefix-component",
+        "backslash-prefix-separator",
+        "backslash-filename-separator",
+        "current-directory-segment",
+        "parent-directory-segment",
+        "deeper-hierarchy",
+        "query-suffix",
+        "fragment-suffix",
+        "lookalike-prefix",
+        "absolute-path",
+    ],
+)
+def test_period_parsers_reject_noncanonical_dataset_keys(dataset_id: str, malformed_key) -> None:
+    spec = get_dataset_spec(dataset_id)
+    filename = VALID_DATASET_FILENAMES[dataset_id]
+
+    with pytest.raises(ValueError, match="prefixo ONS"):
+        spec.period_parser(malformed_key(spec.s3_prefix, filename))
 
 
 def test_daily_and_yearly_period_parsing_matches_verified_ons_names() -> None:

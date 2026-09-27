@@ -2,7 +2,6 @@ import calendar
 import re
 from collections.abc import Callable, Mapping
 from datetime import date
-from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Literal, Self
 
@@ -73,12 +72,21 @@ class DatasetSpec(BaseModel):
 
 
 def _require_prefix(source_key: str, expected_prefix: str) -> str:
-    path = PurePosixPath(source_key)
-    if not source_key.startswith(
-        expected_prefix
-    ) or path.parent.as_posix() != expected_prefix.rstrip("/"):
+    expected_components = expected_prefix.split("/")
+    source_components = source_key.split("/")
+    invalid_path = (
+        len(expected_components) != 3
+        or expected_components[0] != "dataset"
+        or not expected_components[1]
+        or expected_components[2] != ""
+        or any(character in source_key for character in "\\?#")
+        or len(source_components) != len(expected_components)
+        or source_components[:-1] != expected_components[:-1]
+        or any(component in {"", ".", ".."} for component in source_components)
+    )
+    if invalid_path:
         raise ValueError(f"{source_key!r} não pertence ao prefixo ONS {expected_prefix!r}")
-    return path.name
+    return source_components[-1]
 
 
 def _dated_parser(
