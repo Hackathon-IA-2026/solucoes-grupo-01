@@ -6,6 +6,7 @@ import os
 import re
 import tempfile
 from collections.abc import Iterator
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import PurePosixPath
@@ -14,9 +15,16 @@ from typing import Any
 import boto3
 
 from curtailess.datasets import DATASET_REGISTRY, DatasetPeriod, DatasetSpec, get_dataset_spec
+from curtailess.ingestion_state import (
+    IngestionLedger,
+    SourceIdentity,
+    source_fingerprint,
+    source_identity_from_message,
+)
 
 _DEFAULT_DISCOVERY_CAP = 100
 _MAX_DISCOVERY_CAP = 1_000
+_DEFAULT_LEASE_SECONDS = 300
 _CONTINUATION_VERSION = 1
 _MAX_CONTINUATION_LENGTH = 4_096
 _PERIOD_LABEL = re.compile(r"^(?P<year>\d{4})(?:-(?P<month>\d{2})(?:-(?P<day>\d{2}))?)?$")
@@ -339,6 +347,85 @@ def _validate_cursor(
     return dataset_index
 
 
+def _lease_seconds(environment: dict[str, str]) -> int:
+    try:
+        seconds = int(environment.get("INGESTION_LEASE_SECONDS", str(_DEFAULT_LEASE_SECONDS)))
+    except ValueError as exc:
+        raise ValueError("INGESTION_LEASE_SECONDS must be an integer") from exc
+    if not 1 <= seconds <= 86_400:
+        raise ValueError("INGESTION_LEASE_SECONDS must be between 1 and 86400")
+    return seconds
+
+
+def _request_owner(context: Any, stage: str) -> str:
+    request_id = getattr(context, "aws_request_id", None)
+    return f"{stage}:{request_id or 'local'}"
+
+
+def _ledger_from_environment(
+    environment: dict[str, str], ledger: IngestionLedger | None
+) -> IngestionLedger | None:
+    if ledger is not None:
+        return ledger
+    table_name = environment.get("INGESTION_LEDGER_TABLE")
+    if not table_name:
+        return None
+    table = boto3.resource("dynamodb", region_name="us-west-2").Table(table_name)
+    return IngestionLedger(table)
+
+
+def _message_identity(message: dict[str, Any]) -> tuple[SourceIdentity, str]:
+    identity = source_identity_from_message(message)
+    fingerprint = source_fingerprint(identity)
+    message["source_fingerprint"] = fingerprint
+    return identity, fingerprint
+
+
+def _send_discovery_message(
+    queue: Any,
+    queue_url: str,
+    message: dict[str, Any],
+    *,
+    ledger: IngestionLedger | None,
+    owner: str,
+    now: datetime,
+    lease_seconds: int,
+) -> str | None:
+    identity, fingerprint = _message_identity(message)
+    if ledger is not None:
+        item, _ = ledger.ensure_discovered(identity, now=now)
+        if item["state"] == "MATERIALIZED":
+            return None
+        claim = ledger.claim_dispatch(
+            fingerprint,
+            owner=owner,
+            now=now,
+            lease_seconds=lease_seconds,
+        )
+        if not claim.claimed:
+            return None
+    try:
+        response = queue.send_message(QueueUrl=queue_url, MessageBody=json.dumps(message))
+    except Exception as exc:
+        if ledger is not None:
+            ledger.release_dispatch(
+                fingerprint,
+                owner=owner,
+                now=now,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+        raise
+    message_id = str(response["MessageId"])
+    if ledger is not None:
+        ledger.mark_dispatched(
+            fingerprint,
+            owner=owner,
+            now=now,
+            message_id=message_id,
+        )
+    return message_id
+
+
 def discovery_handler(
     event: dict[str, Any],
     context: Any,
@@ -346,11 +433,17 @@ def discovery_handler(
     s3_client: Any | None = None,
     sqs_client: Any | None = None,
     environment: dict[str, str] | None = None,
+    ledger: IngestionLedger | None = None,
+    now: Any | None = None,
 ) -> dict[str, object]:
-    del context
     env = environment if environment is not None else dict(os.environ)
     object_store = s3_client or boto3.client("s3", region_name="us-west-2")
     queue = sqs_client or boto3.client("sqs", region_name="us-west-2")
+    state = _ledger_from_environment(env, ledger)
+    clock = now or (lambda: datetime.now(UTC))
+    request_now = clock()
+    lease_seconds = _lease_seconds(env)
+    dispatch_owner = _request_owner(context, "dispatch")
     if not event:
         dataset = env["SOURCE_DATASET"]
         latest = discover_latest_parquet(
@@ -366,18 +459,22 @@ def discovery_handler(
             "source_etag": latest["etag"],
             "source_last_modified": latest["last_modified"],
         }
-        response = queue.send_message(
-            QueueUrl=env["INGESTION_QUEUE_URL"],
-            MessageBody=json.dumps(message),
+        message_id = _send_discovery_message(
+            queue,
+            env["INGESTION_QUEUE_URL"],
+            message,
+            ledger=state,
+            owner=dispatch_owner,
+            now=request_now,
+            lease_seconds=lease_seconds,
         )
-        message_id = response["MessageId"]
         return {
             "mode": "incremental",
-            "dataset": dataset,
-            "source_key": str(latest["key"]),
+            "dataset": dataset if message_id is not None else None,
+            "source_key": str(latest["key"]) if message_id is not None else None,
             "message_id": message_id,
-            "enqueued": 1,
-            "message_ids": [message_id],
+            "enqueued": int(message_id is not None),
+            "message_ids": [message_id] if message_id is not None else [],
             "has_more": False,
             "continuation": None,
             "malformed_count": 0,
@@ -416,6 +513,7 @@ def discovery_handler(
         if has_more:
             break
     message_ids: list[str] = []
+    enqueued_items: list[dict[str, object]] = []
     for item in selected:
         message = {
             "dataset": item["dataset"],
@@ -426,11 +524,18 @@ def discovery_handler(
             "source_etag": item["etag"],
             "source_last_modified": item["last_modified"],
         }
-        response = queue.send_message(
-            QueueUrl=env["INGESTION_QUEUE_URL"],
-            MessageBody=json.dumps(message),
+        message_id = _send_discovery_message(
+            queue,
+            env["INGESTION_QUEUE_URL"],
+            message,
+            ledger=state,
+            owner=dispatch_owner,
+            now=request_now,
+            lease_seconds=lease_seconds,
         )
-        message_ids.append(response["MessageId"])
+        if message_id is not None:
+            message_ids.append(message_id)
+            enqueued_items.append(item)
 
     next_continuation = (
         _encode_continuation(_discovery_sort_key(selected[-1]), continuation_context)
@@ -444,7 +549,7 @@ def discovery_handler(
         "dataset": None,
         "source_key": None,
         "message_id": None,
-        "enqueued": len(selected),
+        "enqueued": len(enqueued_items),
         "message_ids": message_ids,
         "has_more": has_more,
         "continuation": next_continuation,
@@ -453,11 +558,11 @@ def discovery_handler(
         "malformed_keys_truncated": diagnostics.count > len(diagnostics.keys),
     }
     # Keep the original single-message response fields for existing callers.
-    if len(selected) == 1:
+    if len(enqueued_items) == 1:
         result.update(
             {
-                "dataset": selected[0]["dataset"],
-                "source_key": selected[0]["key"],
+                "dataset": enqueued_items[0]["dataset"],
+                "source_key": enqueued_items[0]["key"],
                 "message_id": message_ids[0],
             }
         )
@@ -472,10 +577,13 @@ def copy_handler(
     lambda_client: Any | None = None,
     environment: dict[str, str] | None = None,
     now: Any | None = None,
+    ledger: IngestionLedger | None = None,
 ) -> dict[str, list[dict[str, str]]]:
-    del context
     env = environment if environment is not None else dict(os.environ)
     client = s3_client or boto3.client("s3", region_name="us-west-2")
+    state = _ledger_from_environment(env, ledger)
+    copy_owner = _request_owner(context, "copy")
+    lease_seconds = _lease_seconds(env)
     function_client = lambda_client
     if function_client is None and env.get("MATERIALIZATION_FUNCTION"):
         function_client = boto3.client("lambda", region_name="us-west-2")
@@ -483,12 +591,35 @@ def copy_handler(
     failures = []
 
     for record in event.get("Records", []):
+        claimed_fingerprint: str | None = None
         try:
             message = json.loads(record["body"])
             source_key = message["source_key"]
-            filename = PurePosixPath(source_key).name
             spec = get_dataset_spec(message["dataset"])
+            if message["source_bucket"] != spec.source_bucket:
+                raise ValueError("source_bucket does not match registered dataset")
             period = spec.period_parser(source_key)
+            if message.get("source_period", period.label) != period.label:
+                raise ValueError("source_period does not match source key")
+            identity = source_identity_from_message(message)
+            fingerprint = source_fingerprint(identity)
+            supplied_fingerprint = message.get("source_fingerprint")
+            if supplied_fingerprint is not None and supplied_fingerprint != fingerprint:
+                raise ValueError("source_fingerprint does not match source identity")
+            message["source_fingerprint"] = fingerprint
+            if state is not None:
+                claim_now = clock()
+                state.ensure_discovered(identity, now=claim_now)
+                claim = state.claim_copy(
+                    fingerprint,
+                    owner=copy_owner,
+                    now=claim_now,
+                    lease_seconds=lease_seconds,
+                )
+                if not claim.claimed:
+                    continue
+                claimed_fingerprint = fingerprint
+            filename = PurePosixPath(source_key).name
             if period.start is None:
                 raw_key = f"raw/ons/{message['dataset']}/source_period=snapshot/{filename}"
             else:
@@ -537,6 +668,7 @@ def copy_handler(
                 "source_size": message["source_size"],
                 "source_etag": message["source_etag"],
                 "source_last_modified": message["source_last_modified"],
+                "source_fingerprint": fingerprint,
                 "destination_key": raw_key,
                 "sha256": sha256.hexdigest(),
                 "collected_at": collected_at.isoformat(),
@@ -558,10 +690,29 @@ def copy_handler(
                             "key": raw_key,
                             "sha256": sha256.hexdigest(),
                             "manifest_key": manifest_key,
+                            "source_fingerprint": fingerprint,
                         }
                     ).encode(),
                 )
-        except Exception:
+            if state is not None and claimed_fingerprint is not None:
+                state.mark_copied(
+                    claimed_fingerprint,
+                    owner=copy_owner,
+                    now=clock(),
+                    raw_key=raw_key,
+                    raw_sha256=sha256.hexdigest(),
+                    manifest_key=manifest_key,
+                )
+        except Exception as exc:
+            if state is not None and claimed_fingerprint is not None:
+                with suppress(Exception):
+                    state.mark_failed(
+                        claimed_fingerprint,
+                        owner=copy_owner,
+                        now=clock(),
+                        stage="COPYING",
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
             failures.append({"itemIdentifier": record["messageId"]})
 
     return {"batchItemFailures": failures}

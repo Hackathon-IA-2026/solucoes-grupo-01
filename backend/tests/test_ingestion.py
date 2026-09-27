@@ -1,11 +1,14 @@
 import base64
 import json
+from copy import deepcopy
 from datetime import UTC, datetime
 
 import pytest
+from botocore.exceptions import ClientError
 
 from curtailess.datasets import get_dataset_spec
 from curtailess.ingestion import copy_handler, discover_dataset_objects, discovery_handler
+from curtailess.ingestion_state import IngestionLedger, SourceIdentity, source_fingerprint
 
 
 def source_object(
@@ -351,6 +354,16 @@ def test_empty_event_preserves_deployed_single_prefix_latest_object_contract() -
         "source_size": 100,
         "source_etag": latest,
         "source_last_modified": "2026-09-02T00:00:00+00:00",
+        "source_fingerprint": source_fingerprint(
+            SourceIdentity(
+                dataset="restricao_coff_eolica_tm",
+                source_bucket="ons-aws-prod-opendata",
+                source_key=latest,
+                source_etag=latest,
+                source_size=100,
+                source_last_modified="2026-09-02T00:00:00+00:00",
+            )
+        ),
     }
     assert result == {
         "mode": "incremental",
@@ -1033,3 +1046,250 @@ def test_copy_handler_starts_materialization_with_provenance() -> None:
     assert payload["bucket"] == "curtailess-data"
     assert payload["key"].startswith("raw/ons/")
     assert len(payload["sha256"]) == 64
+
+
+class MemoryLedgerTable:
+    def __init__(self):
+        self.items = {}
+
+    def get_item(self, **kwargs):
+        item = self.items.get(kwargs["Key"]["source_fingerprint"])
+        return {"Item": deepcopy(item)} if item is not None else {}
+
+    def put_item(self, **kwargs):
+        item = deepcopy(kwargs["Item"])
+        fingerprint = item["source_fingerprint"]
+        existing = self.items.get(fingerprint)
+        condition = kwargs["ConditionExpression"]
+        conflict = condition == "attribute_not_exists(source_fingerprint)" and existing is not None
+        if condition == "#version = :expected_version":
+            expected = kwargs["ExpressionAttributeValues"][":expected_version"]
+            conflict = existing is None or existing["version"] != expected
+        if conflict:
+            raise ClientError(
+                {"Error": {"Code": "ConditionalCheckFailedException", "Message": "conflict"}},
+                "PutItem",
+            )
+        self.items[fingerprint] = item
+        return {}
+
+
+class RequestContext:
+    def __init__(self, request_id):
+        self.aws_request_id = request_id
+
+
+class FailSecondSQS(FakeSQS):
+    def send_message(self, **kwargs):
+        if len(self.messages) == 1:
+            raise RuntimeError("SQS unavailable")
+        return super().send_message(**kwargs)
+
+
+class FailFirstDownloadS3(FakeDestinationS3):
+    def __init__(self):
+        super().__init__()
+        self.failures_remaining = 1
+
+    def get_object(self, **kwargs):
+        if self.failures_remaining:
+            self.failures_remaining -= 1
+            raise RuntimeError("download failed")
+        return super().get_object(**kwargs)
+
+
+def copy_message() -> dict:
+    message = {
+        "dataset": "restricao_coff_eolica_tm",
+        "source_bucket": "ons-aws-prod-opendata",
+        "source_key": ("dataset/restricao_coff_eolica_tm/RESTRICAO_COFF_EOLICA_2026_09.parquet"),
+        "source_size": 13,
+        "source_etag": "source-etag",
+        "source_last_modified": "2026-09-03T00:00:00+00:00",
+    }
+    message["source_fingerprint"] = source_fingerprint(
+        SourceIdentity(
+            dataset=message["dataset"],
+            source_bucket=message["source_bucket"],
+            source_key=message["source_key"],
+            source_etag=message["source_etag"],
+            source_size=message["source_size"],
+            source_last_modified=message["source_last_modified"],
+        )
+    )
+    return message
+
+
+def test_discovery_ledger_suppresses_replayed_completed_dispatch() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    key = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_09.parquet"
+    pages = {spec.s3_prefix: [{"Contents": [source_object(key)]}]}
+    ledger = IngestionLedger(MemoryLedgerTable())
+    first_sqs = FakeSQS()
+    event = {
+        "mode": "backfill",
+        "dataset": spec.dataset_id,
+        "start_period": "2026-09",
+        "end_period": "2026-09",
+    }
+    first = discovery_handler(
+        event,
+        RequestContext("first"),
+        s3_client=FakeS3(pages),
+        sqs_client=first_sqs,
+        environment=environment(),
+        ledger=ledger,
+        now=lambda: datetime(2026, 9, 27, tzinfo=UTC),
+    )
+    replay = discovery_handler(
+        event,
+        RequestContext("replay"),
+        s3_client=FakeS3(pages),
+        sqs_client=FakeSQS(),
+        environment=environment(),
+        ledger=ledger,
+        now=lambda: datetime(2026, 9, 27, 0, 1, tzinfo=UTC),
+    )
+    assert first["enqueued"] == 1
+    assert replay["enqueued"] == 0
+
+
+def test_partial_discovery_failure_retries_only_unsent_fingerprint() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    keys = [f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_{month:02d}.parquet" for month in (8, 9)]
+    pages = {spec.s3_prefix: [{"Contents": [source_object(key) for key in keys]}]}
+    ledger = IngestionLedger(MemoryLedgerTable())
+    event = {
+        "mode": "backfill",
+        "dataset": spec.dataset_id,
+        "start_period": "2026-08",
+        "end_period": "2026-09",
+    }
+    failing_sqs = FailSecondSQS()
+    with pytest.raises(RuntimeError, match="SQS unavailable"):
+        discovery_handler(
+            event,
+            RequestContext("first"),
+            s3_client=FakeS3(pages),
+            sqs_client=failing_sqs,
+            environment=environment(),
+            ledger=ledger,
+            now=lambda: datetime(2026, 9, 27, tzinfo=UTC),
+        )
+    retry_sqs = FakeSQS()
+    retried = discovery_handler(
+        event,
+        RequestContext("retry"),
+        s3_client=FakeS3(pages),
+        sqs_client=retry_sqs,
+        environment=environment(),
+        ledger=ledger,
+        now=lambda: datetime(2026, 9, 27, 0, 1, tzinfo=UTC),
+    )
+    assert retried["enqueued"] == 1
+    assert json.loads(retry_sqs.messages[0]["MessageBody"])["source_key"] == keys[1]
+
+
+def test_duplicate_sqs_delivery_copies_once_with_ledger() -> None:
+    table = MemoryLedgerTable()
+    ledger = IngestionLedger(table)
+    message = copy_message()
+    event = {
+        "Records": [
+            {"messageId": "first", "body": json.dumps(message)},
+            {"messageId": "duplicate", "body": json.dumps(message)},
+        ]
+    }
+    s3 = FakeDestinationS3()
+    result = copy_handler(
+        event,
+        RequestContext("copy"),
+        s3_client=s3,
+        environment={"DATA_BUCKET": "curtailess-data"},
+        now=lambda: datetime(2026, 9, 27, tzinfo=UTC),
+        ledger=ledger,
+    )
+    assert result == {"batchItemFailures": []}
+    assert len(s3.uploads) == 1
+    assert len(s3.objects) == 1
+    item = table.items[message["source_fingerprint"]]
+    assert item["state"] == "COPIED"
+
+
+def test_failed_copy_is_retried_then_succeeds() -> None:
+    table = MemoryLedgerTable()
+    ledger = IngestionLedger(table)
+    message = copy_message()
+    s3 = FailFirstDownloadS3()
+    first = copy_handler(
+        {"Records": [{"messageId": "first", "body": json.dumps(message)}]},
+        RequestContext("copy-1"),
+        s3_client=s3,
+        environment={"DATA_BUCKET": "curtailess-data"},
+        now=lambda: datetime(2026, 9, 27, tzinfo=UTC),
+        ledger=ledger,
+    )
+    assert first == {"batchItemFailures": [{"itemIdentifier": "first"}]}
+    assert table.items[message["source_fingerprint"]]["state"] == "FAILED"
+    second = copy_handler(
+        {"Records": [{"messageId": "second", "body": json.dumps(message)}]},
+        RequestContext("copy-2"),
+        s3_client=s3,
+        environment={"DATA_BUCKET": "curtailess-data"},
+        now=lambda: datetime(2026, 9, 27, 0, 1, tzinfo=UTC),
+        ledger=ledger,
+    )
+    assert second == {"batchItemFailures": []}
+    assert table.items[message["source_fingerprint"]]["state"] == "COPIED"
+    assert len(s3.uploads) == 1
+
+
+def test_copy_rejects_mismatched_fingerprint_before_ledger_write() -> None:
+    table = MemoryLedgerTable()
+    ledger = IngestionLedger(table)
+    message = copy_message()
+    message["source_fingerprint"] = "0" * 64
+    s3 = FakeDestinationS3()
+    result = copy_handler(
+        {"Records": [{"messageId": "bad", "body": json.dumps(message)}]},
+        RequestContext("copy"),
+        s3_client=s3,
+        environment={"DATA_BUCKET": "curtailess-data"},
+        now=lambda: datetime(2026, 9, 27, tzinfo=UTC),
+        ledger=ledger,
+    )
+    assert result == {"batchItemFailures": [{"itemIdentifier": "bad"}]}
+    assert table.items == {}
+    assert s3.uploads == []
+
+
+def test_active_copy_lease_suppresses_duplicate_delivery_until_expiry() -> None:
+    table = MemoryLedgerTable()
+    ledger = IngestionLedger(table)
+    message = copy_message()
+    identity = SourceIdentity(
+        dataset=message["dataset"],
+        source_bucket=message["source_bucket"],
+        source_key=message["source_key"],
+        source_etag=message["source_etag"],
+        source_size=message["source_size"],
+        source_last_modified=message["source_last_modified"],
+    )
+    ledger.ensure_discovered(identity, now=datetime(2026, 9, 27, tzinfo=UTC))
+    ledger.claim_copy(
+        message["source_fingerprint"],
+        owner="other",
+        now=datetime(2026, 9, 27, tzinfo=UTC),
+        lease_seconds=300,
+    )
+    s3 = FakeDestinationS3()
+    result = copy_handler(
+        {"Records": [{"messageId": "duplicate", "body": json.dumps(message)}]},
+        RequestContext("copy"),
+        s3_client=s3,
+        environment={"DATA_BUCKET": "curtailess-data"},
+        now=lambda: datetime(2026, 9, 27, 0, 1, tzinfo=UTC),
+        ledger=ledger,
+    )
+    assert result == {"batchItemFailures": []}
+    assert s3.uploads == []
