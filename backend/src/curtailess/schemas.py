@@ -760,6 +760,104 @@ class PlantStateResponse(BaseModel):
         return self
 
 
+class MaintenanceDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    asset_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
+    as_of: datetime
+    planning_start: date
+    planning_end: date
+    duration_days: int = Field(ge=1, le=MAX_PLANNING_DAYS)
+    minimum_notice_hours: int = Field(ge=0, le=MAX_PLANNING_DAYS * 24)
+    constraints: MaintenanceConstraints = Field(default_factory=MaintenanceConstraints)
+    energy_price: EnergyPrice
+
+    @model_validator(mode="after")
+    def validate_decision_request(self) -> Self:
+        if self.as_of.tzinfo is None:
+            raise ValueError("as_of requires timezone information")
+        if self.planning_start > self.planning_end:
+            raise ValueError("planning_start must not be after planning_end")
+        if (self.planning_end - self.planning_start).days + 1 > MAX_PLANNING_DAYS:
+            raise ValueError(f"maintenance planning horizon exceeds {MAX_PLANNING_DAYS} days")
+        return self
+
+
+class DecisionExplanation(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    summary: BoundedText
+    evidence_ids: tuple[Annotated[str, StringConstraints(min_length=1, max_length=128)], ...]
+    limitations: tuple[BoundedText, ...]
+    generation_mode: Literal["bedrock", "deterministic_fallback"]
+    model_id: Annotated[str, StringConstraints(min_length=1, max_length=256)] | None = None
+
+    @model_validator(mode="after")
+    def validate_generation_metadata(self) -> Self:
+        if self.generation_mode == "bedrock" and self.model_id is None:
+            raise ValueError("Bedrock explanation requires model_id")
+        if self.generation_mode == "deterministic_fallback" and self.model_id is not None:
+            raise ValueError("deterministic fallback cannot claim a model_id")
+        if len(self.evidence_ids) > 32 or len(self.limitations) > 16:
+            raise ValueError("decision explanation exceeds bounded collection limits")
+        return self
+
+
+class MaintenanceDecisionEvidenceBundle(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    plant_state_snapshot_id: Annotated[str, StringConstraints(pattern=r"^pst1\.[0-9a-f]{64}$")]
+    source_artifacts: tuple[SourceArtifact, ...]
+    parent_evidence_ids: tuple[EvidenceId, ...]
+    request_digest: Sha256
+
+    @model_validator(mode="after")
+    def validate_bundle(self) -> Self:
+        if (
+            tuple(
+                sorted(
+                    set(self.source_artifacts),
+                    key=lambda item: (item.source_key, item.source_sha256),
+                )
+            )
+            != self.source_artifacts
+        ):
+            raise ValueError("decision source_artifacts must be sorted and unique")
+        if tuple(sorted(set(self.parent_evidence_ids))) != self.parent_evidence_ids:
+            raise ValueError("decision parent_evidence_ids must be sorted and unique")
+        return self
+
+
+class MaintenanceDecisionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    decision_id: Annotated[str, StringConstraints(pattern=r"^dec1\.[0-9a-f]{64}$")]
+    request_digest: Sha256
+    status: Literal["RECOMMENDED", "REVIEW_REQUIRED", "NO_ELIGIBLE_WINDOW"]
+    request: MaintenanceDecisionRequest
+    plant_state: PlantStateResponse
+    engine_result: MaintenanceEngineResult
+    evidence_bundle: MaintenanceDecisionEvidenceBundle
+    selected_window: MaintenanceWindowEvaluation | None = None
+    decision_provenance: EvidenceProvenance | None = None
+    explanation: DecisionExplanation
+
+    @model_validator(mode="after")
+    def validate_decision(self) -> Self:
+        if self.status == "RECOMMENDED":
+            if self.selected_window is None or self.decision_provenance is None:
+                raise ValueError("recommended decision requires a selected window and provenance")
+            if self.selected_window.rank != 1 or not self.selected_window.eligible:
+                raise ValueError("selected maintenance window must be eligible rank 1")
+            if self.decision_provenance.field_name != "selected_window":
+                raise ValueError("decision provenance must identify selected_window")
+            if self.decision_provenance.origin is not DataOrigin.PROXY_CALCULADO:
+                raise ValueError("selected window provenance must be PROXY_CALCULADO")
+        elif self.selected_window is not None or self.decision_provenance is not None:
+            raise ValueError("non-recommended decision cannot select a window")
+        return self
+
+
 class BessScreenRequest(BaseModel):
     asset_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
     maintenance_result_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]

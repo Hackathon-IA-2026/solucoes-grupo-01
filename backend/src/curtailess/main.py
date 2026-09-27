@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, date, datetime
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -16,6 +16,12 @@ from .canonical import canonical_json as _canonical_json
 from .config import get_settings
 from .data_access import create_exposure_repository
 from .decision_operations import build_rank_maintenance, build_screen_bess
+from .maintenance_decisions import (
+    DecisionPersistenceUnavailable,
+    IdempotencyConflict,
+    create_maintenance_decision,
+    create_maintenance_decision_repository,
+)
 from .plant_state import build_plant_state, create_plant_state_repository
 from .provenance import build_evidence_id as build_evidence_id
 from .provenance import create_issued_provenance_repository
@@ -47,6 +53,8 @@ from .schemas import (
     ExposureResponse,
     HealthResponse,
     HistoricalWindowsResponse,
+    MaintenanceDecisionRequest,
+    MaintenanceDecisionResponse,
     MaintenanceRankRequest,
     MaintenanceRankResponse,
     ModelRunResponse,
@@ -69,6 +77,9 @@ issued_provenance_repository = create_issued_provenance_repository(
     settings.scenarios_table, settings.aws_region
 )
 plant_state_repository = create_plant_state_repository(
+    settings.scenarios_table, settings.aws_region
+)
+maintenance_decision_repository = create_maintenance_decision_repository(
     settings.scenarios_table, settings.aws_region
 )
 
@@ -514,6 +525,47 @@ def get_asset_windows(
 )
 def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse:
     return build_rank_maintenance(request, repository, issued_provenance_repository)
+
+
+@app.post(
+    "/v1/maintenance/decisions",
+    response_model=MaintenanceDecisionResponse,
+    tags=["maintenance"],
+)
+def post_maintenance_decision(
+    request: MaintenanceDecisionRequest,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=8, max_length=128),
+    ],
+) -> MaintenanceDecisionResponse:
+    try:
+        return create_maintenance_decision(
+            request,
+            idempotency_key,
+            exposure_repository=repository,
+            plant_state_repository=plant_state_repository,
+            decision_repository=maintenance_decision_repository,
+            settings=settings,
+        )
+    except IdempotencyConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except DecisionPersistenceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado.") from exc
+
+
+@app.get(
+    "/v1/maintenance/decisions/{decision_id}",
+    response_model=MaintenanceDecisionResponse,
+    tags=["maintenance"],
+)
+def get_maintenance_decision(decision_id: str) -> MaintenanceDecisionResponse:
+    response = maintenance_decision_repository.get_decision(decision_id)
+    if response is None:
+        raise HTTPException(status_code=404, detail="Decisão não encontrada.")
+    return response
 
 
 @app.post(

@@ -66,6 +66,20 @@ def test_sam_exposes_frontend_bucket_and_website_url() -> None:
     assert "AllowedOrigin" not in template["Parameters"]
 
 
+def test_api_can_persist_decisions_and_invoke_bedrock_converse() -> None:
+    properties = load_template()["Resources"]["ApiFunction"]["Properties"]
+    variables = properties["Environment"]["Variables"]
+    policies = properties["Policies"]
+
+    assert variables["SCENARIOS_TABLE"] == {"Ref": "ScenariosTable"}
+    assert variables["EXPOSURE_TABLE"] == {"Ref": "ExposureTable"}
+    assert variables["PUBLIC_DATA_MAX_AGE_HOURS"] == "48"
+    assert {"DynamoDBCrudPolicy": {"TableName": {"Ref": "ScenariosTable"}}} in policies
+    statements = next(policy["Statement"] for policy in policies if "Statement" in policy)
+    invoke = next(statement for statement in statements if statement["Sid"] == "InvokeBedrockModel")
+    assert "bedrock:InvokeModel" in invoke["Action"]
+
+
 def test_sam_provisions_retained_encrypted_ingestion_ledger() -> None:
     resources = load_template()["Resources"]
     table = resources["IngestionLedgerTable"]
