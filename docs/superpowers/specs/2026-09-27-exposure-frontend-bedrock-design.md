@@ -4,6 +4,8 @@
 
 Approved design for replacing the current CurtaiLess frontend baseline and connecting only the Exposure route to backend data and stored Amazon Bedrock narratives.
 
+Plant-level update: the Exposure entity is now the individual plant, not the generation group. The five selectable identifiers are individual plants verified in the public ONS registry. Generation groups (`CJU_*`) are systemic context and are never selectable. See `docs/audits/2026-09-27-granularidade-por-usina-e-narrativas-ia.md` for the verified values and method.
+
 ## Context
 
 The replacement frontend is located at:
@@ -28,12 +30,12 @@ The backend already materializes public Operador Nacional do Sistema Elétrico d
 2. Preserve the replacement frontend's visual structure and interaction rules.
 3. Connect only the Exposure route to backend data.
 4. Replace Exposure fixtures with one coherent backend response per selected asset.
-5. Expose the five demonstrative assets:
-   - `CJU_RNRDV`
-   - `CJU_BALRA`
-   - `CJU_BASDB`
-   - `CJU_RNMVS`
-   - `CJU_PBLZA`
+5. Expose the five demonstrative individual plants:
+   - `RNEM13`
+   - `BAEA52`
+   - `BAEB0B`
+   - `RNMVS2`
+   - `PBLZ3`
 6. Materialize the six central interpretation texts with models available through Amazon Bedrock.
 7. Store validated narratives in AWS so page refreshes never invoke Bedrock.
 8. Keep deterministic fallback text available when no compatible validated narrative exists.
@@ -143,26 +145,31 @@ Unknown assets return HTTP 404. No route silently falls back to another asset.
 
 ### Asset catalog
 
-The Exposure picker uses an endpoint that returns the five approved demonstration assets. The response includes only fields required by the picker and illustrations:
+The Exposure picker uses an endpoint that returns the five approved demonstration individual plants. The response includes only fields required by the picker and illustrations:
 
 ```json
 {
   "items": [
     {
-      "asset_id": "CJU_RNRDV",
-      "name": "Conj. Rio do Vento",
+      "asset_id": "RNEM13",
+      "name": "Ventos de Santa Martina 13",
+      "entity_level": "plant",
+      "ons_group_id": "CJU_RNRDV",
+      "ons_group_name": "Rio do Vento",
       "technology": "wind",
       "state": "RN",
       "connection_point": "RNCMM-500-A",
-      "capacity_mw": 0,
-      "connected_asset_count": 0,
+      "capacity_mw": 67.2,
+      "ceg": "EOL.CV.RN.038322-8.01",
+      "allocation_coverage": {"value": 100.0, "unit": "%"},
+      "connected_asset_count": 15,
       "operational_data_status": "simulated"
     }
   ]
 }
 ```
 
-The example values are structural placeholders. Tests must use computed fixture values rather than treating those numbers as product facts.
+Values above are the verified values for `RNEM13`. Tests must use computed fixture values rather than treating any number as a product fact. `connected_asset_count` is the number of plants sharing the connection point, and `allocation_coverage` is the reconciled allocation coverage of the plant.
 
 ### Exposure view
 
@@ -182,11 +189,14 @@ observed_impact
 forecast_60d
 associated_conditions
 recurrence
-pattern_reach
 quality
+point_context
+simulated_telemetry
 narrative
 limitations
 ```
+
+The entity in `asset` is an individual plant. `point_context` carries the systemic pressure of every plant connected to the connection point, and `simulated_telemetry` carries the estimated operational state of the selected plant. Neither the point energy nor the group energy is ever attributed to the selected plant.
 
 The frontend must not join several independently timed API responses into one Exposure screen.
 
@@ -194,40 +204,50 @@ The frontend must not join several independently timed API responses into one Ex
 
 Return:
 
-- asset identifier;
+- plant identifier, never a `CJU_*` group;
 - display name;
+- `entity_level` equal to `plant`;
+- ONS group identifier and name;
+- CEG;
 - wind or solar technology;
 - state;
 - connection point;
 - installed capacity;
-- number of associated plants or groups;
+- reconciled allocation coverage;
+- number of plants connected to the same point;
 - operational data status;
+- estimated operational capacity and simulated telemetry of the plant;
 - last data update.
 
 ### Section 2: observed impact
 
 Return:
 
-- historically curtailed energy;
+- historically curtailed energy of the selected plant, reconciled with the published group total;
+- share of restricted days;
+- latest daily curtailed energy;
+- trailing 7 and 30 day means;
 - share with a characterized reason;
-- share simultaneous with other assets at the point;
-- share exclusive to the selected asset;
-- covered historical period.
+- share simultaneous with other plants at the point;
+- share exclusive to the selected plant;
+- covered historical period and allocation coverage.
 
 ### Section 3: 60-day forecast
 
 Return:
 
-- one point per forecast date;
+- one point per forecast date, exactly 60 ordered points;
 - expected curtailed energy;
 - lower and upper estimated bounds;
 - estimated curtailment probability;
+- potential generation and accepted generation envelope;
+- scheduled maintenance relief and avoided curtailment;
 - accumulated 60-day expected energy and bounds;
-- the three periods with the highest exposure according to a deterministic ranking;
+- the three critical, non-overlapping 72-hour windows according to a deterministic ranking;
 - forecast start and end dates;
 - an explicit demonstrative status.
 
-The UI may aggregate daily points for visual readability, but the table preserves exact daily values.
+The UI may aggregate daily points for visual readability, but the table preserves exact daily values. The daily series is rendered as a line with a marker and date label on all 60 days.
 
 ### Section 4: associated conditions
 
@@ -237,7 +257,7 @@ Return deterministic distributions for:
 - systemic, local, or unreported reach;
 - restriction modality when the technology and source provide it.
 
-The response describes association only. It does not state that a recorded condition caused a curtailment event.
+The response also returns the simulated maintenance relief of the point, the scheduled maintenance window count, and the simulated entities of the point. The response describes association only. It does not state that a recorded condition caused a curtailment event, and it never attributes a group reason to the selected plant as a proven cause.
 
 ### Section 5: recurrence
 
@@ -274,17 +294,21 @@ Return exactly these keys:
 
 Each value contains bounded non-empty paragraphs. Titles, metrics, dates, units, charts, warnings, and limitations remain deterministic.
 
+Each section carries an internal `generation_mode` (`bedrock`, `cached_bedrock`, or `deterministic_fallback`). The mode is internal and never reaches the customer. The frontend shows the same constant title `Análise dos dados` for all six sections and does not distinguish Bedrock, cache, or fallback.
+
 ## Forecast import
 
 The frontend must never read the strategy artifact directly. Add an explicit backend importer that:
 
-1. reads the approved five-asset forecast artifact;
-2. validates the artifact schema and approved asset identifiers;
+1. reads the approved five-plant forecast artifact and the individual plant history artifact;
+2. validates the artifact schema and approved plant identifiers, rejecting any `CJU_*` group as a selectable asset;
 3. validates finite numeric values, dates, intervals, and 60-day cardinality;
-4. extracts only runtime fields required by Exposure;
+4. extracts only runtime fields required by Exposure, including potential generation, accepted envelope, maintenance relief, avoided curtailment, and the three critical 72-hour windows;
 5. writes canonical forecast records to application storage;
 6. records the artifact digest and import timestamp;
 7. performs an idempotent no-op when the same artifact was already imported.
+
+The bundled artifacts are `data/individual_plant_catalog.json`, `data/individual_plant_history.json`, `data/individual_plant_forecast.json`, and `data/simulated_point_maintenance_schedule.json`. Their digests are recorded in `docs/audits/2026-09-27-granularidade-por-usina-e-narrativas-ia.md`.
 
 The implementation may accept a local artifact path for development and an S3 object for AWS execution. Runtime API code reads application storage, not the strategy workspace.
 
@@ -297,7 +321,7 @@ No AWS import is executed without separate authorization.
 Add an explicit command:
 
 ```bash
-python -m curtailess.materialize_exposure_narratives --asset-id CJU_RNRDV
+python -m curtailess.materialize_exposure_narratives --asset-id RNEM13
 python -m curtailess.materialize_exposure_narratives --all
 ```
 
@@ -353,6 +377,8 @@ The narrative selection order is:
 1. validated narrative matching the current input digest and schema version;
 2. last validated narrative for the asset, only when compatibility validation proves every cited fact remains valid;
 3. deterministic narrative for the current bundle.
+
+Fallback is applied per section. A section that fails validation falls back deterministically on its own without discarding the five valid sibling sections. A section is validated only against its own evidence subset, so a number that exists only in another section is rejected for the section that cited it.
 
 If Bedrock generation fails, do not overwrite the current pointer. A failed first generation still leaves the deterministic narrative available.
 
@@ -451,8 +477,20 @@ Charts may change data shape, aggregation, labels, and ranges to represent backe
 Cover:
 
 - forecast artifact validation;
-- five approved assets;
+- five approved individual plants and rejection of `CJU_*` groups;
+- plant selection criteria: unambiguous active link, coverage, weather, capacity;
+- individual restriction event from the plant indicator;
+- energy allocation and group-total conservation within tolerance;
+- capacity fallback restricted to restricted plants and unallocated remainder;
+- simulated telemetry and estimated operational capacity;
+- point pressure using every plant connected to the point without double counting;
+- with and without scheduled maintenance scenarios and reuse of the same weather samples;
+- network relief, avoided curtailment, and candidate window relief;
+- three non-overlapping 72-hour windows with 144 intervals each and no weekly grouping;
 - 60-day cardinality and date ordering;
+- probability support and saturation guards;
+- per-plant backtest metrics and baselines, including negative results;
+- weather to climatology transition after the short-range horizon;
 - idempotent forecast import;
 - canonical digest stability;
 - six-section deterministic bundle assembly;
@@ -544,7 +582,7 @@ Each excluded operation requires separate user authorization after local verific
 
 1. The target repository contains the replacement frontend baseline without modifying the source directory.
 2. Exposure preserves all six sections and visual invariants.
-3. Exposure lists and switches among the five approved demonstration assets.
+3. Exposure lists and switches among the five approved demonstration individual plants, one per current context, with no `CJU_*` group selectable.
 4. Exposure obtains all customer-visible facts and narratives from the backend.
 5. Exposure contains no fixture fallback.
 6. Maintenance, Battery, and Report receive no new backend integration.

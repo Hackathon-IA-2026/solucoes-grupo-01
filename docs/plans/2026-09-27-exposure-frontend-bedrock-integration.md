@@ -2,9 +2,11 @@
 
 > **For Hermes:** Execute this plan directly, task by task, with focused RED/GREEN verification and frequent commits. Do not use subagents because the user requested direct execution.
 
-**Goal:** Replace the repository frontend with the approved six-section version, connect only Exposure to real backend data for five demonstrative assets, and materialize bounded interpretation texts through Amazon Bedrock without invoking a model on page load.
+**Goal:** Replace the repository frontend with the approved six-section version, connect only Exposure to real backend data for five demonstrative individual plants, and materialize bounded interpretation texts through Amazon Bedrock without invoking a model on page load.
 
 **Architecture:** A single `GET /v1/assets/{asset_id}/exposure-view` response carries one coherent deterministic Exposure bundle plus a stored or deterministic six-section narrative. A validated forecast importer and a dedicated DynamoDB narrative repository support explicit local materialization commands. The frontend validates the response with Zod, keeps Exposure selection separate from Maintenance and Battery, and preserves the approved visual structure.
+
+**Plant-level migration:** the Exposure entity is the individual plant, not the generation group. The five selectable identifiers are `RNEM13`, `BAEA52`, `BAEB0B`, `RNMVS2`, and `PBLZ3`, verified in the public ONS registry. Generation groups (`CJU_*`) are systemic context and are never selectable. The view adds `point_context` and `simulated_telemetry`, and the forecast carries potential generation, accepted envelope, scheduled maintenance relief, avoided curtailment, and three non-overlapping 72-hour windows. Verified values and method are in `docs/audits/2026-09-27-granularidade-por-usina-e-narrativas-ia.md`.
 
 **Tech Stack:** Python 3.12, FastAPI, Pydantic v2, boto3 Bedrock Converse, DynamoDB, AWS SAM, React 19, React Router 8, TypeScript 5.9, Zod, Recharts, Vitest, Playwright.
 
@@ -66,7 +68,7 @@ git commit -m "feat(frontend): adopt six-section exposure experience"
 
 ### Task 2: Define the backend Exposure contracts
 
-**Objective:** Add strict Pydantic contracts for the five-asset catalog, all six deterministic data sections, narrative content, and the complete Exposure view.
+**Objective:** Add strict Pydantic contracts for the five-plant catalog, all six deterministic data sections, narrative content, and the complete Exposure view.
 
 **Files:**
 - Modify: `backend/src/curtailess/schemas.py`
@@ -76,7 +78,7 @@ git commit -m "feat(frontend): adopt six-section exposure experience"
 
 Cover:
 
-- exactly five approved asset identifiers;
+- exactly five approved plant identifiers, no `CJU_*` group;
 - finite values only;
 - offset-aware `last_data_update`;
 - exactly 60 ordered forecast dates when a forecast is present;
@@ -376,7 +378,7 @@ git commit -m "feat(exposure): add explicit materialization commands"
 
 ### Task 8: Expose the coherent Exposure API
 
-**Objective:** Serve the five-asset catalog and complete Exposure view with stored, compatible, or deterministic narrative selection.
+**Objective:** Serve the five-plant catalog and complete Exposure view with stored, compatible, or deterministic narrative selection.
 
 **Files:**
 - Modify: `backend/src/curtailess/main.py`
@@ -387,7 +389,7 @@ git commit -m "feat(exposure): add explicit materialization commands"
 
 Cover:
 
-- five approved assets;
+- five approved individual plants, no `CJU_*` group selectable;
 - successful wind and solar views;
 - exact narrative match;
 - compatible previous narrative;
@@ -700,3 +702,21 @@ Report:
 - exact local commands for the user to run;
 - known limitations;
 - confirmation that no deployment or AWS write occurred.
+
+---
+
+## Plant-level supersession
+
+The five-asset group-level contract in Tasks 2, 3, 4, and 8 was superseded by the individual plant contract through commits `b813a04`, `c03fe81`, `fd54b60`, `86f022b`, `2520168`, `1e9f540`, `de32cd3`, `fbf1323`, and `e77d6a5`. The current contract:
+
+- selects exactly five individual plants, `RNEM13`, `BAEA52`, `BAEB0B`, `RNMVS2`, and `PBLZ3`, one per current context;
+- never exposes a `CJU_*` generation group as a selectable asset;
+- reconciles the individual energy against the published group total and conserves it within 1e-6 MWh;
+- simulates every plant connected to the point and estimates point pressure without double counting;
+- compares a scenario without scheduled maintenance, a scenario with scheduled maintenance, and the candidate 72-hour window counterfactual, all over the same weather samples;
+- publishes exactly 60 daily points and three non-overlapping 72-hour windows;
+- validates each Bedrock section only against its own evidence subset and falls back per section.
+
+The corrected solar point envelopes from commit `fbf1323` (deduplicated aggregate source and technology-restricted published series) and all verified plant-level values are documented in `docs/audits/2026-09-27-granularidade-por-usina-e-narrativas-ia.md`.
+
+The product surface still shows no provenance panel and no call to action, and Exposure selection is not propagated to Maintenance, Battery, or Report.
