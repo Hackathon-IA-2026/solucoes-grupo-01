@@ -25,17 +25,10 @@ export function MaintenanceSchedulingModal({
   onClose,
   onConfirm,
 }: MaintenanceSchedulingModalProps) {
-  const [start, setStart] = useState("");
+  const [start, setStart] = useState(() => suggestion?.start.slice(0, 16) ?? "");
   const [observations, setObservations] = useState("");
   const [error, setError] = useState("");
   const durationHours = suggestion?.durationHours ?? 24;
-
-  useEffect(() => {
-    if (!open) return;
-    setStart(suggestion?.start.slice(0, 16) ?? "");
-    setObservations("");
-    setError("");
-  }, [open, suggestion]);
 
   useEffect(() => {
     if (!open) return;
