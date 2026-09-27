@@ -36,7 +36,6 @@ export type Asset = {
   connectionPoint: string;
   anonymousEntities: number;
   telemetry: "ausente" | "simulada" | "fornecida";
-  dataMode?: "demo" | "ons_materialized";
 };
 
 export type ChartPoint = Record<string, string | number | null> & { label: string };
@@ -133,6 +132,12 @@ export type BatteryScenario = {
   missingInputs: string[];
 };
 
+export type ForecastWindow = {
+  label: string;
+  likelihood: EvidenceValue;
+  summary: string;
+};
+
 export type AssetExposure = {
   summary: { total: EvidenceValue; characterized: EvidenceValue; simultaneous: EvidenceValue; exclusive: EvidenceValue; entityCount: EvidenceValue };
   history: ChartDataset;
@@ -140,6 +145,6 @@ export type AssetExposure = {
   origins: ChartDataset;
   seasonality: ChartDataset;
   hourly: ChartDataset;
-  perspective: ChartDataset;
+  forecast60d: ChartDataset;
   modality?: ChartDataset;
 };

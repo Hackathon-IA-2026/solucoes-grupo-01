@@ -1,0 +1,78 @@
+import { useRef } from "react";
+import { BuildingsIcon, CheckCircleIcon, XIcon } from "@phosphor-icons/react";
+import { assets } from "~/domain/fixtures";
+import { useAnalysis } from "~/state/use-analysis";
+import { cn } from "~/lib/cn";
+
+export function AssetPicker() {
+  const { state, selectAsset } = useAnalysis();
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const activeAsset = assets.find((asset) => asset.id === state.assetId) ?? assets[0];
+  const open = () => {
+    const dialog = dialogRef.current;
+    if (typeof dialog?.showModal === "function") dialog.showModal();
+  };
+  const close = () => {
+    const dialog = dialogRef.current;
+    if (typeof dialog?.close === "function") dialog.close();
+  };
+  const choose = (assetId: string) => {
+    if (assetId !== state.assetId) selectAsset(assetId);
+    close();
+  };
+  return (
+    <>
+      <button
+        type="button"
+        onClick={open}
+        aria-haspopup="dialog"
+        data-asset-picker=""
+        className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-line bg-white text-sm font-semibold text-ink hover:border-accent hover:bg-accent-soft max-sm:size-11 sm:px-3"
+      >
+        <BuildingsIcon aria-hidden="true" />
+        <span className="sr-only">Selecionar usina</span>
+        <span className="max-w-[18ch] truncate max-sm:hidden">{activeAsset.name}</span>
+      </button>
+      <dialog
+        ref={dialogRef}
+        aria-labelledby="asset-picker-title"
+        className="m-auto w-[min(92vw,34rem)] rounded-xl border border-line bg-surface p-0 text-ink shadow-[0_12px_32px_rgba(16,42,42,.22)] backdrop:bg-ink/40"
+        onClick={(event) => { if (event.target === dialogRef.current) close(); }}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-line p-4 sm:p-5">
+          <div>
+            <h2 id="asset-picker-title" className="text-lg font-semibold">Usina em análise</h2>
+            <p className="mt-1 text-sm leading-6 text-ink-soft">Na demonstração é possível alternar entre usinas. Na operação real o acesso fica restrito à usina do próprio proprietário.</p>
+          </div>
+          <button type="button" onClick={close} aria-label="Fechar seleção de usina" className="grid size-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-accent-soft hover:text-ink">
+            <XIcon aria-hidden="true" />
+          </button>
+        </div>
+        <ul className="space-y-2 p-4 sm:p-5">
+          {assets.map((asset) => {
+            const selected = asset.id === state.assetId;
+            return (
+              <li key={asset.id}>
+                <button
+                  type="button"
+                  onClick={() => choose(asset.id)}
+                  aria-current={selected ? "true" : undefined}
+                  className={cn(
+                    "flex w-full min-h-11 items-center justify-between gap-3 rounded-lg border border-line bg-white p-3 text-left hover:border-accent hover:bg-accent-soft",
+                    selected && "border-accent bg-accent-soft",
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold">{asset.name}</span>
+                    <span className="block text-xs text-ink-soft">{asset.technology} | {asset.location} | Telemetria {asset.telemetry}</span>
+                  </span>
+                  {selected ? <CheckCircleIcon weight="fill" className="shrink-0 text-accent" aria-hidden="true" /> : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </dialog>
+    </>
+  );
+}

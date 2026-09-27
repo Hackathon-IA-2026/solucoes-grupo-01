@@ -15,12 +15,12 @@ export function StateBadge({ state }: { state: EvidenceState }) {
   return <span className={cn("inline-flex rounded-md border px-2 py-1 text-xs font-semibold", stateStyles[state])}>{state}</span>;
 }
 
-export function EvidenceMetric({ label, evidence, emphasis = false }: { label: string; evidence: EvidenceValue; emphasis?: boolean }) {
+export function EvidenceMetric({ label, evidence, emphasis = false, showState = true }: { label: string; evidence: EvidenceValue; emphasis?: boolean; showState?: boolean }) {
   return (
     <article className="min-w-0 rounded-xl border border-line bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-medium text-ink-soft">{label}</p>
-        <StateBadge state={evidence.state} />
+        {showState ? <StateBadge state={evidence.state} /> : null}
       </div>
       <p className={cn("num mt-3 break-words font-semibold", emphasis ? "text-3xl" : "text-2xl")}>
         {formatEvidence(evidence.value, evidence.unit)}

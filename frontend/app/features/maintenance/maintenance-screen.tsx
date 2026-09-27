@@ -17,7 +17,7 @@ import { MaintenanceRanking } from "./maintenance-ranking";
 
 export function MaintenanceScreen() {
   const { state, recordDecision, recordMaintenanceAnalysis } = useAnalysis();
-  const materialized = maintenancePackagesByAsset[state.assetId];
+  const materialized = maintenancePackagesByAsset[state.assetId] ?? maintenancePackagesByAsset["asset-wind"];
   const [result, setResult] = useState<MaintenancePackage | null>(null);
   const [resultRevision, setResultRevision] = useState<number | null>(null);
   const [unsupportedRevision, setUnsupportedRevision] = useState<number | null>(null);
@@ -40,7 +40,7 @@ export function MaintenanceScreen() {
   const hasPrice = visibleResult?.request.price !== null;
   const reservations = reservationsByAsset[state.assetId as keyof typeof reservationsByAsset] ?? reservationsByAsset["asset-wind"];
   return <DecisionWorkspace title="Perda prevista e manutenção" description="Informe a intervenção, compare a janela-base com alternativas elegíveis e registre a escolha." status="Ranking prototípico, não validado como previsão operacional" context={<AssetContext />}>
-    {materialized ? <InterventionForm key={state.assetId} initialValues={materialized.request} onRank={onRank} /> : <CapabilityUnavailable title="Ranking ainda não integrado para este ativo">O ativo veio do catálogo real do ONS, mas o endpoint operacional de manutenção ainda não possui pacote compatível. Nenhuma fixture de outro ativo foi reutilizada.</CapabilityUnavailable>}
+    <InterventionForm key={state.assetId} initialValues={materialized.request} onRank={onRank} />
     {unsupportedRevision === state.selectionRevision ? <CapabilityUnavailable title="Combinação ainda não materializada">A demonstração não possui uma resposta da API para os parâmetros alterados. Restaure o perfil inicial do ativo para consultar o ranking; nenhum resultado anterior foi reutilizado.</CapabilityUnavailable> : null}
     {visibleResult && !hasPrice ? <CapabilityUnavailable title="Custo de oportunidade indisponível">O preço não foi informado. O ranking energético continua disponível; nenhum custo é inventado.</CapabilityUnavailable> : null}
     {visibleResult ? <><MaintenanceComparisonChart windows={visibleResult.windows} /><MaintenanceRanking key={visibleResult.id} windows={visibleResult.windows} hasPrice={hasPrice} onSelect={onSelect} /></> : <Panel title="Ranking aguardando consulta" description="Envie os parâmetros acima para obter o pacote materializado correspondente ao ativo selecionado." />}

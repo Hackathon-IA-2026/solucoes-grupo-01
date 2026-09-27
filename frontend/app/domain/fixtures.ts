@@ -2,6 +2,7 @@ import type { Asset, AssetExposure, BatteryMode, BatteryScenario, ChartDataset, 
 
 const historicalPeriod: Period = { start: "2025-07-01", end: "2026-06-30", label: "1 jul. 2025 a 30 jun. 2026" };
 const scenarioPeriod: Period = { start: "2026-10-01", end: "2026-10-31", label: "Cenário de demonstração de outubro de 2026" };
+const forecastPeriod: Period = { start: "2026-09-27", end: "2026-11-25", label: "27 set. a 25 nov. 2026" };
 const modelPeriod: Period = { start: "2023-01-01", end: "2025-06-30", label: "Amostra histórica do experimento de seis horas" };
 
 function evidence(value: number | null, unit: string, state: EvidenceState, method: string, source = "Portal de Dados Abertos do ONS", period = historicalPeriod, unavailableReason?: string, dataVersion = "snapshot-2026-08-31"): EvidenceValue {
@@ -40,7 +41,7 @@ const windExposure: AssetExposure = {
   origins: dataset([{ label: "Sistêmica", value: 72 }, { label: "Local", value: 20 }, { label: "Não informada", value: 8 }], "% da energia", "calculado", "Distribuição histórica pela origem publicada, sem inferência a partir da razão."),
   seasonality: dataset([{ label: "seg.", value: 41 }, { label: "ter.", value: 46 }, { label: "qua.", value: 55 }, { label: "qui.", value: 52 }, { label: "sex.", value: 49 }, { label: "sáb.", value: 37 }, { label: "dom.", value: 34 }], "% de patamares", "calculado", "Frequência histórica por dia da semana."),
   hourly: dataset([{ label: "00h", value: 28 }, { label: "04h", value: 31 }, { label: "08h", value: 46 }, { label: "12h", value: 62 }, { label: "16h", value: 58 }, { label: "20h", value: 39 }], "% de patamares", "calculado", "Frequência histórica por hora BRT."),
-  perspective: dataset([{ label: "1-3", value: 34 }, { label: "4-6", value: 47 }, { label: "7-9", value: 59 }, { label: "10-12", value: 51 }, { label: "13-15", value: 44 }, { label: "16-18", value: 63 }, { label: "19-21", value: 56 }, { label: "22-24", value: 48 }, { label: "25-27", value: 38 }, { label: "28-30", value: 42 }], "% de frequência histórica", "calculado", "Frequência histórica em datas e condições sazonais semelhantes; sem meteorologia ex ante.", "API CurtailLess, série histórica do ONS", scenarioPeriod),
+  forecast60d: dataset([{ label: "28/9", value: 34 }, { label: "5/10", value: 47 }, { label: "12/10", value: 63 }, { label: "19/10", value: 56 }, { label: "26/10", value: 42 }, { label: "2/11", value: 58 }, { label: "9/11", value: 49 }, { label: "16/11", value: 37 }, { label: "23/11", value: 31 }], "% de chance de curtailment", "simulado", "Saída fictícia de um modelo de 60 dias, criada somente para demonstrar a experiência do produto; não usa o experimento de seis horas.", "API CurtailLess, fixture de previsão simulada", forecastPeriod, "forecast-demo-2026-09-27"),
 };
 
 const solarExposure: AssetExposure = {
@@ -63,7 +64,7 @@ const solarExposure: AssetExposure = {
   origins: dataset([{ label: "Sistêmica", value: 64 }, { label: "Local", value: 28 }, { label: "Não informada", value: 8 }], "% da energia", "simulado", "Distribuição sintética pela origem solar, independente da razão.", "API CurtailLess, fixture solar sintética"),
   seasonality: dataset([{ label: "seg.", value: 28 }, { label: "ter.", value: 32 }, { label: "qua.", value: 39 }, { label: "qui.", value: 44 }, { label: "sex.", value: 36 }, { label: "sáb.", value: 27 }, { label: "dom.", value: 24 }], "% de patamares", "simulado", "Frequência sintética por dia da semana.", "API CurtailLess, fixture solar sintética"),
   hourly: dataset([{ label: "00h", value: 0 }, { label: "04h", value: 0 }, { label: "08h", value: 21 }, { label: "12h", value: 49 }, { label: "16h", value: 38 }, { label: "20h", value: 0 }], "% de patamares", "simulado", "Frequência sintética por hora BRT.", "API CurtailLess, fixture solar sintética"),
-  perspective: dataset([{ label: "1-3", value: 24 }, { label: "4-6", value: 31 }, { label: "7-9", value: 38 }, { label: "10-12", value: 35 }, { label: "13-15", value: 29 }, { label: "16-18", value: 42 }, { label: "19-21", value: 37 }, { label: "22-24", value: 33 }, { label: "25-27", value: 26 }, { label: "28-30", value: 28 }], "% de frequência histórica", "simulado", "Frequência sintética em condições sazonais semelhantes; sem meteorologia ex ante.", "API CurtailLess, fixture solar sintética", scenarioPeriod),
+  forecast60d: dataset([{ label: "28/9", value: 24 }, { label: "5/10", value: 31 }, { label: "12/10", value: 42 }, { label: "19/10", value: 37 }, { label: "26/10", value: 28 }, { label: "2/11", value: 45 }, { label: "9/11", value: 39 }, { label: "16/11", value: 30 }, { label: "23/11", value: 26 }], "% de chance de curtailment", "simulado", "Saída fictícia de um modelo solar de 60 dias, criada somente para demonstrar a experiência do produto; não usa o experimento de seis horas.", "API CurtailLess, fixture de previsão simulada", forecastPeriod, "forecast-demo-2026-09-27"),
   modality: dataset([{ label: "Constrained-off", value: 74 }, { label: "Curtailment parcial", value: 18 }, { label: "Modalidade não informada", value: 8 }], "% da energia", "simulado", "Modalidade solar sintética (_detail_tm), independente da razão e da origem.", "API CurtailLess, fixture solar sintética"),
 };
 export const assetExposureById: Record<string, AssetExposure> = { "asset-wind": windExposure, "asset-solar": solarExposure };
@@ -72,20 +73,20 @@ export const exposureSeries = windExposure.history;
 export const reasonBreakdown = windExposure.reasons;
 export const originBreakdown = windExposure.origins;
 export const seasonality = windExposure.seasonality;
-export const perspective30d = windExposure.perspective;
+export const forecast60d = windExposure.forecast60d;
 
-const windComparableWindows = [
-  { label: "12-14 out. 2025", energy: evidence(7.8, "GWh", "calculado", "Janela histórica de 72 horas com condição sazonal semelhante."), eventFrequency: evidence(68, "%", "calculado", "Frequência de patamares com restrição na janela histórica.") },
-  { label: "18-20 jan. 2026", energy: evidence(5.1, "GWh", "calculado", "Janela histórica de 72 horas com condição sazonal semelhante."), eventFrequency: evidence(53, "%", "calculado", "Frequência de patamares com restrição na janela histórica.") },
-  { label: "7-9 abr. 2026", energy: evidence(3.9, "GWh", "calculado", "Janela histórica de 72 horas com condição sazonal semelhante."), eventFrequency: evidence(44, "%", "calculado", "Frequência de patamares com restrição na janela histórica.") },
+const windForecastWindows = [
+  { label: "12 a 18 de outubro", likelihood: evidence(63, "%", "simulado", "Probabilidade fictícia para demonstrar uma previsão de 60 dias.", "API CurtailLess, fixture de previsão simulada", forecastPeriod, undefined, "forecast-demo-2026-09-27"), summary: "Maior concentração simulada no horizonte." },
+  { label: "2 a 8 de novembro", likelihood: evidence(58, "%", "simulado", "Probabilidade fictícia para demonstrar uma previsão de 60 dias.", "API CurtailLess, fixture de previsão simulada", forecastPeriod, undefined, "forecast-demo-2026-09-27"), summary: "Segunda janela de maior atenção no cenário." },
+  { label: "19 a 25 de outubro", likelihood: evidence(56, "%", "simulado", "Probabilidade fictícia para demonstrar uma previsão de 60 dias.", "API CurtailLess, fixture de previsão simulada", forecastPeriod, undefined, "forecast-demo-2026-09-27"), summary: "Persistência simulada após o primeiro pico." },
 ];
-const solarComparableWindows = [
-  { label: "8-10 nov. 2025", energy: evidence(1.9, "GWh", "simulado", "Janela solar sintética de 72 horas com condição sazonal semelhante.", "API CurtailLess, fixture solar sintética"), eventFrequency: evidence(39, "%", "simulado", "Frequência sintética de patamares com restrição.", "API CurtailLess, fixture solar sintética") },
-  { label: "21-23 jan. 2026", energy: evidence(2.4, "GWh", "simulado", "Janela solar sintética de 72 horas com condição sazonal semelhante.", "API CurtailLess, fixture solar sintética"), eventFrequency: evidence(46, "%", "simulado", "Frequência sintética de patamares com restrição.", "API CurtailLess, fixture solar sintética") },
-  { label: "14-16 mar. 2026", energy: evidence(1.6, "GWh", "simulado", "Janela solar sintética de 72 horas com condição sazonal semelhante.", "API CurtailLess, fixture solar sintética"), eventFrequency: evidence(33, "%", "simulado", "Frequência sintética de patamares com restrição.", "API CurtailLess, fixture solar sintética") },
+const solarForecastWindows = [
+  { label: "2 a 8 de novembro", likelihood: evidence(45, "%", "simulado", "Probabilidade fictícia para demonstrar uma previsão solar de 60 dias.", "API CurtailLess, fixture de previsão simulada", forecastPeriod, undefined, "forecast-demo-2026-09-27"), summary: "Maior concentração simulada no horizonte." },
+  { label: "12 a 18 de outubro", likelihood: evidence(42, "%", "simulado", "Probabilidade fictícia para demonstrar uma previsão solar de 60 dias.", "API CurtailLess, fixture de previsão simulada", forecastPeriod, undefined, "forecast-demo-2026-09-27"), summary: "Segunda janela de maior atenção no cenário." },
+  { label: "9 a 15 de novembro", likelihood: evidence(39, "%", "simulado", "Probabilidade fictícia para demonstrar uma previsão solar de 60 dias.", "API CurtailLess, fixture de previsão simulada", forecastPeriod, undefined, "forecast-demo-2026-09-27"), summary: "Nova elevação simulada no segundo mês." },
 ];
-export const comparableWindowsByAsset = { "asset-wind": windComparableWindows, "asset-solar": solarComparableWindows };
-export const comparableWindows = windComparableWindows;
+export const forecastWindowsByAsset = { "asset-wind": windForecastWindows, "asset-solar": solarForecastWindows };
+export const forecastWindows = windForecastWindows;
 
 const windDataQuality: DataQuality = {
   coverage: evidence(92, "%", "calculado", "Patamares válidos sobre patamares esperados."),
@@ -115,10 +116,10 @@ export const dataQualityByAsset: Record<string, DataQuality> = { "asset-wind": w
 export const dataQuality = windDataQuality;
 
 export const exposureGuidance: Guidance = {
-  data: "O ativo selecionado apresenta energia não realizada materializada para a janela histórica.",
-  implication: "A recorrência no ponto justifica comparar intervenções de mesma duração antes de confirmar a manutenção.",
-  limitation: "A perspectiva de 30 dias usa somente frequência histórica e sazonalidade. Não há previsão meteorológica ex ante validada.",
-  nextAction: "Definir a intervenção e uma janela-base para comparar alternativas elegíveis.", nextHref: "/manutencao",
+  data: "A análise combina o histórico da usina, padrões do ponto de conexão e uma previsão demonstrativa de 60 dias.",
+  implication: "As janelas de maior chance simulada indicam onde a usina pode começar a comparar oportunidades de intervenção.",
+  limitation: "A previsão de 60 dias ainda usa valores fictícios da demonstração e não sustenta uma decisão operacional real.",
+  nextAction: "Informar a duração e as restrições da intervenção para comparar janelas elegíveis.", nextHref: "/manutencao",
 };
 
 function makeWindow(id: string, rank: number, start: string, end: string, eligible: boolean, reason: string, curtailment: number, loss: number, cost: number, energyDifference: number, moneyDifference: number, low: number, high: number, coverage: number, invalidators: string[], baseline = false): MaintenanceWindow {

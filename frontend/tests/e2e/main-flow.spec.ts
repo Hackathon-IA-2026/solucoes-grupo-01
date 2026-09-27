@@ -1,11 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const routes = ["/exposicao", "/manutencao", "/bateria", "/relatorio", "/configuracoes"];
 
+async function selectAsset(page: Page, name: string) {
+  await page.locator("button[data-asset-picker]").click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: new RegExp(name) }).click();
+  await expect(dialog).toBeHidden();
+}
+
 test("percorre exposição, manutenção, bateria e relatório sem perder o modo BESS", async ({ page }) => {
   await page.goto("/exposicao");
-  await expect(page.getByRole("heading", { name: "Exposição e perspectiva operacional" })).toBeVisible();
-  await expect(page.getByText("Esta perspectiva ainda não é uma previsão operacional.")).toBeVisible();
+  await expect(page.locator("[data-exposure-screen]")).toBeVisible();
   await page.getByRole("link", { name: "Manutenção", exact: true }).click();
   await page.getByRole("button", { name: "Comparar janelas" }).click();
   await page.getByRole("button", { name: "Selecionar esta janela" }).click();
@@ -21,15 +28,19 @@ test("percorre exposição, manutenção, bateria e relatório sem perder o modo
   await expect(page.getByText("91.000 R$/ano")).toHaveCount(0);
 });
 
-test("troca de ativo seleciona exposição e qualidade próprias", async ({ page }) => {
+test("troca o ativo usado pela tela de exposição", async ({ page }) => {
   await page.goto("/exposicao");
-  await expect(page.getByText("844,8 GWh")).toBeVisible();
-  await page.locator('select[name="asset"]').selectOption("asset-solar");
-  await expect(page.getByText("126,4 GWh")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Modalidade solar registrada" })).toBeVisible();
-  await page.getByText("Caminho deste número", { exact: true }).first().click();
-  await expect(page.getByText("API CurtailLess, fixture solar sintética", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("solar-demo-snapshot-2026-09-26")).toBeVisible();
+  const screen = page.locator("[data-exposure-screen]");
+  await expect(screen).toHaveAttribute("data-asset-id", "asset-wind");
+  const windIllustrations = screen.locator('[data-energy-illustration="wind"]');
+  await expect(windIllustrations).toHaveCount(6);
+  await expect(windIllustrations.first().locator("[data-connected-plant]")).toHaveCount(5);
+  await selectAsset(page, "Ativo Solar MG-02");
+  await expect(screen).toHaveAttribute("data-asset-id", "asset-solar");
+  const solarIllustrations = screen.locator('[data-energy-illustration="solar"]');
+  await expect(solarIllustrations).toHaveCount(6);
+  await expect(solarIllustrations.first().locator("[data-connected-plant]")).toHaveCount(3);
+  await expect(screen.locator('[data-energy-illustration="wind"]')).toHaveCount(0);
 });
 
 test("não reutiliza ranking após parâmetros sem pacote ou ida e volta entre ativos", async ({ page }) => {
@@ -38,8 +49,8 @@ test("não reutiliza ranking após parâmetros sem pacote ou ida e volta entre a
   await page.getByRole("button", { name: "Comparar janelas" }).click();
   await expect(page.getByText("Combinação ainda não materializada")).toBeVisible();
   await expect(page.getByText("Ranking de janelas")).toHaveCount(0);
-  await page.locator('select[name="asset"]').selectOption("asset-solar");
-  await page.locator('select[name="asset"]').selectOption("asset-wind");
+  await selectAsset(page, "Ativo Solar MG-02");
+  await selectAsset(page, "Ativo Eólico RN-01");
   await expect(page.getByText("Ranking aguardando consulta")).toBeVisible();
   await expect(page.getByText("Combinação ainda não materializada")).toHaveCount(0);
 });
@@ -83,7 +94,7 @@ test("invalida o cenário BESS local ao trocar de ativo", async ({ page }) => {
   await page.goto("/bateria");
   await page.getByRole("button", { name: "Avaliar configuração" }).click();
   await expect(page.getByText("702 MWh/ano")).toBeVisible();
-  await page.locator('select[name="asset"]').selectOption("asset-solar");
+  await selectAsset(page, "Ativo Solar MG-02");
   await expect(page.getByText("702 MWh/ano")).toHaveCount(0);
   await expect(page.getByText("Conclusão da triagem")).toHaveCount(0);
   await expect(page.getByText("Triagem aguardando avaliação")).toBeVisible();
@@ -118,7 +129,7 @@ test("skip link transfere foco e controles visíveis têm alvo mínimo de 44 px"
   await page.keyboard.press("Enter");
   await expect(page.locator("#main-content")).toBeFocused();
   await expect(page.locator(".react-flow__attribution")).toHaveCount(0);
-  for (const selector of [".react-flow__controls-button", "a[aria-label='Relatório']", "a[aria-label='Fontes e qualidade']"]) {
+  for (const selector of [".react-flow__controls-button", "a[aria-label='Relatório']", "a[aria-label='Fontes']", "button[data-asset-picker]"]) {
     const items = page.locator(selector);
     await expect(items.first(), selector).toBeVisible();
     const boxes = await items.evaluateAll((elements) => elements.filter((element) => { const style = getComputedStyle(element); return style.display !== "none" && style.visibility !== "hidden"; }).map((element) => { const box = element.getBoundingClientRect(); return { width: box.width, height: box.height }; }));
@@ -129,4 +140,83 @@ test("skip link transfere foco e controles visíveis têm alvo mínimo de 44 px"
   const provenanceBoxes = await page.locator("summary").filter({ hasText: "Procedência:" }).evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().height));
   expect(provenanceBoxes.length).toBeGreaterThan(0);
   for (const height of provenanceBoxes) expect(height).toBeGreaterThanOrEqual(44);
+});
+
+test("estrutura a exposição em seis seções com análise e dados", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/exposicao");
+  const sections = page.locator("[data-analysis-section]");
+  const expectedIds = ["secao-ativo", "secao-resumo", "secao-previsao", "secao-razao-origem", "secao-recorrencia", "secao-qualidade"];
+  await expect(sections).toHaveCount(expectedIds.length);
+  expect(await sections.evaluateAll((elements) => elements.map((element) => element.id))).toEqual(expectedIds);
+
+  for (const section of await sections.all()) {
+    await expect(section.locator(":scope > [data-analysis-grid] > [data-ai-analysis]")).toHaveCount(1);
+    await expect(section.locator(":scope > [data-analysis-grid] > [data-section-data-column] > [data-section-card]")).toHaveCount(1);
+  }
+
+  await expect(page.locator("#secao-previsao [data-exposure-forecast='60d']")).toHaveCount(1);
+  await expect(page.locator("#secao-resumo [data-highlight-list]")).toHaveCount(1);
+  await expect(page.locator("#secao-qualidade [data-highlight-list]")).toHaveCount(1);
+});
+
+test("navegação lateral expande, transfere destaque e navega entre seções", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/exposicao");
+  const nav = page.locator("nav[data-section-nav]");
+  const links = nav.locator("button[data-section-link]");
+  await expect(nav).toBeVisible();
+  await expect(links).toHaveCount(6);
+  await expect(nav).toHaveAttribute("data-expanded", "false");
+  await expect(links.first()).toHaveAttribute("aria-current", "true");
+
+  await links.first().hover();
+  await expect(nav).toHaveAttribute("data-expanded", "true");
+  await expect(links.first()).toHaveAttribute("data-emphasis", "true");
+  await links.nth(3).hover();
+  await expect(links.nth(3)).toHaveAttribute("data-emphasis", "true");
+  await expect(links.first()).toHaveAttribute("data-emphasis", "false");
+
+  await links.nth(3).click();
+  await expect(nav).toHaveAttribute("data-expanded", "false");
+  await expect(links.nth(3)).toHaveAttribute("aria-current", "true");
+  await expect.poll(async () => page.locator("#secao-razao-origem").evaluate((element) => Math.round(element.getBoundingClientRect().top))).toBeGreaterThan(0);
+  await expect.poll(async () => page.locator("#secao-razao-origem").evaluate((element) => Math.round(element.getBoundingClientRect().top))).toBeLessThan(180);
+
+  await page.locator("#secao-qualidade").evaluate((element) => element.scrollIntoView({ behavior: "auto", block: "start" }));
+  await expect(links.nth(5)).toHaveAttribute("aria-current", "true");
+
+  await links.nth(5).focus();
+  await expect(nav).toHaveAttribute("data-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(nav).toHaveAttribute("data-expanded", "false");
+});
+
+test("a roda do mouse focaliza somente a seção seguinte ou anterior", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/exposicao");
+  const links = page.locator("nav[data-section-nav] button[data-section-link]");
+  await expect(links.first()).toHaveAttribute("aria-current", "true");
+
+  await page.mouse.wheel(0, 400);
+  await expect(links.nth(1)).toHaveAttribute("aria-current", "true");
+  await expect.poll(async () => page.evaluate(() => {
+    const header = document.querySelector<HTMLElement>("[data-app-header]");
+    const section = document.querySelector<HTMLElement>("#secao-resumo");
+    return header && section ? Math.abs(section.getBoundingClientRect().top - header.getBoundingClientRect().bottom) : Number.POSITIVE_INFINITY;
+  })).toBeLessThan(2);
+
+  await page.waitForTimeout(1050);
+  await page.mouse.wheel(0, -400);
+  await expect(links.first()).toHaveAttribute("aria-current", "true");
+});
+
+test("mantém a top bar fixa durante o scroll da exposição", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/exposicao");
+  const topBar = page.locator("header.no-print");
+  await expect(topBar).toBeVisible();
+  expect(await topBar.evaluate((element) => getComputedStyle(element).position)).toBe("sticky");
+  await page.locator("#secao-qualidade").evaluate((element) => element.scrollIntoView({ behavior: "auto", block: "start" }));
+  await expect.poll(async () => topBar.evaluate((element) => Math.round(element.getBoundingClientRect().top))).toBe(0);
 });

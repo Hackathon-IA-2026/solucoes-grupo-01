@@ -1,66 +1,45 @@
-import { FileTextIcon, GearIcon, LightningIcon } from "@phosphor-icons/react";
+import { BatteryChargingIcon, ChartLineIcon, FileTextIcon, GearIcon, LightningIcon, WrenchIcon } from "@phosphor-icons/react";
 import { Link, NavLink, useLocation } from "react-router";
 import type { ReactNode } from "react";
-
-import { useAnalysis } from "~/state/use-analysis";
+import { AssetPicker } from "~/components/layout/asset-picker";
 import { cn } from "~/lib/cn";
 
 const primary = [
-  { to: "/exposicao", label: "Exposição", number: "01" },
-  { to: "/manutencao", label: "Manutenção", number: "02" },
-  { to: "/bateria", label: "Bateria", number: "03" },
+  { to: "/exposicao", label: "Exposição", Icon: ChartLineIcon },
+  { to: "/manutencao", label: "Manutenção", Icon: WrenchIcon },
+  { to: "/bateria", label: "Bateria", Icon: BatteryChargingIcon },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { state, selectAsset, assets, assetsStatus, assetsError } = useAnalysis();
   const location = useLocation();
-  const activeAsset = assets.find((asset) => asset.id === state.assetId);
   return (
     <div className="min-h-[100dvh] overflow-x-clip">
       <a href="#main-content" className="fixed left-3 top-3 z-50 -translate-y-20 rounded-md bg-ink px-4 py-2 text-white focus:translate-y-0">Pular para o conteúdo</a>
-      <div className="bg-ink px-4 py-2 text-center text-sm leading-5 text-white sm:px-6">
-        Demonstração: histórico real do ONS via backend e MCP demonstrativo; perspectiva histórica de 30 dias; ranking prototípico; reservas e telemetria simuladas; BESS como cenário; orientação Bedrock limitada a evidências fechadas, com contingência determinística.
-      </div>
-      <header className="border-b border-line bg-surface px-4 py-3 sm:px-6">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-4">
-          <Link to="/exposicao" className="flex min-h-11 items-center gap-3" translate="no">
+      <header data-app-header className="no-print sticky top-0 z-50 border-b border-line bg-surface py-3">
+        <div className="mx-2 flex w-auto flex-wrap items-center gap-x-4 gap-y-3 sm:mx-3">
+          <Link to="/exposicao" className="flex min-h-11 shrink-0 items-center gap-3" translate="no">
             <span className="grid size-9 place-items-center rounded-lg bg-accent text-white"><LightningIcon weight="fill" aria-hidden="true" /></span>
-            <span><strong className="block tracking-tight">CurtailLess</strong><span className="block text-xs text-ink-soft">Decisão por ativo</span></span>
+            <strong className="tracking-tight">CurtailLess</strong>
           </Link>
-          <label className="order-3 flex w-full min-w-0 flex-col gap-1 text-xs font-semibold text-ink-soft sm:order-none sm:ml-auto sm:w-auto sm:min-w-[260px] sm:flex-row sm:items-center sm:gap-2">
-            Ativo
-            <select disabled={assetsStatus !== "ready"} className="min-h-11 w-full min-w-0 rounded-lg border border-line bg-white px-3 text-sm text-ink disabled:opacity-60" value={state.assetId} onChange={(event) => selectAsset(event.target.value)} name="asset" autoComplete="off">
-              {assetsStatus === "loading" ? <option value="">Carregando ativos do ONS…</option> : null}
-              {assetsStatus === "error" ? <option value="">API indisponível</option> : null}
-              {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} | {asset.technology}</option>)}
-            </select>
-            {assetsError ? <span className="text-warning">{assetsError}</span> : null}
-          </label>
-          <span className="rounded-md bg-accent-soft px-3 py-2 text-xs font-semibold">{activeAsset?.technology ?? "ONS"}</span>
-          <nav aria-label="Ações secundárias" className="flex items-center gap-1">
+          <AssetPicker />
+          <nav aria-label="Etapas da decisão" className="order-3 w-full min-w-0 sm:order-2 sm:ml-auto sm:w-auto">
+            <ol className="flex gap-1 overflow-x-auto">
+              {primary.map(({ to, label, Icon }) => (
+                <li key={to} className="min-w-fit flex-1 sm:flex-none">
+                  <NavLink to={to} className={({ isActive }) => cn("flex min-h-11 items-center justify-center gap-2 rounded-lg border border-transparent px-3 text-sm text-ink-soft hover:bg-accent-soft hover:text-ink sm:justify-start", isActive && "border-accent bg-accent-soft font-semibold text-ink")}>
+                    <Icon aria-hidden="true" />{label}
+                  </NavLink>
+                </li>
+              ))}
+            </ol>
+          </nav>
+          <nav aria-label="Ações secundárias" className="order-2 ml-auto flex shrink-0 items-center gap-1 sm:order-3 sm:ml-0 sm:border-l sm:border-line sm:pl-1">
             <Link aria-label="Relatório" className={cn("inline-flex size-11 shrink-0 items-center justify-center gap-2 rounded-lg text-sm hover:bg-accent-soft sm:h-11 sm:w-auto sm:px-3", location.pathname === "/relatorio" && "bg-accent-soft font-semibold")} to="/relatorio"><FileTextIcon aria-hidden="true" /> <span className="hidden sm:inline">Relatório</span></Link>
-            <Link aria-label="Fontes e qualidade" className={cn("inline-flex size-11 shrink-0 items-center justify-center gap-2 rounded-lg text-sm hover:bg-accent-soft sm:h-11 sm:w-auto sm:px-3", location.pathname === "/configuracoes" && "bg-accent-soft font-semibold")} to="/configuracoes"><GearIcon aria-hidden="true" /> <span className="hidden sm:inline">Fontes e qualidade</span></Link>
+            <Link aria-label="Fontes" className={cn("inline-flex size-11 shrink-0 items-center justify-center gap-2 rounded-lg text-sm hover:bg-accent-soft sm:h-11 sm:w-auto sm:px-3", location.pathname === "/configuracoes" && "bg-accent-soft font-semibold")} to="/configuracoes"><GearIcon aria-hidden="true" /> <span className="hidden sm:inline">Fontes</span></Link>
           </nav>
         </div>
       </header>
-      <div className="mx-auto grid max-w-[1600px] lg:grid-cols-[190px_minmax(0,1fr)]">
-        <nav aria-label="Etapas da decisão" className="no-print border-b border-line bg-surface p-3 lg:sticky lg:top-0 lg:h-[calc(100dvh-114px)] lg:border-b-0 lg:border-r lg:p-4">
-          <ol className="flex gap-2 overflow-x-auto lg:flex-col">
-            {primary.map((item) => (
-              <li key={item.to} className="min-w-fit lg:w-full">
-                <NavLink to={item.to} className={({ isActive }) => cn("flex min-h-12 items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-sm text-ink-soft hover:bg-accent-soft hover:text-ink", isActive && "border-accent bg-accent-soft font-semibold text-ink")}>
-                  <span className="num text-xs" aria-hidden="true">{item.number}</span>{item.label}
-                </NavLink>
-              </li>
-            ))}
-          </ol>
-          <div className="mt-8 hidden text-xs leading-5 text-ink-soft lg:block">
-            <p className="font-semibold text-ink">Fluxo da decisão</p>
-            <p className="mt-2">Entenda a exposição, escolha a manutenção e avalie a bateria sobre a perda residual.</p>
-          </div>
-        </nav>
-        <main id="main-content" tabIndex={-1} className="min-w-0 p-4 sm:p-6">{children}</main>
-      </div>
+      <main id="main-content" tabIndex={-1} className={cn("min-w-0", location.pathname === "/exposicao" ? "w-full max-w-none p-0" : "mx-auto max-w-[1600px] p-4 sm:p-6")}>{children}</main>
     </div>
   );
 }
