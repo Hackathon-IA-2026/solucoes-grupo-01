@@ -69,6 +69,7 @@ def _field_provenance(
     effective_at: datetime | None = None,
     valid_from: datetime | None = None,
     valid_to: datetime | None = None,
+    parent_evidence_ids: list[str] | tuple[str, ...] = (),
 ) -> EvidenceProvenance:
     hashes = tuple(sorted(set(source_hashes)))
     identities = list(hashes) or [source_uri or "curtailess://unspecified"]
@@ -84,6 +85,7 @@ def _field_provenance(
         source_key=source_item.get("source_key") if source_item else None,
         source_sha256=hashes[0] if hashes else None,
         source_sha256s=hashes,
+        parent_evidence_ids=tuple(sorted(set(parent_evidence_ids))),
         observed_at=observed_at,
         effective_at=effective_at
         or (observed_at if origin is not DataOrigin.ONS_PUBLICO else None),
@@ -92,6 +94,117 @@ def _field_provenance(
         method_version=method_version,
         limitations=limitations,
     )
+
+
+# Only these server-emitted field/method pairs are resolvable through the public audit API.
+# The ID payload is an index into this registry, never authority for origin or classification.
+_SERVER_PROVENANCE_CONTRACTS: dict[
+    tuple[str, str], tuple[DataOrigin, Literal["medido", "calculado"]]
+] = {
+    ("capacity_mw", "ons_capacity_source_v1"): (DataOrigin.ONS_PUBLICO, "medido"),
+    ("total_curtailed_energy", "curtailed_energy_sum_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
+    ("anonymized_entity_count", "point_context_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
+    ("simultaneity_rate", "historical_simultaneity_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
+    ("expected_curtailed_energy", "monthly_observed_rate_prorated_to_window_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
+    ("expected_curtailed_energy", "monthly_observed_reason_rate_prorated_to_window_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
+    ("rank", "maintenance_rank_v1"): (DataOrigin.PROXY_CALCULADO, "calculado"),
+    ("start", "maintenance_window_boundary_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
+    ("end", "maintenance_window_boundary_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
+    ("opportunity_cost", "opportunity_cost_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
+    ("difference_from_baseline_mwh", "maintenance_difference_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
+    ("residual_exposure_source", "curtailed_energy_sum_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
+    **{
+        (field_name, "bess_screen_v1"): (DataOrigin.PROXY_CALCULADO, "calculado")
+        for field_name in (
+            "residual_exposure_mwh",
+            "technically_absorbable_mwh",
+            "annual_benefit_brl",
+            "annual_net_benefit_brl",
+            "preliminary_viable",
+        )
+    },
+}
+
+
+def _resolve_server_evidence(
+    evidence_id: str,
+) -> tuple[dict, DataOrigin, Literal["medido", "calculado"], list[dict]]:
+    try:
+        identity = parse_evidence_id(evidence_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Proveniência não reconhecida.") from exc
+    contract = _SERVER_PROVENANCE_CONTRACTS.get((identity["field"], identity["method"]))
+    if contract is None:
+        raise HTTPException(status_code=404, detail="Contrato de proveniência não reconhecido.")
+    source_hashes = identity["sources"]
+    if any(
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+        for value in source_hashes
+    ):
+        raise HTTPException(status_code=404, detail="Proveniência externa não materializada.")
+    source_items = [repository.get_provenance(value) for value in source_hashes]
+    if any(item is None for item in source_items):
+        raise HTTPException(status_code=404, detail="Proveniência não encontrada.")
+    return identity, *contract, [item for item in source_items if item is not None]
+
+
+def _validate_caller_provenance(provenances: dict[str, EvidenceProvenance]) -> None:
+    for provenance in provenances.values():
+        if provenance.origin is DataOrigin.CLIENTE_INFORMADO:
+            continue
+        if provenance.origin is DataOrigin.SIMULADO:
+            raise HTTPException(
+                status_code=422, detail="Proveniência simulada não é entrada confiável."
+            )
+        try:
+            identity, origin, _, _ = _resolve_server_evidence(provenance.evidence_id)
+        except HTTPException as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="Alegação de proveniência pública/calculada não pôde ser resolvida.",
+            ) from exc
+        if (
+            provenance.origin is not origin
+            or provenance.field_name != identity["field"]
+            or provenance.method_version != identity["method"]
+            or tuple(identity["sources"]) != provenance.source_sha256s
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Metadados de proveniência não correspondem ao contrato do servidor.",
+            )
 
 
 _DEMO_CAPACITY_URI = "curtailess://demo/assets/demo-wind-ne-001/capacity_mw"
@@ -160,7 +273,7 @@ def materialized_asset(item: dict) -> Asset:
     if capacity is not None:
         capacity_provenance = _field_provenance(
             field_name="capacity_mw",
-            method_version=item.get("capacity_method_version", "ons_capacity_source_v1"),
+            method_version="ons_capacity_source_v1",
             context=item["asset_id"],
             origin=DataOrigin.ONS_PUBLICO,
             limitations=item.get("capacity_limitations", []),
@@ -235,36 +348,10 @@ def get_data_quality(asset_id: str) -> DataQualityResponse:
     tags=["audit"],
 )
 def get_provenance(provenance_id: str) -> ProvenanceResponse:
-    try:
-        identity = parse_evidence_id(provenance_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    identity, origin, classification, items = _resolve_server_evidence(provenance_id)
     source_hashes = identity["sources"]
-    if any(len(value) != 64 for value in source_hashes):
-        raise HTTPException(status_code=404, detail="Proveniência externa não materializada.")
-    source_items = [repository.get_provenance(value) for value in source_hashes]
-    if any(item is None for item in source_items):
-        raise HTTPException(status_code=404, detail="Proveniência não encontrada.")
-    items = [item for item in source_items if item is not None]
     item = items[0]
     limitation = "Linhagem de campo da materialização; o manifesto bruto permanece privado no S3."
-    simulated_fields = {
-        "residual_exposure_mwh",
-        "technically_absorbable_mwh",
-        "annual_benefit_brl",
-        "annual_net_benefit_brl",
-        "preliminary_viable",
-    }
-    public_fields = {"capacity_mw", "residual_exposure_source"}
-    if identity["field"] in simulated_fields:
-        origin = DataOrigin.SIMULADO
-        classification = "simulado"
-    elif identity["field"] in public_fields:
-        origin = DataOrigin.ONS_PUBLICO
-        classification = "medido"
-    else:
-        origin = DataOrigin.PROXY_CALCULADO
-        classification = "calculado"
     provenance = _field_provenance(
         field_name=identity["field"],
         method_version=identity["method"],
@@ -531,6 +618,8 @@ def get_asset_windows(
     tags=["maintenance"],
 )
 def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse:
+    input_provenance = request.input_provenance or {}
+    _validate_caller_provenance(input_provenance)
     asset_item = repository.get_asset(request.asset_id)
     if asset_item is None:
         raise HTTPException(status_code=404, detail="Ativo não encontrado.")
@@ -565,7 +654,25 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
         key=lambda item: abs(item["start"] - baseline),
     )
     baseline_energy = baseline_candidate["curtailed_mwh"]
+    decision_parent_ids = [item.evidence_id for item in input_provenance.values()]
 
+    def candidate_energy_provenance(candidate: dict) -> EvidenceProvenance:
+        candidate_context = (
+            f"{request.asset_id}:{candidate['start'].isoformat()}:"
+            f"{candidate['end'].isoformat()}:{baseline.isoformat()}"
+        )
+        return _field_provenance(
+            field_name="expected_curtailed_energy",
+            method_version=candidate["method"],
+            context=candidate_context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=[limitation],
+            source_hashes=[candidate["source_sha256"]],
+            source_item=asset_item,
+            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
+        )
+
+    baseline_energy_provenance = candidate_energy_provenance(baseline_candidate)
     ranked_windows = []
     for rank, candidate in enumerate(candidates, start=1):
         energy = candidate["curtailed_mwh"]
@@ -573,16 +680,7 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
             f"{request.asset_id}:{candidate['start'].isoformat()}:"
             f"{candidate['end'].isoformat()}:{baseline.isoformat()}"
         )
-        energy_provenance = _field_provenance(
-            field_name="expected_curtailed_energy",
-            method_version=candidate["method"],
-            context=context,
-            origin=DataOrigin.PROXY_CALCULADO,
-            limitations=[limitation],
-            source_hashes=[candidate["source_sha256"]],
-            source_item=asset_item,
-            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
-        )
+        energy_provenance = candidate_energy_provenance(candidate)
         cost_provenance = _field_provenance(
             field_name="opportunity_cost",
             method_version="opportunity_cost_v1",
@@ -592,6 +690,10 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
             source_hashes=[candidate["source_sha256"]],
             source_item=asset_item,
             source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
+            parent_evidence_ids=[
+                energy_provenance.evidence_id,
+                request.energy_price.provenance.evidence_id,
+            ],
         )
         difference_provenance = _field_provenance(
             field_name="difference_from_baseline_mwh",
@@ -602,6 +704,43 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
             source_hashes=[candidate["source_sha256"], baseline_candidate["source_sha256"]],
             source_item=asset_item,
             source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
+            parent_evidence_ids=[
+                energy_provenance.evidence_id,
+                baseline_energy_provenance.evidence_id,
+            ],
+        )
+        rank_provenance = _field_provenance(
+            field_name="rank",
+            method_version="maintenance_rank_v1",
+            context=context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=[limitation],
+            source_hashes=[candidate["source_sha256"]],
+            source_item=asset_item,
+            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
+            parent_evidence_ids=[energy_provenance.evidence_id, *decision_parent_ids],
+        )
+        start_provenance = _field_provenance(
+            field_name="start",
+            method_version="maintenance_window_boundary_v1",
+            context=context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=[limitation],
+            source_hashes=[candidate["source_sha256"]],
+            source_item=asset_item,
+            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
+            parent_evidence_ids=[energy_provenance.evidence_id, *decision_parent_ids],
+        )
+        end_provenance = _field_provenance(
+            field_name="end",
+            method_version="maintenance_window_boundary_v1",
+            context=context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=[limitation],
+            source_hashes=[candidate["source_sha256"]],
+            source_item=asset_item,
+            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
+            parent_evidence_ids=[energy_provenance.evidence_id, *decision_parent_ids],
         )
         ranked_windows.append(
             RankedMaintenanceWindow(
@@ -650,6 +789,14 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
                     provenance_id=difference_provenance.evidence_id,
                     provenance=difference_provenance,
                 ),
+                field_provenance={
+                    "rank": rank_provenance,
+                    "start": start_provenance,
+                    "end": end_provenance,
+                    "expected_curtailed_energy": energy_provenance,
+                    "opportunity_cost": cost_provenance,
+                    "difference_from_baseline_mwh": difference_provenance,
+                },
             )
         )
 
@@ -658,6 +805,7 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
         ranking_mode="historical_prototype",
         data_mode="ons_materialized",
         baseline_window_start=baseline,
+        input_provenance=input_provenance,
         ranked_windows=ranked_windows,
         limitations=[limitation],
     )
@@ -669,6 +817,8 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
     tags=["bess"],
 )
 def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
+    input_provenance = request.input_provenance or {}
+    _validate_caller_provenance(input_provenance)
     item = repository.get_asset(request.asset_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Ativo não encontrado.")
@@ -685,17 +835,17 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
     )
     source_observation = _field_provenance(
         field_name="residual_exposure_source",
-        method_version="ons_materialized_observation_v1",
+        method_version="curtailed_energy_sum_v1",
         context=f"{request.asset_id}:{item['period']}",
-        origin=DataOrigin.ONS_PUBLICO,
-        limitations=["Observação pública materializada usada como entrada da simulação."],
+        origin=DataOrigin.PROXY_CALCULADO,
+        limitations=["Agregado mensal curado e calculado a partir de observações públicas."],
         source_hashes=[item["source_sha256"]],
         source_item=item,
         source_uri=f"curtailess://assets/{request.asset_id}/materialized-exposure",
     )
     simulation_inputs = [
         request.maintenance_result_id,
-        *(provenance.evidence_id for provenance in request.input_provenance.values()),
+        *(provenance.evidence_id for provenance in input_provenance.values()),
     ]
     input_fingerprint = hashlib.sha256("|".join(sorted(simulation_inputs)).encode()).hexdigest()
     period = Period(
@@ -708,11 +858,15 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
             field_name=field_name,
             method_version=method_version,
             context=(f"{request.asset_id}:{request.maintenance_result_id}:{input_fingerprint}"),
-            origin=DataOrigin.SIMULADO,
+            origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[item["source_sha256"]],
             source_item=item,
             source_uri=f"curtailess://bess/{request.asset_id}/screen",
+            parent_evidence_ids=[
+                source_observation.evidence_id,
+                *(provenance.evidence_id for provenance in input_provenance.values()),
+            ],
         )
 
     output_values = {
@@ -730,8 +884,8 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
                 value=value,
                 unit="BRL",
                 source="historical exposure and client-informed BESS assumptions",
-                value_status="simulado",
-                origin=DataOrigin.SIMULADO,
+                value_status="calculado",
+                origin=DataOrigin.PROXY_CALCULADO,
                 provenance_id=provenance.evidence_id,
                 provenance=provenance,
             )
@@ -743,8 +897,8 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
                 source="historical exposure and client-informed BESS assumptions",
                 data_version=item["period"],
                 method="deterministic BESS screening",
-                value_status="simulado",
-                origin=DataOrigin.SIMULADO,
+                value_status="calculado",
+                origin=DataOrigin.PROXY_CALCULADO,
                 limitations=[limitation],
                 provenance_id=provenance.evidence_id,
                 provenance=provenance,
@@ -769,7 +923,17 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
             "preço_horário",
             "fronteira_de_medição",
         ],
-        limitations=[limitation],
+        limitations=[
+            limitation,
+            *(
+                ["Proveniência de entradas legadas inferida como CLIENTE_INFORMADO."]
+                if any(
+                    provenance.method_version == "client_input_inferred_v1"
+                    for provenance in input_provenance.values()
+                )
+                else []
+            ),
+        ],
     )
 
 

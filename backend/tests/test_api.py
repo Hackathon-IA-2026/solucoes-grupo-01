@@ -1,6 +1,7 @@
 import hashlib
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 import curtailess.main as main
@@ -319,6 +320,31 @@ def test_get_provenance_returns_source_lineage(monkeypatch) -> None:
     assert payload["asset_ids"] == ["CJU_BAOUR"]
 
 
+@pytest.mark.parametrize(
+    ("field_name", "method_version"),
+    [
+        ("forged_public_measurement", "curtailed_energy_sum_v1"),
+        ("total_curtailed_energy", "forged_method_v99"),
+        ("simulated_plant_state", "simulation_v1"),
+        ("energy_price", "client_input_v1"),
+    ],
+)
+def test_get_provenance_rejects_forged_or_non_server_contracts(
+    monkeypatch, field_name, method_version
+) -> None:
+    monkeypatch.setattr(main.repository, "get_provenance", lambda source_sha256: MATERIALIZED_ITEM)
+    forged_id = main.build_evidence_id(
+        MATERIALIZED_ITEM["source_sha256"],
+        field_name,
+        method_version,
+        "caller-controlled-context",
+    )
+
+    response = client.get(f"/v1/provenances/{forged_id}")
+
+    assert response.status_code == 404
+
+
 def test_get_point_context_returns_materialized_anonymized_aggregates(monkeypatch) -> None:
     monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
     monkeypatch.setattr(
@@ -529,7 +555,82 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(monkeypatch) 
         window["difference_from_baseline"]["provenance_id"],
     }
     assert len(ids) == 3
+    assert set(payload["input_provenance"]) == {
+        "asset_id",
+        "start",
+        "end",
+        "duration_hours",
+        "minimum_notice_hours",
+        "baseline_window_start",
+        "constraints",
+        "energy_price",
+    }
+    assert all(
+        provenance["field_name"] == field_name
+        for field_name, provenance in payload["input_provenance"].items()
+    )
+    assert set(window["field_provenance"]) == {
+        "rank",
+        "start",
+        "end",
+        "expected_curtailed_energy",
+        "opportunity_cost",
+        "difference_from_baseline_mwh",
+    }
+    assert all(
+        provenance["field_name"] == field_name
+        for field_name, provenance in window["field_provenance"].items()
+    )
+    cost_parents = set(window["opportunity_cost"]["provenance"]["parent_evidence_ids"])
+    assert cost_parents == {
+        window["expected_curtailed_energy"]["provenance_id"],
+        payload["input_provenance"]["energy_price"]["evidence_id"],
+    }
     assert "não é previsão" in " ".join(payload["limitations"]).lower()
+
+
+def test_rank_maintenance_accepts_legacy_payload_and_infers_client_lineage(monkeypatch) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    monkeypatch.setattr(
+        main.repository,
+        "get_historical_windows",
+        lambda asset_id, start, end, duration_hours: [
+            {
+                "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
+                "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
+                "curtailed_mwh": 20.0,
+                "period": "2026-08",
+                "source_sha256": MATERIALIZED_ITEM["source_sha256"],
+                "method": "monthly_observed_rate_prorated_to_window_v1",
+            }
+        ],
+    )
+
+    response = client.post(
+        "/v1/maintenance/rank",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "start": "2026-08-01",
+            "end": "2026-08-31",
+            "duration_hours": 72,
+            "minimum_notice_hours": 168,
+            "baseline_window_start": "2026-08-01T00:00:00Z",
+            "constraints": {"weekdays_only": False, "unavailable_periods": []},
+            "energy_price": {
+                "value": 250,
+                "unit": "BRL/MWh",
+                "source": "legacy_client_scenario",
+                "value_status": "informado",
+                "origin": "CLIENTE_INFORMADO",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    inferred = response.json()["input_provenance"]
+    assert {item["origin"] for item in inferred.values()} == {"CLIENTE_INFORMADO"}
+    assert all("inferida" in " ".join(item["limitations"]).lower() for item in inferred.values())
+    assert len({item["evidence_id"] for item in inferred.values()}) == len(inferred)
 
 
 def test_rank_maintenance_rejects_baseline_outside_period(monkeypatch) -> None:
@@ -617,7 +718,7 @@ def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(monkeyp
     assert payload["annual_benefit_brl"] == 3400000.0
     assert payload["annual_net_benefit_brl"] == 3300000.0
     assert payload["preliminary_viable"] is True
-    assert payload["source_observation"]["origin"] == "ONS_PUBLICO"
+    assert payload["source_observation"]["origin"] == "PROXY_CALCULADO"
     output_evidence = payload["output_evidence"]
     assert set(output_evidence) == {
         "residual_exposure_mwh",
@@ -626,10 +727,18 @@ def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(monkeyp
         "annual_net_benefit_brl",
         "preliminary_viable",
     }
-    assert {item["origin"] for item in output_evidence.values()} == {"SIMULADO"}
+    assert {item["origin"] for item in output_evidence.values()} == {"PROXY_CALCULADO"}
     assert len({item["provenance_id"] for item in output_evidence.values()}) == 5
     assert all(
         item["provenance"]["method_version"] == "bess_screen_v1"
+        for item in output_evidence.values()
+    )
+    expected_parents = {
+        payload["source_observation"]["evidence_id"],
+        *(item["evidence_id"] for item in bess_input_provenance().values()),
+    }
+    assert all(
+        set(item["provenance"]["parent_evidence_ids"]) == expected_parents
         for item in output_evidence.values()
     )
     monkeypatch.setattr(main.repository, "get_provenance", lambda source_sha256: MATERIALIZED_ITEM)
@@ -637,9 +746,74 @@ def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(monkeyp
         provenance_response = client.get(f"/v1/provenances/{evidence['provenance_id']}")
         assert provenance_response.status_code == 200
         assert provenance_response.json()["field_name"] == field_name
-        assert provenance_response.json()["origin"] == "SIMULADO"
+        assert provenance_response.json()["origin"] == "PROXY_CALCULADO"
     assert "soc_cronológico" in payload["missing_data"]
     assert "não é dimensionamento" in " ".join(payload["limitations"]).lower()
+
+
+def test_bess_screen_accepts_legacy_payload_and_infers_client_lineage(monkeypatch) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+
+    response = client.post(
+        "/v1/bess/screen",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "maintenance_result_id": "historical:CJU_BAOUR:2026-08",
+            "power_mw": 20,
+            "energy_mwh": 80,
+            "capex_brl": 1000000,
+            "annualized_cost_brl": 100000,
+            "round_trip_efficiency": 0.85,
+            "cycles_per_year": 200,
+            "energy_price_brl_mwh": 250,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    parents = payload["output_evidence"]["annual_net_benefit_brl"]["provenance"][
+        "parent_evidence_ids"
+    ]
+    assert len(parents) == 8
+    assert all(not parent.startswith("ons:") for parent in parents)
+    assert "inferida" in " ".join(payload["limitations"]).lower()
+
+
+@pytest.mark.parametrize("claimed_origin", ["ONS_PUBLICO", "PROXY_CALCULADO"])
+def test_bess_screen_rejects_unresolvable_server_input_claim(monkeypatch, claimed_origin) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    forged = bess_input_provenance()
+    forged["power_mw"] = {
+        **forged["power_mw"],
+        "evidence_id": main.build_evidence_id(
+            MATERIALIZED_ITEM["source_sha256"],
+            "power_mw",
+            "bess_screen_v1",
+            "forged-client-claim",
+        ),
+        "origin": claimed_origin,
+        "source_key": MATERIALIZED_ITEM["source_key"],
+        "source_sha256": MATERIALIZED_ITEM["source_sha256"],
+        "source_sha256s": [MATERIALIZED_ITEM["source_sha256"]],
+    }
+
+    response = client.post(
+        "/v1/bess/screen",
+        json={
+            "asset_id": "CJU_BAOUR",
+            "maintenance_result_id": "historical:CJU_BAOUR:2026-08",
+            "power_mw": 20,
+            "energy_mwh": 80,
+            "capex_brl": 1000000,
+            "annualized_cost_brl": 100000,
+            "round_trip_efficiency": 0.85,
+            "cycles_per_year": 200,
+            "energy_price_brl_mwh": 250,
+            "input_provenance": forged,
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_get_materialization_model_run_is_explicitly_historical(monkeypatch) -> None:

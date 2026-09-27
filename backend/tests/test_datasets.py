@@ -11,6 +11,7 @@ from curtailess.schemas import (
     NumericEvidence,
     Period,
     build_evidence_id,
+    inferred_client_provenance,
     parse_evidence_id,
     validate_public_and_simulated_evidence,
 )
@@ -203,6 +204,22 @@ def test_evidence_provenance_rejects_bad_hash_naive_timestamps_and_invalid_inter
     payload["valid_to"] = datetime(2026, 8, 31, tzinfo=UTC)
     with pytest.raises(ValidationError, match="valid_to"):
         EvidenceProvenance.model_validate(payload)
+
+
+def test_parent_lineage_is_structured_unique_and_deterministic() -> None:
+    inferred = inferred_client_provenance("duration_hours", 72, "maintenance:asset-1")
+    repeated = inferred_client_provenance("duration_hours", 72, "maintenance:asset-1")
+
+    assert inferred == repeated
+    assert inferred.origin is DataOrigin.CLIENTE_INFORMADO
+    assert "inferida" in " ".join(inferred.limitations).lower()
+    with pytest.raises(ValidationError, match="sorted and unique"):
+        EvidenceProvenance.model_validate(
+            {
+                **public_evidence().model_dump(),
+                "parent_evidence_ids": ["parent-b", "parent-a", "parent-a"],
+            }
+        )
 
 
 def test_public_observation_and_simulation_require_distinct_ids_and_origins() -> None:

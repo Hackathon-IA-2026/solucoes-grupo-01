@@ -2,7 +2,7 @@ import base64
 import hashlib
 import json
 import re
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import Any, Literal, Self
 
@@ -51,7 +51,7 @@ def build_evidence_id(
 
 
 def parse_evidence_id(evidence_id: str) -> dict[str, Any]:
-    """Decode and authenticate an identifier produced by :func:`build_evidence_id`."""
+    """Decode and integrity-check an identifier produced by :func:`build_evidence_id`."""
 
     try:
         prefix, encoded, digest = evidence_id.split(".")
@@ -70,6 +70,31 @@ def parse_evidence_id(evidence_id: str) -> dict[str, Any]:
         raise ValueError("evidence_id inválido ou corrompido") from exc
 
 
+def inferred_client_provenance(field_name: str, value: Any, context: str) -> "EvidenceProvenance":
+    """Create deterministic, explicitly inferred provenance for a legacy caller input."""
+
+    serialized = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    value_digest = hashlib.sha256(serialized.encode()).hexdigest()
+    source_uri = f"client://inferred/{context}/{field_name}"
+    return EvidenceProvenance(
+        evidence_id=build_evidence_id(
+            source_uri,
+            field_name,
+            "client_input_inferred_v1",
+            f"{context}:{value_digest}",
+        ),
+        field_name=field_name,
+        origin=DataOrigin.CLIENTE_INFORMADO,
+        source_uri=source_uri,
+        effective_at=datetime(1970, 1, 1, tzinfo=UTC),
+        method_version="client_input_inferred_v1",
+        limitations=[
+            "Proveniência inferida por compatibilidade: valor informado pelo cliente sem "
+            "metadados de origem explícitos."
+        ],
+    )
+
+
 class EvidenceProvenance(BaseModel):
     """Authoritative source, temporal validity, and method metadata for one field."""
 
@@ -82,6 +107,7 @@ class EvidenceProvenance(BaseModel):
     source_key: str | None = Field(default=None, min_length=1)
     source_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     source_sha256s: tuple[str, ...] = ()
+    parent_evidence_ids: tuple[str, ...] = ()
     observed_at: datetime | None = None
     effective_at: datetime | None = None
     valid_from: datetime | None = None
@@ -96,6 +122,15 @@ class EvidenceProvenance(BaseModel):
             raise ValueError("source_sha256s must contain SHA-256 hex digests")
         if tuple(sorted(set(values))) != values:
             raise ValueError("source_sha256s must be sorted and unique")
+        return values
+
+    @field_validator("parent_evidence_ids")
+    @classmethod
+    def validate_parent_evidence_ids(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not value for value in values):
+            raise ValueError("parent_evidence_ids cannot contain empty IDs")
+        if tuple(sorted(set(values))) != values:
+            raise ValueError("parent_evidence_ids must be sorted and unique")
         return values
 
     @field_validator("observed_at", "effective_at", "valid_from", "valid_to")
@@ -321,6 +356,18 @@ class EnergyPrice(BaseModel):
     origin: Literal[DataOrigin.CLIENTE_INFORMADO]
     provenance: EvidenceProvenance
 
+    @model_validator(mode="before")
+    @classmethod
+    def infer_legacy_provenance(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "provenance" not in value:
+            value = dict(value)
+            value["provenance"] = inferred_client_provenance(
+                "energy_price",
+                {key: item for key, item in value.items() if key != "provenance"},
+                "maintenance-energy-price",
+            )
+        return value
+
     @model_validator(mode="after")
     def validate_provenance(self) -> Self:
         if self.provenance.origin is not DataOrigin.CLIENTE_INFORMADO:
@@ -328,6 +375,18 @@ class EnergyPrice(BaseModel):
         if self.provenance.field_name != "energy_price":
             raise ValueError("energy price provenance must identify energy_price")
         return self
+
+
+_MAINTENANCE_INPUT_FIELDS = {
+    "asset_id",
+    "start",
+    "end",
+    "duration_hours",
+    "minimum_notice_hours",
+    "baseline_window_start",
+    "constraints",
+    "energy_price",
+}
 
 
 class MaintenanceRankRequest(BaseModel):
@@ -339,6 +398,46 @@ class MaintenanceRankRequest(BaseModel):
     baseline_window_start: datetime
     constraints: MaintenanceConstraints = Field(default_factory=MaintenanceConstraints)
     energy_price: EnergyPrice
+    input_provenance: dict[str, EvidenceProvenance] | None = None
+
+    @model_validator(mode="after")
+    def validate_input_provenance(self) -> Self:
+        if self.input_provenance is None:
+            values = {
+                "asset_id": self.asset_id,
+                "start": self.start,
+                "end": self.end,
+                "duration_hours": self.duration_hours,
+                "minimum_notice_hours": self.minimum_notice_hours,
+                "baseline_window_start": self.baseline_window_start,
+                "constraints": self.constraints.model_dump(mode="json"),
+            }
+            self.input_provenance = {
+                field_name: inferred_client_provenance(
+                    field_name,
+                    field_value,
+                    f"maintenance:{self.asset_id}",
+                )
+                for field_name, field_value in values.items()
+            }
+            self.input_provenance["energy_price"] = self.energy_price.provenance
+        if set(self.input_provenance) != _MAINTENANCE_INPUT_FIELDS:
+            raise ValueError("input_provenance must cover every maintenance decision input")
+        evidence_ids = set()
+        for field_name, provenance in self.input_provenance.items():
+            if provenance.field_name != field_name:
+                raise ValueError("maintenance input provenance field_name mismatch")
+            if provenance.origin is DataOrigin.SIMULADO:
+                raise ValueError("maintenance caller inputs cannot claim SIMULADO provenance")
+            evidence_ids.add(provenance.evidence_id)
+        if len(evidence_ids) != len(_MAINTENANCE_INPUT_FIELDS):
+            raise ValueError("maintenance inputs require unique field-level evidence IDs")
+        if (
+            self.input_provenance["energy_price"].evidence_id
+            != self.energy_price.provenance.evidence_id
+        ):
+            raise ValueError("energy price provenance must match maintenance input_provenance")
+        return self
 
 
 class MonetaryEvidence(BaseModel):
@@ -370,6 +469,41 @@ class RankedMaintenanceWindow(BaseModel):
     opportunity_cost: MonetaryEvidence
     difference_from_baseline_mwh: float
     difference_from_baseline: NumericEvidence
+    field_provenance: dict[str, EvidenceProvenance]
+
+    @model_validator(mode="after")
+    def validate_field_provenance(self) -> Self:
+        required = {
+            "rank",
+            "start",
+            "end",
+            "expected_curtailed_energy",
+            "opportunity_cost",
+            "difference_from_baseline_mwh",
+        }
+        if set(self.field_provenance) != required:
+            raise ValueError("field_provenance must cover every ranked window output")
+        if any(
+            provenance.field_name != field_name
+            for field_name, provenance in self.field_provenance.items()
+        ):
+            raise ValueError("ranked window field_provenance field_name mismatch")
+        nested = {
+            "expected_curtailed_energy": self.expected_curtailed_energy.provenance,
+            "opportunity_cost": self.opportunity_cost.provenance,
+            "difference_from_baseline_mwh": self.difference_from_baseline.provenance,
+        }
+        if any(
+            self.field_provenance[field_name].evidence_id != provenance.evidence_id
+            for field_name, provenance in nested.items()
+        ):
+            raise ValueError("ranked window field_provenance must match nested evidence")
+        if any(
+            provenance.origin is not DataOrigin.PROXY_CALCULADO
+            for provenance in self.field_provenance.values()
+        ):
+            raise ValueError("ranked window outputs must use PROXY_CALCULADO provenance")
+        return self
 
 
 class MaintenanceRankResponse(BaseModel):
@@ -377,6 +511,7 @@ class MaintenanceRankResponse(BaseModel):
     ranking_mode: Literal["historical_prototype"]
     data_mode: Literal["ons_materialized"]
     baseline_window_start: datetime
+    input_provenance: dict[str, EvidenceProvenance]
     ranked_windows: list[RankedMaintenanceWindow]
     limitations: list[str]
 
@@ -391,7 +526,7 @@ class BessScreenRequest(BaseModel):
     round_trip_efficiency: float = Field(gt=0, le=1)
     cycles_per_year: int = Field(gt=0)
     energy_price_brl_mwh: float = Field(ge=0)
-    input_provenance: dict[str, EvidenceProvenance]
+    input_provenance: dict[str, EvidenceProvenance] | None = None
 
     @model_validator(mode="after")
     def validate_input_provenance(self) -> Self:
@@ -404,14 +539,23 @@ class BessScreenRequest(BaseModel):
             "cycles_per_year",
             "energy_price_brl_mwh",
         }
+        if self.input_provenance is None:
+            self.input_provenance = {
+                field_name: inferred_client_provenance(
+                    field_name,
+                    getattr(self, field_name),
+                    f"bess:{self.asset_id}:{self.maintenance_result_id}",
+                )
+                for field_name in required
+            }
         if set(self.input_provenance) != required:
             raise ValueError("input_provenance must cover every decision-affecting BESS input")
         evidence_ids = set()
         for field_name, provenance in self.input_provenance.items():
             if provenance.field_name != field_name:
                 raise ValueError("BESS input provenance field_name mismatch")
-            if provenance.origin is not DataOrigin.CLIENTE_INFORMADO:
-                raise ValueError("BESS inputs must use CLIENTE_INFORMADO provenance")
+            if provenance.origin is DataOrigin.SIMULADO:
+                raise ValueError("BESS caller inputs cannot claim SIMULADO provenance")
             evidence_ids.add(provenance.evidence_id)
         if len(evidence_ids) != len(required):
             raise ValueError("BESS inputs require unique field-level evidence IDs")
@@ -434,7 +578,7 @@ class BessScreenResponse(BaseModel):
     limitations: list[str]
 
     @model_validator(mode="after")
-    def validate_public_simulation_boundary(self) -> Self:
+    def validate_calculated_lineage(self) -> Self:
         required = {
             "residual_exposure_mwh",
             "technically_absorbable_mwh",
@@ -444,10 +588,15 @@ class BessScreenResponse(BaseModel):
         }
         if set(self.output_evidence) != required:
             raise ValueError("output_evidence must cover every decision-affecting BESS output")
+        if self.source_observation.origin is not DataOrigin.PROXY_CALCULADO:
+            raise ValueError("curated BESS source aggregate must use PROXY_CALCULADO provenance")
         for field_name, evidence in self.output_evidence.items():
             if evidence.provenance.field_name != field_name:
                 raise ValueError("BESS output provenance field_name mismatch")
-            validate_public_and_simulated_evidence(self.source_observation, evidence.provenance)
+            if evidence.origin is not DataOrigin.PROXY_CALCULADO:
+                raise ValueError("deterministic BESS outputs must use PROXY_CALCULADO provenance")
+            if self.source_observation.evidence_id not in evidence.provenance.parent_evidence_ids:
+                raise ValueError("BESS outputs must reference their source aggregate")
         return self
 
 
