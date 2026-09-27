@@ -23,7 +23,7 @@ export function WindNetworkIllustration({
 }) {
   const connectedPlantSlots = getConnectedPlantSlots(connectedCount);
   const connectedPlantCount = connectedPlantSlots.length;
-  const connectedPlantLabel = connectedPlantCount === 1 ? "1 outro conjunto conectado" : `${connectedPlantCount} outros conjuntos conectados`;
+  const connectedPlantLabel = connectedPlantCount === 1 ? "1 outra usina conectada" : `${connectedPlantCount} outras usinas conectadas`;
   const reactId = useId();
   const instanceId = `wind-${reactId.replace(/:/g, "")}`;
   const titleId = `${instanceId}-title`;
@@ -175,8 +175,8 @@ export function WindNetworkIllustration({
         role="img"
         aria-labelledby={`${titleId} ${descriptionId}`}
       >
-        <title id={titleId}>Rede eólica com 1 conjunto principal e {connectedPlantLabel}</title>
-        <desc id={descriptionId}>Um conjunto eólico principal e {connectedPlantLabel} convergem para uma subestação coletora detalhada. Conexões seguem os eixos isométricos, as pás giram e pulsos verdes mostram a energia chegando à rede.</desc>
+        <title id={titleId}>Rede eólica com 1 usina principal e {connectedPlantLabel}</title>
+        <desc id={descriptionId}>Uma usina eólica principal e {connectedPlantLabel} convergem para uma subestação coletora detalhada. Conexões seguem os eixos isométricos, as pás giram e pulsos verdes mostram a energia chegando à rede.</desc>
         <defs>
           <filter id={glowId} x="-500%" y="-500%" width="1000%" height="1000%">
             <feGaussianBlur stdDeviation="4" result="b" />
@@ -297,7 +297,7 @@ export function WindNetworkIllustration({
         })}
       </svg>
 
-      <figcaption>Rede eólica em outline isométrico, com 1 conjunto principal e {connectedPlantLabel}, além de uma subestação coletora detalhada conectada por circuitos sobre os eixos do plano isométrico.</figcaption>
+      <figcaption>Rede eólica em outline isométrico, com 1 usina principal e {connectedPlantLabel}, além de uma subestação coletora detalhada conectada por circuitos sobre os eixos do plano isométrico.</figcaption>
     </figure>
   );
 }
