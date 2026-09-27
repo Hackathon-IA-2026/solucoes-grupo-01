@@ -22,6 +22,8 @@ from .schemas import (
     BessScreenResponse,
     DataOrigin,
     EvidenceProvenance,
+    MaintenanceMonetaryEvidence,
+    MaintenanceNumericEvidence,
     MaintenanceRankRequest,
     MaintenanceRankResponse,
     MonetaryEvidence,
@@ -29,6 +31,8 @@ from .schemas import (
     Period,
     RankedMaintenanceWindow,
 )
+
+MAX_MAINTENANCE_RESPONSE_BYTES = 350 * 1024
 
 
 def _json_context(kind: str, **values: object) -> str:
@@ -105,6 +109,7 @@ def build_rank_maintenance(
         "operacional e não preserva a distribuição intramensal; não coordena nem revela "
         "manutenções de terceiros."
     )
+    provenance_limitation = "Proxy histórico; não é previsão operacional."
     candidates.sort(key=lambda item: item["curtailed_mwh"], reverse=True)
     baseline_candidate = min(
         candidates,
@@ -155,10 +160,9 @@ def build_rank_maintenance(
             method_version=candidate["method"],
             context=context,
             origin=DataOrigin.PROXY_CALCULADO,
-            limitations=[limitation],
+            limitations=[provenance_limitation],
             source_hashes=[candidate["source_sha256"]],
             source_item=candidate["source_record"],
-            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
         )
 
     baseline_energy_provenance = candidate_energy_provenance(baseline_candidate)
@@ -174,10 +178,9 @@ def build_rank_maintenance(
             method_version="opportunity_cost_v1",
             context=context,
             origin=DataOrigin.PROXY_CALCULADO,
-            limitations=[limitation],
+            limitations=[provenance_limitation],
             source_hashes=[candidate["source_sha256"]],
             source_item=candidate["source_record"],
-            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[
                 energy_provenance.evidence_id,
                 request.energy_price.provenance.evidence_id,
@@ -188,11 +191,10 @@ def build_rank_maintenance(
             method_version="maintenance_difference_v1",
             context=context,
             origin=DataOrigin.PROXY_CALCULADO,
-            limitations=[limitation],
+            limitations=[provenance_limitation],
             source_hashes=[candidate["source_sha256"], baseline_candidate["source_sha256"]],
             source_item=candidate["source_record"],
             source_items=[candidate["source_record"], baseline_candidate["source_record"]],
-            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[
                 energy_provenance.evidence_id,
                 baseline_energy_provenance.evidence_id,
@@ -203,11 +205,10 @@ def build_rank_maintenance(
             method_version="maintenance_difference_v1",
             context=context,
             origin=DataOrigin.PROXY_CALCULADO,
-            limitations=[limitation],
+            limitations=[provenance_limitation],
             source_hashes=[candidate["source_sha256"], baseline_candidate["source_sha256"]],
             source_item=candidate["source_record"],
             source_items=[candidate["source_record"], baseline_candidate["source_record"]],
-            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[
                 energy_provenance.evidence_id,
                 baseline_energy_provenance.evidence_id,
@@ -218,10 +219,9 @@ def build_rank_maintenance(
             method_version="maintenance_rank_v1",
             context=context,
             origin=DataOrigin.PROXY_CALCULADO,
-            limitations=[limitation],
+            limitations=[provenance_limitation],
             source_hashes=[candidate["source_sha256"]],
             source_item=candidate["source_record"],
-            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[energy_provenance.evidence_id, *decision_parent_ids],
         )
         start_provenance = _field_provenance(
@@ -229,10 +229,9 @@ def build_rank_maintenance(
             method_version="maintenance_window_boundary_v1",
             context=context,
             origin=DataOrigin.PROXY_CALCULADO,
-            limitations=[limitation],
+            limitations=[provenance_limitation],
             source_hashes=[candidate["source_sha256"]],
             source_item=candidate["source_record"],
-            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[energy_provenance.evidence_id, *decision_parent_ids],
         )
         end_provenance = _field_provenance(
@@ -240,10 +239,9 @@ def build_rank_maintenance(
             method_version="maintenance_window_boundary_v1",
             context=context,
             origin=DataOrigin.PROXY_CALCULADO,
-            limitations=[limitation],
+            limitations=[provenance_limitation],
             source_hashes=[candidate["source_sha256"]],
             source_item=candidate["source_record"],
-            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
             parent_evidence_ids=[energy_provenance.evidence_id, *decision_parent_ids],
         )
         ranked_windows.append(
@@ -251,7 +249,7 @@ def build_rank_maintenance(
                 rank=rank,
                 start=candidate["start"],
                 end=candidate["end"],
-                expected_curtailed_energy=NumericEvidence(
+                expected_curtailed_energy=MaintenanceNumericEvidence(
                     value=energy,
                     unit="MWh",
                     period=Period(
@@ -265,19 +263,17 @@ def build_rank_maintenance(
                     origin=DataOrigin.PROXY_CALCULADO,
                     limitations=[limitation],
                     provenance_id=energy_provenance.evidence_id,
-                    provenance=energy_provenance,
                 ),
-                opportunity_cost=MonetaryEvidence(
+                opportunity_cost=MaintenanceMonetaryEvidence(
                     value=opportunity_cost,
                     unit="BRL",
                     source=request.energy_price.source,
                     value_status="calculado",
                     origin=DataOrigin.PROXY_CALCULADO,
                     provenance_id=cost_provenance.evidence_id,
-                    provenance=cost_provenance,
                 ),
                 difference_from_baseline_mwh=difference,
-                difference_from_baseline=NumericEvidence(
+                difference_from_baseline=MaintenanceNumericEvidence(
                     value=difference,
                     unit="MWh",
                     period=Period(
@@ -291,7 +287,6 @@ def build_rank_maintenance(
                     origin=DataOrigin.PROXY_CALCULADO,
                     limitations=[limitation],
                     provenance_id=difference_provenance.evidence_id,
-                    provenance=difference_provenance,
                 ),
                 field_provenance={
                     "rank": rank_provenance,
@@ -314,20 +309,35 @@ def build_rank_maintenance(
         ranked_windows=ranked_windows,
         limitations=[limitation],
     )
-    _persist_operation(
-        issued_provenance_repository,
-        operation="maintenance_rank",
-        request_value={
-            "request": request.model_dump(mode="json"),
-            "decision_input_sha256": decision_input_sha256,
-        },
-        provenances=[
-            provenance
-            for window in response.ranked_windows
-            for provenance in window.field_provenance.values()
-        ],
-        source_records=[candidate["source_record"] for candidate in candidates],
-    )
+    response_size = len(response.model_dump_json(exclude_none=True).encode("utf-8"))
+    if response_size > MAX_MAINTENANCE_RESPONSE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "Resposta de manutenção excede o limite seguro de "
+                f"{MAX_MAINTENANCE_RESPONSE_BYTES} bytes."
+            ),
+        )
+    try:
+        _persist_operation(
+            issued_provenance_repository,
+            operation="maintenance_rank",
+            request_value={
+                "request": request.model_dump(mode="json"),
+                "decision_input_sha256": decision_input_sha256,
+            },
+            provenances=[
+                provenance
+                for window in response.ranked_windows
+                for provenance in window.field_provenance.values()
+            ],
+            source_records=[candidate["source_record"] for candidate in candidates],
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail="Operação de manutenção excede o limite seguro de persistência.",
+        ) from exc
     return response
 
 

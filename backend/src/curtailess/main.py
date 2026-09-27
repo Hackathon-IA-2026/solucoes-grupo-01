@@ -484,6 +484,7 @@ def get_asset_windows(
 @app.post(
     "/v1/maintenance/rank",
     response_model=MaintenanceRankResponse,
+    response_model_exclude_none=True,
     tags=["maintenance"],
 )
 def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse:

@@ -536,14 +536,40 @@ class MonetaryEvidence(BaseModel):
         return self
 
 
+class MaintenanceNumericEvidence(BaseModel):
+    """Numeric result referencing the authoritative copy in field_provenance."""
+
+    value: FiniteFloat
+    unit: str
+    period: Period
+    source: str
+    data_version: str
+    method: str
+    value_status: Literal["calculado"]
+    origin: Literal[DataOrigin.PROXY_CALCULADO]
+    limitations: list[str]
+    provenance_id: EvidenceId
+
+
+class MaintenanceMonetaryEvidence(BaseModel):
+    """Monetary result referencing the authoritative copy in field_provenance."""
+
+    value: FiniteFloat
+    unit: Literal["BRL"]
+    source: str
+    value_status: Literal["calculado"]
+    origin: Literal[DataOrigin.PROXY_CALCULADO]
+    provenance_id: EvidenceId
+
+
 class RankedMaintenanceWindow(BaseModel):
     rank: int
     start: datetime
     end: datetime
-    expected_curtailed_energy: NumericEvidence
-    opportunity_cost: MonetaryEvidence
+    expected_curtailed_energy: MaintenanceNumericEvidence
+    opportunity_cost: MaintenanceMonetaryEvidence
     difference_from_baseline_mwh: FiniteFloat
-    difference_from_baseline: NumericEvidence
+    difference_from_baseline: MaintenanceNumericEvidence
     field_provenance: dict[str, EvidenceProvenance]
 
     @model_validator(mode="after")
@@ -564,14 +590,14 @@ class RankedMaintenanceWindow(BaseModel):
             for field_name, provenance in self.field_provenance.items()
         ):
             raise ValueError("ranked window field_provenance field_name mismatch")
-        nested = {
-            "expected_curtailed_energy": self.expected_curtailed_energy.provenance,
-            "opportunity_cost": self.opportunity_cost.provenance,
-            "difference_from_baseline": self.difference_from_baseline.provenance,
+        nested_ids = {
+            "expected_curtailed_energy": self.expected_curtailed_energy.provenance_id,
+            "opportunity_cost": self.opportunity_cost.provenance_id,
+            "difference_from_baseline": self.difference_from_baseline.provenance_id,
         }
         if any(
-            self.field_provenance[field_name].evidence_id != provenance.evidence_id
-            for field_name, provenance in nested.items()
+            self.field_provenance[field_name].evidence_id != provenance_id
+            for field_name, provenance_id in nested_ids.items()
         ):
             raise ValueError("ranked window field_provenance must match nested evidence")
         if any(

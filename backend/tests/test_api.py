@@ -14,7 +14,9 @@ from curtailess.canonical import canonical_digest
 from curtailess.main import app
 from curtailess.provenance import (
     EVIDENCE_ID_MAX_LENGTH,
+    MAX_DYNAMO_ITEM_BYTES,
     IssuedProvenanceRepository,
+    _item_size,
     build_evidence_id,
     build_public_evidence_id,
 )
@@ -196,7 +198,59 @@ def test_operation_persistence_stores_one_commit_and_compact_indexes() -> None:
         item for item in table.items.values() if item["record_type"] == "provenance_operation"
     )
     assert "request_json" not in operation and "output_json" not in operation
+    assert "provenances" not in operation and "source_records" not in operation
+    assert operation["evidence_manifest"] == sorted(
+        operation["evidence_manifest"], key=lambda member: member["evidence_id"]
+    )
+    assert set(operation["evidence_manifest"][0]) == {"evidence_id", "leaf_digest"}
     assert repository.get(ids[0])["provenance"]["evidence_id"] == ids[0]
+
+
+def test_maximum_operation_manifest_is_bounded_before_any_write() -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    ids = [
+        build_evidence_id("a", f"field-{index}", "bess_screen_v1", "ctx") for index in range(224)
+    ]
+
+    repository.put_operation(
+        operation="maintenance_rank",
+        request_digest="b" * 64,
+        provenances={value: _stored_provenance(value) for value in ids},
+        source_records=[{"asset_id": "A", "source_key": "raw/source.parquet"}],
+    )
+
+    operation = next(
+        item for item in table.items.values() if item["record_type"] == "provenance_operation"
+    )
+    assert _item_size(operation) <= MAX_DYNAMO_ITEM_BYTES
+    assert len(operation["evidence_manifest"]) == 224
+
+
+def test_authenticated_legacy_compact_operation_remains_readable() -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    evidence_id = build_evidence_id("a", "field", "bess_screen_v1", "ctx")
+    provenance = _stored_provenance(evidence_id)
+    payload = {
+        "operation": "bess_screen",
+        "request_digest": "b" * 64,
+        "provenances": {evidence_id: provenance},
+        "source_records": [{"asset_id": "A"}],
+    }
+    operation_id = canonical_digest(payload)
+    for item in (
+        repository._leaf_item(evidence_id, provenance),
+        repository._membership_item(evidence_id, operation_id, provenance),
+        repository._operation_item(operation_id, payload),
+    ):
+        table.put_item(Item=item)
+
+    resolved = IssuedProvenanceRepository(table).get(evidence_id)
+
+    assert resolved is not None
+    assert resolved["provenance"] == provenance
+    assert resolved["source_records"] == [{"asset_id": "A"}]
 
 
 def _stored_capacity_provenance(evidence_id: str) -> dict:
@@ -438,9 +492,11 @@ def test_operation_rejects_conditional_conflict_and_tampered_read() -> None:
         "provenances": {evidence_id: _stored_provenance(evidence_id)},
         "source_records": [{"asset_id": "A"}],
     }
-    operation_id = repository.put_operation(**kwargs)
-    operation_key = ("PROVENANCE", f"operation#{operation_id}")
-    table.items[operation_key]["provenances"][evidence_id]["field_name"] = "tampered"
+    repository.put_operation(**kwargs)
+    leaf_key = IssuedProvenanceRepository._key(evidence_id)
+    table.items[(leaf_key["plant_id"], leaf_key["scenario_id"])]["provenance"]["field_name"] = (
+        "tampered"
+    )
     assert repository.get(evidence_id) is None
     with pytest.raises(RuntimeError, match="immutable record mismatch"):
         repository.put_operation(**kwargs)
@@ -473,31 +529,8 @@ def _persist_two_member_operation() -> tuple[
 
 
 @pytest.mark.parametrize(
-    "mutate",
+    "mutation",
     [
-        lambda operation, _table, _ids: operation["source_records"][0].__setitem__(
-            "source_key", "tampered"
-        ),
-        lambda operation, _table, _ids: operation["source_records"][0].__setitem__(
-            "asset_id", "tampered"
-        ),
-        lambda operation, _table, _ids: operation["source_records"][0].__setitem__(
-            "source_sha256", "f" * 64
-        ),
-        lambda operation, _table, ids: operation["provenances"][ids[0]].__setitem__(
-            "parent_evidence_ids", []
-        ),
-        lambda operation, _table, ids: operation["provenances"].pop(ids[1]),
-        lambda operation, _table, ids: operation["provenances"].__setitem__(
-            build_evidence_id("extra", "extra", "bess_screen_v1", "ctx"),
-            _stored_provenance(build_evidence_id("extra", "extra", "bess_screen_v1", "ctx")),
-        ),
-        lambda operation, _table, _ids: operation["source_records"].clear(),
-        lambda operation, _table, _ids: operation["source_records"].append(
-            {"source_key": "unexpected", "source_sha256": "f" * 64}
-        ),
-    ],
-    ids=[
         "source-key",
         "source-value",
         "source-sha256",
@@ -508,10 +541,30 @@ def _persist_two_member_operation() -> tuple[
         "extra-source-record",
     ],
 )
-def test_fresh_read_rejects_tampered_operation_content(mutate) -> None:
+def test_fresh_read_rejects_tampered_operation_content(mutation) -> None:
     table, _repository, evidence_ids, operation_id = _persist_two_member_operation()
     operation = table.items[("PROVENANCE", f"operation#{operation_id}")]
-    mutate(operation, table, evidence_ids)
+    leaf_key = IssuedProvenanceRepository._key(evidence_ids[0])
+    leaf = table.items[(leaf_key["plant_id"], leaf_key["scenario_id"])]
+    if mutation == "source-key":
+        leaf["source_records"][0]["source_key"] = "tampered"
+    elif mutation == "source-value":
+        leaf["source_records"][0]["asset_id"] = "tampered"
+    elif mutation == "source-sha256":
+        leaf["source_records"][0]["source_sha256"] = "f" * 64
+    elif mutation == "lineage":
+        leaf["provenance"]["parent_evidence_ids"] = []
+    elif mutation == "missing-member":
+        operation["evidence_manifest"].pop()
+    elif mutation == "extra-member":
+        operation["evidence_manifest"].append(copy.deepcopy(operation["evidence_manifest"][0]))
+        operation["evidence_manifest"][-1]["evidence_id"] = build_evidence_id(
+            "extra", "extra", "bess_screen_v1", "ctx"
+        )
+    elif mutation == "deleted-source-record":
+        leaf["source_records"].clear()
+    else:
+        leaf["source_records"].append({"source_key": "unexpected", "source_sha256": "f" * 64})
 
     fresh_repository = IssuedProvenanceRepository(table)
 
@@ -543,7 +596,7 @@ def test_fresh_read_rejects_changed_operation_membership(mutation) -> None:
     if mutation == "missing":
         del table.items[item_key]
     else:
-        table.items[item_key]["provenance_digest"] = "f" * 64
+        table.items[item_key]["leaf_digest"] = "f" * 64
 
     assert IssuedProvenanceRepository(table).get(evidence_ids[0]) is None
 
@@ -566,12 +619,13 @@ def test_fresh_read_rejects_index_operation_membership_mismatch() -> None:
 
 
 def test_fresh_read_rejects_recomputed_provenance_leaf_digest_after_tampering() -> None:
-    table, _repository, evidence_ids, operation_id = _persist_two_member_operation()
-    operation = table.items[("PROVENANCE", f"operation#{operation_id}")]
-    operation["provenances"][evidence_ids[0]]["field_name"] = "tampered"
-    index_key = IssuedProvenanceRepository._key(evidence_ids[0])
-    index = table.items[(index_key["plant_id"], index_key["scenario_id"])]
-    index["provenance_digest"] = canonical_digest(operation["provenances"][evidence_ids[0]])
+    table, _repository, evidence_ids, _operation_id = _persist_two_member_operation()
+    leaf_key = IssuedProvenanceRepository._key(evidence_ids[0])
+    leaf = table.items[(leaf_key["plant_id"], leaf_key["scenario_id"])]
+    leaf["provenance"]["field_name"] = "tampered"
+    leaf["leaf_digest"] = canonical_digest(
+        {"provenance": leaf["provenance"], "source_records": leaf["source_records"]}
+    )
 
     assert IssuedProvenanceRepository(table).get(evidence_ids[0]) is None
 
@@ -738,6 +792,30 @@ def historical_window(
         "source_sha256": source_record["source_sha256"],
         "method": method,
         "source_record": source_record,
+    }
+
+
+def maintenance_candidates(count: int) -> list[dict]:
+    return [
+        historical_window(
+            MATERIALIZED_ITEM,
+            start=main.datetime(2026, 8, 1, tzinfo=main.UTC) + timedelta(hours=12 * index),
+            curtailed_mwh=float(count - index),
+        )
+        for index in range(count)
+    ]
+
+
+def maintenance_request_payload() -> dict:
+    return {
+        "asset_id": "CJU_BAOUR",
+        "start": "2026-08-01",
+        "end": "2026-09-29",
+        "duration_hours": 72,
+        "minimum_notice_hours": 168,
+        "baseline_window_start": "2026-08-01T00:00:00Z",
+        "constraints": {"weekdays_only": False, "unavailable_periods": []},
+        "energy_price": energy_price_payload(),
     }
 
 
@@ -977,15 +1055,9 @@ def test_multi_source_exposure_preserves_key_hash_pairs_and_is_order_invariant(
     assert resolved.json()["source_key"] == items[0]["source_key"]
     assert resolved.json()["source_sha256"] == items[0]["source_sha256"]
 
-    operation = next(
-        item
-        for item in issued_provenance_table.items.values()
-        if item["record_type"] == "provenance_operation"
-        and first_provenance["evidence_id"] in item["provenances"]
-    )
-    operation["provenances"][first_provenance["evidence_id"]]["source_artifacts"][0][
-        "source_sha256"
-    ] = "1" * 64
+    leaf_key = IssuedProvenanceRepository._key(first_provenance["evidence_id"])
+    leaf = issued_provenance_table.items[(leaf_key["plant_id"], leaf_key["scenario_id"])]
+    leaf["provenance"]["source_artifacts"][0]["source_sha256"] = "1" * 64
     assert fresh_client.get(f"/v1/provenances/{first_provenance['evidence_id']}").status_code == 404
 
 
@@ -1289,11 +1361,8 @@ def test_get_point_context_uses_exact_mixed_constrained_off_lineage(
     assert entity_evidence["provenance_id"] != rate_evidence["provenance_id"]
     assert entity_evidence["provenance"]["field_name"] == "anonymized_entity_count"
     assert rate_evidence["provenance"]["field_name"] == "simultaneity_rate"
-    operation = next(
-        item
-        for item in issued_provenance_table.items.values()
-        if item["record_type"] == "provenance_operation"
-    )
+    leaf_key = IssuedProvenanceRepository._key(entity_evidence["provenance_id"])
+    leaf = issued_provenance_table.items[(leaf_key["plant_id"], leaf_key["scenario_id"])]
     lineage_fields = {
         "asset_id",
         "period",
@@ -1305,7 +1374,7 @@ def test_get_point_context_uses_exact_mixed_constrained_off_lineage(
         "source_sha256",
         "method",
     }
-    assert operation["source_records"] == [
+    assert leaf["source_records"] == [
         {key: value for key, value in record.items() if key in lineage_fields} for record in records
     ]
 
@@ -1351,15 +1420,12 @@ def test_point_context_fresh_resolution_rejects_changed_source_member(
     )
     response = client.get("/v1/assets/CJU_BAOUR/point-context")
     evidence_id = response.json()["anonymized_entity_count"]["provenance_id"]
-    operation = next(
-        item
-        for item in issued_provenance_table.items.values()
-        if item["record_type"] == "provenance_operation"
-    )
+    leaf_key = IssuedProvenanceRepository._key(evidence_id)
+    leaf = issued_provenance_table.items[(leaf_key["plant_id"], leaf_key["scenario_id"])]
     if mutation == "missing":
-        operation["source_records"].pop()
+        leaf["source_records"].pop()
     else:
-        operation["source_records"][1]["source_key"] = "tampered.parquet"
+        leaf["source_records"][1]["source_key"] = "tampered.parquet"
 
     monkeypatch.setattr(
         main,
@@ -1452,19 +1518,15 @@ def test_historical_windows_preserve_each_period_source_and_restart_resolution(
         (august["source_key"], august["source_sha256"]),
         (september["source_key"], september["source_sha256"]),
     ]
-    operation = next(
-        item
-        for item in issued_provenance_table.items.values()
-        if item["record_type"] == "provenance_operation"
-    )
-    assert {record["period"] for record in operation["source_records"]} == {
-        "2026-08",
-        "2026-09",
-    }
-    assert all(
-        "curtailed_mwh" in record and "interval_count" in record
-        for record in operation["source_records"]
-    )
+    leaf_records = []
+    for window in windows:
+        leaf_key = IssuedProvenanceRepository._key(
+            window["expected_curtailed_energy"]["provenance_id"]
+        )
+        leaf = issued_provenance_table.items[(leaf_key["plant_id"], leaf_key["scenario_id"])]
+        leaf_records.extend(leaf["source_records"])
+    assert {record["period"] for record in leaf_records} == {"2026-08", "2026-09"}
+    assert all("curtailed_mwh" in record and "interval_count" in record for record in leaf_records)
 
     monkeypatch.setattr(
         main,
@@ -1535,6 +1597,59 @@ def test_get_historical_windows_rejects_inverted_period() -> None:
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("result_count", [29, 32])
+def test_rank_maintenance_allowed_large_result_counts_are_bounded(
+    monkeypatch, issued_provenance_table, result_count
+) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    monkeypatch.setattr(
+        main.repository,
+        "get_historical_windows",
+        lambda *args, **kwargs: maintenance_candidates(result_count),
+    )
+
+    response = client.post("/v1/maintenance/rank", json=maintenance_request_payload())
+
+    assert response.status_code == 200, response.text
+    assert len(response.json()["ranked_windows"]) == result_count
+    assert len(response.content) <= 350 * 1024
+    operation = next(
+        item
+        for item in issued_provenance_table.items.values()
+        if item["record_type"] == "provenance_operation"
+    )
+    assert _item_size(operation) <= MAX_DYNAMO_ITEM_BYTES
+    assert len(operation["evidence_manifest"]) == result_count * 7
+
+
+def test_rank_maintenance_max_length_bounded_input_never_fails_after_writes(
+    monkeypatch, issued_provenance_table
+) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    monkeypatch.setattr(
+        main.repository,
+        "get_historical_windows",
+        lambda *args, **kwargs: maintenance_candidates(32),
+    )
+    request = maintenance_request_payload()
+    request["energy_price"]["source"] = "s" * 512
+    provenance = maintenance_input_provenance()
+    for value in provenance.values():
+        value["source_uri"] = "client://" + "u" * 503
+        value["limitations"] = ["x" * 512]
+    request["energy_price"]["provenance"] = provenance["energy_price"]
+    request["input_provenance"] = provenance
+
+    response = client.post("/v1/maintenance/rank", json=request)
+
+    assert response.status_code in {200, 413}
+    if response.status_code == 200:
+        assert len(response.content) <= 350 * 1024
+    else:
+        assert "limite seguro" in response.json()["detail"]
+        assert not issued_provenance_table.items
+
+
 def test_rank_maintenance_uses_materialized_ons_historical_windows(
     monkeypatch, issued_provenance_table
 ) -> None:
@@ -1592,7 +1707,7 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(
     assert evidence["source"] == "ONS/restricao_coff_eolica_tm"
     assert evidence["provenance_id"].startswith("evd1.")
     assert window["difference_from_baseline"]["value"] == 12.0
-    assert window["difference_from_baseline"]["provenance"]["field_name"] == (
+    assert window["field_provenance"]["difference_from_baseline"]["field_name"] == (
         "difference_from_baseline"
     )
     ids = {
@@ -1629,7 +1744,7 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(
         provenance["field_name"] == field_name
         for field_name, provenance in window["field_provenance"].items()
     )
-    cost_parents = set(window["opportunity_cost"]["provenance"]["parent_evidence_ids"])
+    cost_parents = set(window["field_provenance"]["opportunity_cost"]["parent_evidence_ids"])
     assert cost_parents == {
         window["expected_curtailed_energy"]["provenance_id"],
         payload["input_provenance"]["energy_price"]["evidence_id"],
@@ -1657,7 +1772,11 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(
             assert resolved.status_code == 200
             assert resolved.json()["field_name"] == field_name
             assert resolved.json()["parent_evidence_ids"] == provenance["parent_evidence_ids"]
-            assert resolved.json()["provenance"] == provenance
+            assert {
+                key: value
+                for key, value in resolved.json()["provenance"].items()
+                if value is not None
+            } == provenance
     assert "não é previsão" in " ".join(payload["limitations"]).lower()
 
 
@@ -1706,19 +1825,18 @@ def test_rank_maintenance_preserves_multi_month_sources_and_rejects_tampering(
     assert response.status_code == 200
     ranked = response.json()["ranked_windows"]
     august_ranked = next(item for item in ranked if item["start"].startswith("2026-08"))
-    difference = august_ranked["difference_from_baseline"]["provenance"]
+    difference = august_ranked["field_provenance"]["difference_from_baseline"]
     assert {
         (item["source_key"], item["source_sha256"]) for item in difference["source_artifacts"]
     } == {
         (august["source_key"], august["source_sha256"]),
         (september["source_key"], september["source_sha256"]),
     }
-    operation = next(
-        item
-        for item in issued_provenance_table.items.values()
-        if item["record_type"] == "provenance_operation"
-    )
-    assert {record["period"] for record in operation["source_records"]} == {
+    difference_leaf_key = IssuedProvenanceRepository._key(difference["evidence_id"])
+    difference_leaf = issued_provenance_table.items[
+        (difference_leaf_key["plant_id"], difference_leaf_key["scenario_id"])
+    ]
+    assert {record["period"] for record in difference_leaf["source_records"]} == {
         "2026-08",
         "2026-09",
     }
@@ -1730,7 +1848,11 @@ def test_rank_maintenance_preserves_multi_month_sources_and_rejects_tampering(
     )
     evidence_id = august_ranked["expected_curtailed_energy"]["provenance_id"]
     assert fresh_api_client().get(f"/v1/provenances/{evidence_id}").status_code == 200
-    operation["source_records"][0]["curtailed_mwh"] += 1
+    energy_leaf_key = IssuedProvenanceRepository._key(evidence_id)
+    energy_leaf = issued_provenance_table.items[
+        (energy_leaf_key["plant_id"], energy_leaf_key["scenario_id"])
+    ]
+    energy_leaf["source_records"][0]["curtailed_mwh"] += 1
     assert fresh_api_client().get(f"/v1/provenances/{evidence_id}").status_code == 404
 
 
@@ -1771,12 +1893,12 @@ def test_rank_maintenance_same_hash_periods_keep_both_source_records(
     )
 
     assert response.status_code == 200
-    operation = next(
-        item
-        for item in issued_provenance_table.items.values()
-        if item["record_type"] == "provenance_operation"
-    )
-    assert [record["period"] for record in operation["source_records"]] == [
+    difference = response.json()["ranked_windows"][0]["field_provenance"][
+        "difference_from_baseline"
+    ]
+    leaf_key = IssuedProvenanceRepository._key(difference["evidence_id"])
+    leaf = issued_provenance_table.items[(leaf_key["plant_id"], leaf_key["scenario_id"])]
+    assert [record["period"] for record in leaf["source_records"]] == [
         "2026-08",
         "2026-09",
     ]

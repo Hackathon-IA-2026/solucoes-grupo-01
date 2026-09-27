@@ -127,25 +127,54 @@ class IssuedProvenanceRepository:
     def _operation_key(operation_id: str) -> dict[str, str]:
         return {"plant_id": "PROVENANCE", "scenario_id": f"operation#{operation_id}"}
 
+    @staticmethod
+    def _leaf_content(
+        provenance: dict[str, Any], source_records: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        return {"provenance": provenance, "source_records": source_records}
+
     @classmethod
-    def _leaf_item(cls, evidence_id: str, provenance: dict[str, Any]) -> dict[str, Any]:
+    def _leaf_item(
+        cls,
+        evidence_id: str,
+        provenance: dict[str, Any],
+        source_records: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        # The two-argument form is the compact-record format emitted before leaf content was
+        # materialized. It remains useful only for authenticated legacy reads.
+        if source_records is None:
+            return {
+                **cls._key(evidence_id),
+                "record_type": "provenance_leaf",
+                "evidence_id": evidence_id,
+                "provenance_digest": canonical_digest(provenance),
+            }
+        content = cls._leaf_content(provenance, source_records)
         return {
             **cls._key(evidence_id),
-            "record_type": "provenance_leaf",
+            "record_type": "provenance_leaf_v2",
             "evidence_id": evidence_id,
-            "provenance_digest": canonical_digest(provenance),
+            "leaf_digest": canonical_digest(content),
+            **content,
         }
 
     @classmethod
     def _membership_item(
-        cls, evidence_id: str, operation_id: str, provenance: dict[str, Any]
+        cls,
+        evidence_id: str,
+        operation_id: str,
+        provenance: dict[str, Any] | None = None,
+        *,
+        leaf_digest: str | None = None,
     ) -> dict[str, Any]:
+        digest = leaf_digest or canonical_digest(provenance)
+        digest_field = "leaf_digest" if leaf_digest is not None else "provenance_digest"
         return {
             **cls._membership_key(evidence_id, operation_id),
             "record_type": "provenance_membership",
             "evidence_id": evidence_id,
             "operation_id": operation_id,
-            "provenance_digest": canonical_digest(provenance),
+            digest_field: digest,
         }
 
     @classmethod
@@ -231,19 +260,74 @@ class IssuedProvenanceRepository:
             _dynamodb_safe({key: source[key] for key in source_fields if key in source})
             for source in source_records
         ]
+
+        def sources_for(provenance: dict[str, Any]) -> list[dict[str, Any]]:
+            artifacts = {
+                (artifact.get("source_key"), artifact.get("source_sha256"))
+                for artifact in provenance.get("source_artifacts", [])
+                if isinstance(artifact, dict)
+            }
+            if provenance.get("source_key") and provenance.get("source_sha256"):
+                artifacts.add((provenance["source_key"], provenance["source_sha256"]))
+            matches = []
+            for source in compact_sources:
+                primary = (source.get("source_key"), source.get("source_sha256"))
+                capacity = (
+                    source.get("capacity_source_key"),
+                    source.get("capacity_source_sha256"),
+                )
+                if primary in artifacts:
+                    matches.append(source)
+                elif capacity in artifacts:
+                    matches.append(
+                        {
+                            key: source[key]
+                            for key in (
+                                "asset_id",
+                                "asset_ids",
+                                "capacity_data_version",
+                                "capacity_method",
+                                "capacity_source_key",
+                                "capacity_source_sha256",
+                            )
+                            if key in source
+                        }
+                    )
+            # Legacy callers did not always retain source hashes. Preserve those records only when
+            # no authenticated key/hash pair can select a narrower immutable set.
+            return matches or compact_sources
+
+        leaves = {
+            evidence_id: self._leaf_item(evidence_id, provenance, sources_for(provenance))
+            for evidence_id, provenance in provenances.items()
+        }
+        manifest = [
+            {"evidence_id": evidence_id, "leaf_digest": leaves[evidence_id]["leaf_digest"]}
+            for evidence_id in sorted(leaves)
+        ]
         payload = {
             "operation": operation,
             "request_digest": request_digest,
-            "provenances": provenances,
-            "source_records": compact_sources,
+            "evidence_manifest": manifest,
         }
         operation_id = canonical_digest(payload)
         operation_item = self._operation_item(operation_id, payload)
-        _guard_item_size(operation_item)
-        for evidence_id, provenance in provenances.items():
-            self._put_immutable(self._leaf_item(evidence_id, provenance))
-        for evidence_id, provenance in provenances.items():
-            self._put_immutable(self._membership_item(evidence_id, operation_id, provenance))
+        memberships = {
+            evidence_id: self._membership_item(
+                evidence_id,
+                operation_id,
+                leaf_digest=leaf["leaf_digest"],
+            )
+            for evidence_id, leaf in leaves.items()
+        }
+        # Bound every item before the first write so a validly rejected request cannot leave a
+        # partial operation behind.
+        for item in (*leaves.values(), *memberships.values(), operation_item):
+            _guard_item_size(item)
+        for leaf in leaves.values():
+            self._put_immutable(leaf)
+        for membership in memberships.values():
+            self._put_immutable(membership)
         self._put_immutable(operation_item)
         return operation_id
 
@@ -268,20 +352,87 @@ class IssuedProvenanceRepository:
 
     def _validated_operation(
         self, operation_id: str
-    ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]] | None:
+    ) -> (
+        tuple[
+            dict[str, Any],
+            dict[str, dict[str, Any]],
+            dict[str, list[dict[str, Any]]],
+        ]
+        | None
+    ):
         operation = self.table.get_item(
             Key=self._operation_key(operation_id), ConsistentRead=True
         ).get("Item")
         if not isinstance(operation, dict):
             return None
         try:
+            if "evidence_manifest" not in operation:
+                return self._validated_legacy_operation(operation_id, operation)
+            payload = {
+                key: operation[key] for key in ("operation", "request_digest", "evidence_manifest")
+            }
+            manifest = payload["evidence_manifest"]
+            if (
+                not isinstance(manifest, list)
+                or not manifest
+                or manifest != sorted(manifest, key=lambda member: member["evidence_id"])
+                or len({member["evidence_id"] for member in manifest}) != len(manifest)
+                or canonical_digest(payload) != operation_id
+                or operation != self._operation_item(operation_id, payload)
+            ):
+                return None
+            provenances: dict[str, dict[str, Any]] = {}
+            sources: dict[str, list[dict[str, Any]]] = {}
+            for member in manifest:
+                member_id = member["evidence_id"]
+                leaf_digest = member["leaf_digest"]
+                parse_evidence_id(member_id)
+                stored_leaf = self.table.get_item(
+                    Key=self._key(member_id), ConsistentRead=True
+                ).get("Item")
+                stored_membership = self.table.get_item(
+                    Key=self._membership_key(member_id, operation_id), ConsistentRead=True
+                ).get("Item")
+                if not isinstance(stored_leaf, dict):
+                    return None
+                member_provenance = stored_leaf.get("provenance")
+                member_sources = stored_leaf.get("source_records")
+                if (
+                    not isinstance(member_provenance, dict)
+                    or not isinstance(member_sources, list)
+                    or member_provenance.get("evidence_id") != member_id
+                    or stored_leaf != self._leaf_item(member_id, member_provenance, member_sources)
+                    or stored_leaf.get("leaf_digest") != leaf_digest
+                    or stored_membership
+                    != self._membership_item(member_id, operation_id, leaf_digest=leaf_digest)
+                ):
+                    return None
+                provenances[member_id] = member_provenance
+                sources[member_id] = member_sources
+        except (KeyError, TypeError, ValueError):
+            return None
+        return operation, provenances, sources
+
+    def _validated_legacy_operation(
+        self, operation_id: str, operation: dict[str, Any]
+    ) -> (
+        tuple[
+            dict[str, Any],
+            dict[str, dict[str, Any]],
+            dict[str, list[dict[str, Any]]],
+        ]
+        | None
+    ):
+        try:
             payload = {
                 key: operation[key]
                 for key in ("operation", "request_digest", "provenances", "source_records")
             }
             provenances = payload["provenances"]
+            source_records = payload["source_records"]
             if (
                 not isinstance(provenances, dict)
+                or not isinstance(source_records, list)
                 or canonical_digest(payload) != operation_id
                 or operation != self._operation_item(operation_id, payload)
             ):
@@ -307,7 +458,7 @@ class IssuedProvenanceRepository:
                     return None
         except (KeyError, TypeError, ValueError):
             return None
-        return operation, provenances
+        return operation, provenances, dict.fromkeys(provenances, source_records)
 
     def get(self, evidence_id: str) -> dict[str, Any] | None:
         try:
@@ -317,7 +468,7 @@ class IssuedProvenanceRepository:
         leaf = self.table.get_item(Key=self._key(evidence_id), ConsistentRead=True).get("Item")
         if (
             not isinstance(leaf, dict)
-            or leaf.get("record_type") != "provenance_leaf"
+            or leaf.get("record_type") not in {"provenance_leaf", "provenance_leaf_v2"}
             or leaf.get("evidence_id") != evidence_id
         ):
             return None
@@ -328,13 +479,21 @@ class IssuedProvenanceRepository:
             validated = self._validated_operation(operation_id)
             if validated is None:
                 continue
-            operation, provenances = validated
+            operation, provenances, sources = validated
             provenance = provenances.get(evidence_id)
-            if not isinstance(provenance, dict):
+            source_records = sources.get(evidence_id)
+            if not isinstance(provenance, dict) or not isinstance(source_records, list):
                 continue
-            if leaf != self._leaf_item(evidence_id, provenance) or membership != (
-                self._membership_item(evidence_id, operation_id, provenance)
-            ):
+            if "evidence_manifest" in operation:
+                leaf_digest = canonical_digest(self._leaf_content(provenance, source_records))
+                expected_leaf = self._leaf_item(evidence_id, provenance, source_records)
+                expected_membership = self._membership_item(
+                    evidence_id, operation_id, leaf_digest=leaf_digest
+                )
+            else:
+                expected_leaf = self._leaf_item(evidence_id, provenance)
+                expected_membership = self._membership_item(evidence_id, operation_id, provenance)
+            if leaf != expected_leaf or membership != expected_membership:
                 continue
             return {
                 "evidence_id": evidence_id,
@@ -342,7 +501,7 @@ class IssuedProvenanceRepository:
                 "operation": operation.get("operation"),
                 "request_digest": operation.get("request_digest"),
                 "provenance": provenance,
-                "source_records": operation.get("source_records", []),
+                "source_records": source_records,
             }
         return None
 
