@@ -117,7 +117,7 @@ class ExposureRepository:
             current = latest_by_asset.get(item["asset_id"])
             if current is None or item["period"] > current["period"]:
                 latest_by_asset[item["asset_id"]] = item
-        latest = list(latest_by_asset.values())
+        latest = sorted(latest_by_asset.values(), key=lambda item: item["asset_id"])
         limited_count = sum(item.get("limited_interval_count", 0) > 0 for item in latest)
         point_hash = hashlib.sha256(asset["point_id"].encode()).hexdigest()[:12]
         return {
@@ -128,6 +128,7 @@ class ExposureRepository:
             "period_end": max(item["period_end"][:10] for item in latest),
             "data_version": ",".join(sorted({item["period"] for item in latest})),
             "source_sha256s": sorted({item["source_sha256"] for item in latest}),
+            "items": latest,
         }
 
     def get_historical_windows(

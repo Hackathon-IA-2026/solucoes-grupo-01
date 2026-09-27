@@ -530,6 +530,24 @@ MATERIALIZED_ITEM = {
 }
 
 
+def mixed_point_context_records() -> list[dict]:
+    return [
+        {**MATERIALIZED_ITEM, "limited_interval_count": 0},
+        {
+            **MATERIALIZED_ITEM,
+            "asset_id": "CJU_SOLAR_PEER",
+            "asset_name": "Solar peer",
+            "limited_interval_count": 4,
+            "source_key": (
+                "raw/ons/restricao_coff_fotovoltaica_tm/"
+                "source_year=2026/source_month=08/file.parquet"
+            ),
+            "source_sha256": "b" * 64,
+            "method": "count constrained-off photovoltaic intervals",
+        },
+    ]
+
+
 def test_api_info() -> None:
     response = client.get("/")
 
@@ -1012,19 +1030,23 @@ def test_capacity_provenance_resolves_capacity_dataset_without_borrowed_dates(mo
     assert payload["valid_to"] is None
 
 
-def test_get_point_context_returns_materialized_anonymized_aggregates(monkeypatch) -> None:
-    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+def test_get_point_context_uses_exact_mixed_constrained_off_lineage(
+    monkeypatch, issued_provenance_table
+) -> None:
+    records = mixed_point_context_records()
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: records[0])
     monkeypatch.setattr(
         main.repository,
         "get_point_context",
         lambda asset_id, asset=None: {
             "connection_point": "point-" + MATERIALIZED_ITEM["source_sha256"][:12],
-            "entity_count": 3,
-            "limited_entity_count": 2,
+            "entity_count": 2,
+            "limited_entity_count": 1,
             "period_start": "2026-08-01",
             "period_end": "2026-08-31",
             "data_version": "2026-08",
-            "source_sha256s": [MATERIALIZED_ITEM["source_sha256"]],
+            "source_sha256s": sorted(record["source_sha256"] for record in records),
+            "items": records,
         },
     )
 
@@ -1035,21 +1057,105 @@ def test_get_point_context_returns_materialized_anonymized_aggregates(monkeypatc
     assert payload["asset_id"] == "CJU_BAOUR"
     assert payload["data_mode"] == "ons_materialized"
     assert payload["connection_point"].startswith("point-")
-    assert payload["anonymized_entity_count"]["value"] == 3
+    assert payload["anonymized_entity_count"]["value"] == 2
     assert payload["anonymized_entity_count"]["unit"] == "entities"
-    assert payload["simultaneity_rate"]["value"] == 66.666667
+    assert payload["simultaneity_rate"]["value"] == 50.0
     assert payload["simultaneity_rate"]["unit"] == "%"
     assert payload["physical_limit_available"] is False
     entity_evidence = payload["anonymized_entity_count"]
     rate_evidence = payload["simultaneity_rate"]
+    assert entity_evidence["source"] == (
+        "ONS/restricao_coff_eolica_tm + ONS/restricao_coff_fotovoltaica_tm"
+    )
+    assert entity_evidence["method"] == "distinct_latest_constrained_off_assets_at_point_v1"
+    assert entity_evidence["value_status"] == "calculado"
+    assert entity_evidence["origin"] == "PROXY_CALCULADO"
+    expected_artifacts = [
+        {"source_key": record["source_key"], "source_sha256": record["source_sha256"]}
+        for record in records
+    ]
+    assert entity_evidence["provenance"]["source_artifacts"] == expected_artifacts
     assert entity_evidence["provenance_id"] != rate_evidence["provenance_id"]
     assert entity_evidence["provenance"]["field_name"] == "anonymized_entity_count"
     assert rate_evidence["provenance"]["field_name"] == "simultaneity_rate"
-    monkeypatch.setattr(main.repository, "get_provenance", lambda source_sha256: MATERIALIZED_ITEM)
-    assert client.get(f"/v1/provenances/{entity_evidence['provenance_id']}").status_code == 200
-    assert client.get(f"/v1/provenances/{rate_evidence['provenance_id']}").status_code == 200
+    operation = next(
+        item
+        for item in issued_provenance_table.items.values()
+        if item["record_type"] == "provenance_operation"
+    )
+    lineage_fields = {
+        "asset_id",
+        "period",
+        "point_id",
+        "period_start",
+        "period_end",
+        "limited_interval_count",
+        "source_key",
+        "source_sha256",
+        "method",
+    }
+    assert operation["source_records"] == [
+        {key: value for key, value in record.items() if key in lineage_fields} for record in records
+    ]
+
+    monkeypatch.setattr(
+        main,
+        "issued_provenance_repository",
+        IssuedProvenanceRepository(issued_provenance_table),
+    )
+    fresh_client = fresh_api_client()
+    resolved = fresh_client.get(f"/v1/provenances/{entity_evidence['provenance_id']}")
+    assert resolved.status_code == 200
+    assert resolved.json()["provenance"] == entity_evidence["provenance"]
+    assert resolved.json()["source_sha256s"] == entity_evidence["provenance"]["source_sha256s"]
+    assert resolved.json()["dataset"] == (
+        "restricao_coff_eolica_tm + restricao_coff_fotovoltaica_tm"
+    )
+    assert resolved.json()["source"] == entity_evidence["source"]
+    assert resolved.json()["method"] == entity_evidence["method"]
+    assert "usina_conjunto" not in json.dumps(payload)
     assert "nomes" in " ".join(payload["limitations"]).lower()
     assert "entities" not in payload
+
+
+@pytest.mark.parametrize("mutation", ["missing", "tampered"])
+def test_point_context_fresh_resolution_rejects_changed_source_member(
+    monkeypatch, issued_provenance_table, mutation
+) -> None:
+    records = mixed_point_context_records()
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: records[0])
+    monkeypatch.setattr(
+        main.repository,
+        "get_point_context",
+        lambda asset_id, asset=None: {
+            "connection_point": "point-test",
+            "entity_count": 2,
+            "limited_entity_count": 1,
+            "period_start": "2026-08-01",
+            "period_end": "2026-08-31",
+            "data_version": "2026-08",
+            "source_sha256s": sorted(record["source_sha256"] for record in records),
+            "items": records,
+        },
+    )
+    response = client.get("/v1/assets/CJU_BAOUR/point-context")
+    evidence_id = response.json()["anonymized_entity_count"]["provenance_id"]
+    operation = next(
+        item
+        for item in issued_provenance_table.items.values()
+        if item["record_type"] == "provenance_operation"
+    )
+    if mutation == "missing":
+        operation["source_records"].pop()
+    else:
+        operation["source_records"][1]["source_key"] = "tampered.parquet"
+
+    monkeypatch.setattr(
+        main,
+        "issued_provenance_repository",
+        IssuedProvenanceRepository(issued_provenance_table),
+    )
+    assert fresh_api_client().get(f"/v1/provenances/{evidence_id}").status_code == 404
 
 
 def test_get_historical_windows_uses_materialized_monthly_signal(monkeypatch) -> None:

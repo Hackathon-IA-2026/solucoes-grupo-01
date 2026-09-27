@@ -161,24 +161,28 @@ class IssuedProvenanceRepository:
             if evidence_id != provenance.get("evidence_id"):
                 raise ValueError("provenance map key must exactly match evidence_id")
             parse_evidence_id(evidence_id)
+        source_fields = (
+            "asset_id",
+            "asset_ids",
+            "period",
+            "source_bucket",
+            "source_key",
+            "source_sha256",
+            "method",
+            "capacity_data_version",
+            "capacity_method",
+            "capacity_source_key",
+            "capacity_source_sha256",
+        )
+        if operation == "point_context":
+            source_fields += (
+                "point_id",
+                "period_start",
+                "period_end",
+                "limited_interval_count",
+            )
         compact_sources = [
-            {
-                key: source[key]
-                for key in (
-                    "asset_id",
-                    "asset_ids",
-                    "period",
-                    "source_bucket",
-                    "source_key",
-                    "source_sha256",
-                    "method",
-                    "capacity_data_version",
-                    "capacity_method",
-                    "capacity_source_key",
-                    "capacity_source_sha256",
-                )
-                if key in source
-            }
+            {key: source[key] for key in source_fields if key in source}
             for source in source_records
         ]
         payload = {

@@ -72,6 +72,37 @@ def _json_context(kind: str, **values: object) -> str:
     return _canonical_json({"kind": kind, **values})
 
 
+_CONSTRAINED_OFF_DATASETS = (
+    "restricao_coff_eolica_tm",
+    "restricao_coff_fotovoltaica_tm",
+)
+
+
+def _point_context_datasets(records: list[dict]) -> list[str]:
+    datasets = set()
+    for record in records:
+        source_key = record.get("source_key", "")
+        dataset = next(
+            (
+                candidate
+                for candidate in _CONSTRAINED_OFF_DATASETS
+                if f"/{candidate}/" in f"/{source_key}/"
+            ),
+            None,
+        )
+        if dataset is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Contexto contém fonte que não é constrained-off eólica/fotovoltaica.",
+            )
+        datasets.add(dataset)
+    return sorted(datasets)
+
+
+def _point_context_source(records: list[dict]) -> str:
+    return " + ".join(f"ONS/{dataset}" for dataset in _point_context_datasets(records))
+
+
 def _resolve_server_evidence(evidence_id: str):
     return _resolve_server_evidence_impl(evidence_id, issued_provenance_repository)
 
@@ -206,6 +237,13 @@ def get_provenance(provenance_id: str) -> ProvenanceResponse:
         ),
         "restricao_coff_eolica_tm",
     )
+    source = f"ONS/{dataset}"
+    method = item.get("capacity_method", item.get("method", identity["method"]))
+    if identity["field"] in {"anonymized_entity_count", "simultaneity_rate"}:
+        datasets = _point_context_datasets(items)
+        dataset = " + ".join(datasets)
+        source = " + ".join(f"ONS/{value}" for value in datasets)
+        method = identity["method"]
     limitation = "Linhagem de campo da materialização; o manifesto bruto permanece privado no S3."
     asset_ids = sorted(
         {
@@ -220,7 +258,7 @@ def get_provenance(provenance_id: str) -> ProvenanceResponse:
         classification=classification,
         origin=provenance.origin,
         dataset=dataset,
-        source=f"ONS/{dataset}",
+        source=source,
         source_bucket=item.get("source_bucket", "ons-aws-prod-opendata"),
         source_key=source_key,
         source_sha256=provenance.source_sha256 or source_hashes[0],
@@ -230,7 +268,7 @@ def get_provenance(provenance_id: str) -> ProvenanceResponse:
             if dataset == "capacidade-geracao"
             else ",".join(sorted({source_item["period"] for source_item in items}))
         ),
-        method=item.get("capacity_method", item.get("method", identity["method"])),
+        method=method,
         method_version=identity["method"],
         field_name=identity["field"],
         observed_at=provenance.observed_at,
@@ -292,7 +330,8 @@ def get_asset_point_context(asset_id: str) -> PointContextResponse:
     context = repository.get_point_context(asset_id, asset_item)
     if context is None:
         raise HTTPException(status_code=404, detail="Contexto materializado não encontrado.")
-    if len(context["source_sha256s"]) > 32:
+    source_records = context["items"]
+    if len(context["source_sha256s"]) > 32 or len(source_records) > 32:
         raise HTTPException(status_code=422, detail="Contexto excede o limite de 32 fontes.")
     period = Period(
         start=date.fromisoformat(context["period_start"]),
@@ -307,23 +346,44 @@ def get_asset_point_context(asset_id: str) -> PointContextResponse:
         if context["entity_count"]
         else 0
     )
+    source = _point_context_source(source_records)
+    record_identities = [
+        {
+            "asset_id": item["asset_id"],
+            "period": item["period"],
+            "source_key": item["source_key"],
+            "source_sha256": item["source_sha256"],
+        }
+        for item in source_records
+    ]
+    provenance_context = _json_context(
+        "point_context",
+        asset_id=asset_id,
+        connection_point=context["connection_point"],
+        period_start=period.start,
+        period_end=period.end,
+        records=record_identities,
+    )
+    entity_method = "distinct_latest_constrained_off_assets_at_point_v1"
     entity_provenance = _field_provenance(
         field_name="anonymized_entity_count",
-        method_version="point_context_v1",
-        context=f"{asset_id}:{context['connection_point']}:{period.start}:{period.end}",
+        method_version=entity_method,
+        context=provenance_context,
         origin=DataOrigin.PROXY_CALCULADO,
         limitations=[limitation],
         source_hashes=context["source_sha256s"],
+        source_items=source_records,
         source_item=asset_item,
         source_uri=f"curtailess://assets/{asset_id}/point-context",
     )
     simultaneity_provenance = _field_provenance(
         field_name="simultaneity_rate",
         method_version="historical_simultaneity_v1",
-        context=f"{asset_id}:{context['connection_point']}:{period.start}:{period.end}",
+        context=provenance_context,
         origin=DataOrigin.PROXY_CALCULADO,
         limitations=[limitation],
         source_hashes=context["source_sha256s"],
+        source_items=source_records,
         source_item=asset_item,
         source_uri=f"curtailess://assets/{asset_id}/point-context",
     )
@@ -335,9 +395,9 @@ def get_asset_point_context(asset_id: str) -> PointContextResponse:
             value=context["entity_count"],
             unit="entities",
             period=period,
-            source="ONS/usina_conjunto",
+            source=source,
             data_version=context["data_version"],
-            method="point_context_v1",
+            method=entity_method,
             value_status="calculado",
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
@@ -348,7 +408,7 @@ def get_asset_point_context(asset_id: str) -> PointContextResponse:
             value=simultaneity_rate,
             unit="%",
             period=period,
-            source="ONS/restricao_coff_eolica_tm",
+            source=source,
             data_version=context["data_version"],
             method="historical_simultaneity_v1",
             value_status="calculado",
@@ -365,7 +425,7 @@ def get_asset_point_context(asset_id: str) -> PointContextResponse:
         operation="point_context",
         request_value={"asset_id": asset_id, "data_version": context["data_version"]},
         provenances=[entity_provenance, simultaneity_provenance],
-        source_records=[asset_item],
+        source_records=source_records,
     )
     return response
 

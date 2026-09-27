@@ -200,28 +200,40 @@ def test_get_asset_uses_partition_query_without_scan() -> None:
     assert table.scan_calls == []
 
 
-def test_point_context_reuses_asset_and_fully_paginates_unavoidable_scan() -> None:
-    asset = {
+def test_point_context_reuses_asset_and_returns_exact_latest_mixed_source_records() -> None:
+    wind = {
         "asset_id": "A",
         "period": "2026-08",
         "point_id": "POINT",
         "period_start": "2026-08-01T00:00:00",
         "period_end": "2026-08-31T23:30:00",
         "limited_interval_count": 0,
+        "source_key": "dataset/restricao_coff_eolica_tm/wind.parquet",
         "source_sha256": "a" * 64,
     }
-    peer = {
-        **asset,
+    old_solar = {
+        **wind,
         "asset_id": "B",
+        "period": "2026-07",
+        "source_key": "dataset/restricao_coff_fotovoltaica_tm/solar-old.parquet",
+        "source_sha256": "c" * 64,
+    }
+    solar = {
+        **old_solar,
+        "period": "2026-08",
         "limited_interval_count": 1,
+        "source_key": "dataset/restricao_coff_fotovoltaica_tm/solar.parquet",
         "source_sha256": "b" * 64,
     }
-    table = FakeTable([], pages=[[asset], [peer]])
+    table = FakeTable([], pages=[[wind, old_solar], [solar]])
 
-    context = ExposureRepository(table).get_point_context("A", asset)
+    context = ExposureRepository(table).get_point_context("A", wind)
 
     assert context is not None
     assert context["entity_count"] == 2
+    assert context["limited_entity_count"] == 1
+    assert context["items"] == [wind, solar]
+    assert context["source_sha256s"] == ["a" * 64, "b" * 64]
     assert table.query_calls == []
     assert table.scan_calls == [{}, {"ExclusiveStartKey": {"page": 1}}]
 

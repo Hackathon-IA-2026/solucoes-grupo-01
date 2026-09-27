@@ -19,7 +19,7 @@ _SERVER_PROVENANCE_CONTRACTS: dict[
         DataOrigin.PROXY_CALCULADO,
         "calculado",
     ),
-    ("anonymized_entity_count", "point_context_v1"): (
+    ("anonymized_entity_count", "distinct_latest_constrained_off_assets_at_point_v1"): (
         DataOrigin.PROXY_CALCULADO,
         "calculado",
     ),
