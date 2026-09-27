@@ -21,8 +21,8 @@ _PERIOD_LABEL = re.compile(r"^(?P<year>\d{4})(?:-(?P<month>\d{2})(?:-(?P<day>\d{
 def discover_dataset_objects(
     s3_client: Any, spec: DatasetSpec
 ) -> tuple[list[dict[str, object]], list[str]]:
-    """Enumerate every page for a dataset; malformed keys are skipped and reported."""
-    discovered: list[dict[str, object]] = []
+    """Enumerate and deduplicate a dataset; newest metadata wins, ambiguous ties fail."""
+    latest_by_key: dict[str, tuple[dict[str, object], datetime, bool]] = {}
     malformed_keys: list[str] = []
     paginator = s3_client.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=spec.source_bucket, Prefix=spec.s3_prefix):
@@ -33,17 +33,40 @@ def discover_dataset_objects(
             except (TypeError, ValueError):
                 malformed_keys.append(source_key)
                 continue
-            discovered.append(
-                {
-                    "dataset": spec.dataset_id,
-                    "period": period.label,
-                    "parsed_period": period,
-                    "key": source_key,
-                    "size": item["Size"],
-                    "etag": item["ETag"].strip('"'),
-                    "last_modified": item["LastModified"].isoformat(),
-                }
-            )
+            last_modified = item["LastModified"]
+            candidate = {
+                "dataset": spec.dataset_id,
+                "period": period.label,
+                "parsed_period": period,
+                "key": source_key,
+                "size": item["Size"],
+                "etag": item["ETag"].strip('"'),
+                "last_modified": last_modified.isoformat(),
+            }
+            existing = latest_by_key.get(source_key)
+            if existing is None:
+                latest_by_key[source_key] = candidate, last_modified, False
+                continue
+
+            existing_item, existing_last_modified, ambiguous = existing
+            if last_modified > existing_last_modified:
+                latest_by_key[source_key] = candidate, last_modified, False
+            elif last_modified == existing_last_modified:
+                same_version = (
+                    candidate["size"] == existing_item["size"]
+                    and candidate["etag"] == existing_item["etag"]
+                )
+                latest_by_key[source_key] = (
+                    existing_item,
+                    existing_last_modified,
+                    ambiguous or not same_version,
+                )
+
+    discovered: list[dict[str, object]] = []
+    for source_key, (item, _, ambiguous) in latest_by_key.items():
+        if ambiguous:
+            raise ValueError(f"conflicting metadata for S3 source key {source_key!r}")
+        discovered.append(item)
     discovered.sort(key=_discovery_sort_key)
     malformed_keys.sort()
     return discovered, malformed_keys

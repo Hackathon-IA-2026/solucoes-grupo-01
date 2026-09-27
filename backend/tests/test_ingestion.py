@@ -7,12 +7,18 @@ from curtailess.datasets import get_dataset_spec
 from curtailess.ingestion import copy_handler, discover_dataset_objects, discovery_handler
 
 
-def source_object(key: str, *, size: int = 100, etag: str | None = None) -> dict:
+def source_object(
+    key: str,
+    *,
+    size: int = 100,
+    etag: str | None = None,
+    last_modified: datetime | None = None,
+) -> dict:
     return {
         "Key": key,
         "Size": size,
         "ETag": f'"{etag or key}"',
-        "LastModified": datetime(2026, 9, 1, tzinfo=UTC),
+        "LastModified": last_modified or datetime(2026, 9, 1, tzinfo=UTC),
     }
 
 
@@ -75,6 +81,100 @@ def test_discover_dataset_objects_paginates_through_empty_pages_and_skips_malfor
     assert [item["period"] for item in objects] == ["2026-08", "2026-09"]
     assert malformed_keys == [malformed]
     assert s3.pagination_calls == [{"Bucket": spec.source_bucket, "Prefix": spec.s3_prefix}]
+
+
+def test_discovery_collapses_identical_duplicate_keys_on_the_same_page() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    key = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_09.parquet"
+    duplicate = source_object(key, size=321, etag="same-version")
+
+    objects, malformed_keys = discover_dataset_objects(
+        FakeS3({spec.s3_prefix: [{"Contents": [duplicate, duplicate.copy()]}]}), spec
+    )
+
+    assert len(objects) == 1
+    assert objects[0]["key"] == key
+    assert objects[0]["size"] == 321
+    assert objects[0]["etag"] == "same-version"
+    assert malformed_keys == []
+
+
+def test_discovery_collapses_cross_page_duplicates_and_selects_newest_metadata() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    key = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_09.parquet"
+    older = datetime(2026, 9, 1, tzinfo=UTC)
+    newer = datetime(2026, 9, 2, tzinfo=UTC)
+
+    objects, _ = discover_dataset_objects(
+        FakeS3(
+            {
+                spec.s3_prefix: [
+                    {
+                        "Contents": [
+                            source_object(key, size=100, etag="old-a", last_modified=older),
+                            source_object(key, size=101, etag="old-b", last_modified=older),
+                        ]
+                    },
+                    {"Contents": [source_object(key, size=200, etag="new", last_modified=newer)]},
+                ]
+            }
+        ),
+        spec,
+    )
+
+    assert len(objects) == 1
+    assert objects[0]["size"] == 200
+    assert objects[0]["etag"] == "new"
+    assert objects[0]["last_modified"] == newer.isoformat()
+
+
+def test_discovery_rejects_conflicting_metadata_at_the_same_latest_timestamp() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    key = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_09.parquet"
+    timestamp = datetime(2026, 9, 2, tzinfo=UTC)
+    s3 = FakeS3(
+        {
+            spec.s3_prefix: [
+                {
+                    "Contents": [
+                        source_object(key, size=100, etag="version-a", last_modified=timestamp),
+                        source_object(key, size=200, etag="version-b", last_modified=timestamp),
+                    ]
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(ValueError, match="conflicting metadata.*RESTRICAO_COFF_EOLICA_2026_09"):
+        discover_dataset_objects(s3, spec)
+
+
+def test_duplicate_straddling_cap_boundary_does_not_create_spurious_continuation() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    keys = [
+        f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_{month:02d}.parquet" for month in range(7, 9)
+    ]
+    pages = {
+        spec.s3_prefix: [
+            {"Contents": [source_object(keys[0]), source_object(keys[1])]},
+            {"Contents": [source_object(keys[1])]},
+        ]
+    }
+    sqs = FakeSQS()
+
+    result = discovery_handler(
+        {"mode": "incremental"},
+        None,
+        s3_client=FakeS3(pages),
+        sqs_client=sqs,
+        environment=environment(cap=2),
+    )
+
+    emitted_keys = [json.loads(call["MessageBody"])["source_key"] for call in sqs.messages]
+    assert emitted_keys == keys
+    assert result["enqueued"] == 2
+    assert result["has_more"] is False
+    assert result["continuation"] is None
 
 
 def test_incremental_enumerates_enabled_datasets_and_sorts_messages_deterministically() -> None:
