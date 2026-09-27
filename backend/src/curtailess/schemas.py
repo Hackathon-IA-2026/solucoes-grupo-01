@@ -1,7 +1,70 @@
 from datetime import date, datetime
-from typing import Literal
+from enum import StrEnum
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+class DataOrigin(StrEnum):
+    ONS_PUBLICO = "ONS_PUBLICO"
+    PROXY_CALCULADO = "PROXY_CALCULADO"
+    SIMULADO = "SIMULADO"
+    CLIENTE_INFORMADO = "CLIENTE_INFORMADO"
+
+
+class EvidenceProvenance(BaseModel):
+    """Auditable source and method metadata for one evidence value."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    evidence_id: str = Field(min_length=1)
+    origin: DataOrigin
+    source_uri: str | None = Field(default=None, min_length=1)
+    source_key: str | None = Field(default=None, min_length=1)
+    source_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    observed_at: datetime | None = None
+    effective_at: datetime | None = None
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+    method_version: str = Field(min_length=1)
+    limitations: list[str]
+
+    @field_validator("observed_at", "effective_at", "valid_from", "valid_to")
+    @classmethod
+    def require_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("evidence timestamps require timezone information")
+        return value
+
+    @model_validator(mode="after")
+    def validate_source_and_interval(self) -> Self:
+        if self.source_uri is None and self.source_key is None:
+            raise ValueError("source_uri ou source_key é obrigatório")
+        if (self.valid_from is None) != (self.valid_to is None):
+            raise ValueError("valid_from e valid_to devem ser informados juntos")
+        if (
+            self.valid_from is not None
+            and self.valid_to is not None
+            and self.valid_to <= self.valid_from
+        ):
+            raise ValueError("valid_to deve ser posterior a valid_from")
+        return self
+
+
+def validate_public_and_simulated_evidence(
+    public_observation: EvidenceProvenance,
+    simulated_output: EvidenceProvenance,
+) -> None:
+    """Guard the provenance boundary between ONS observations and simulations."""
+
+    if public_observation.evidence_id == simulated_output.evidence_id:
+        raise ValueError("public observation and simulation cannot share evidence_id")
+    if public_observation.origin is not DataOrigin.ONS_PUBLICO:
+        raise ValueError("public observation must use ONS_PUBLICO origin")
+    if simulated_output.origin is not DataOrigin.SIMULADO:
+        raise ValueError("simulated output must use SIMULADO origin")
+    if public_observation.origin is simulated_output.origin:
+        raise ValueError("public observation and simulation cannot share origin")
 
 
 class ApiInfo(BaseModel):
@@ -66,6 +129,7 @@ class NumericEvidence(BaseModel):
     data_version: str
     method: str
     value_status: Literal["medido", "calculado", "previsto", "simulado", "informado"]
+    origin: DataOrigin = DataOrigin.PROXY_CALCULADO
     limitations: list[str]
     provenance_id: str
 
@@ -97,13 +161,16 @@ class DataQualityResponse(BaseModel):
 
 class ProvenanceResponse(BaseModel):
     provenance_id: str
+    evidence_id: str
     classification: Literal["calculado"]
+    origin: DataOrigin
     source: str
     source_bucket: str | None
     source_key: str
     source_sha256: str
     data_version: str
     method: str
+    method_version: str
     asset_ids: list[str]
     limitations: list[str]
 
@@ -145,6 +212,7 @@ class EnergyPrice(BaseModel):
     unit: Literal["BRL/MWh"]
     source: str = Field(min_length=1)
     value_status: Literal["informado"]
+    origin: DataOrigin = DataOrigin.CLIENTE_INFORMADO
 
 
 class MaintenanceRankRequest(BaseModel):
@@ -163,6 +231,7 @@ class MonetaryEvidence(BaseModel):
     unit: Literal["BRL"]
     source: str
     value_status: Literal["calculado", "simulado"]
+    origin: DataOrigin = DataOrigin.PROXY_CALCULADO
 
 
 class RankedMaintenanceWindow(BaseModel):

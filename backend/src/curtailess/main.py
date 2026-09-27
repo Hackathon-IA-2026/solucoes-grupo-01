@@ -20,6 +20,7 @@ from .schemas import (
     BessScreenResponse,
     CurtailmentRecommendation,
     CurtailmentScenario,
+    DataOrigin,
     DataQualityResponse,
     ExposureResponse,
     HealthResponse,
@@ -167,13 +168,16 @@ def get_provenance(provenance_id: str) -> ProvenanceResponse:
     limitation = "Linhagem da materialização mensal; o manifesto bruto permanece privado no S3."
     return ProvenanceResponse(
         provenance_id=provenance_id,
+        evidence_id=provenance_id,
         classification="calculado",
+        origin=DataOrigin.PROXY_CALCULADO,
         source="ONS/restricao_coff_eolica_tm",
         source_bucket=item.get("source_bucket"),
         source_key=item["source_key"],
         source_sha256=source_sha256,
         data_version=item["period"],
         method=item["method"],
+        method_version=item["method"],
         asset_ids=item.get("asset_ids", [item["asset_id"]]),
         limitations=[limitation],
     )

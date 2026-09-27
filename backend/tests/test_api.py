@@ -119,6 +119,7 @@ def test_get_asset_exposure_returns_materialized_ons_values(monkeypatch) -> None
     assert payload["total_curtailed_energy"]["value"] == 23968.0945
     assert payload["total_curtailed_energy"]["unit"] == "MWh"
     assert payload["total_curtailed_energy"]["value_status"] == "calculado"
+    assert payload["total_curtailed_energy"]["origin"] == "PROXY_CALCULADO"
     assert payload["total_curtailed_energy"]["data_version"] == "2026-08"
     assert payload["total_curtailed_energy"]["source"] == "ONS/restricao_coff_eolica_tm"
     assert payload["total_curtailed_energy"]["provenance_id"].startswith("sha256:")
@@ -223,6 +224,9 @@ def test_get_provenance_returns_source_lineage(monkeypatch) -> None:
     assert payload["source_key"] == MATERIALIZED_ITEM["source_key"]
     assert payload["source_sha256"] == MATERIALIZED_ITEM["source_sha256"]
     assert payload["method"] == MATERIALIZED_ITEM["method"]
+    assert payload["origin"] == "PROXY_CALCULADO"
+    assert payload["evidence_id"] == payload["provenance_id"]
+    assert payload["method_version"] == MATERIALIZED_ITEM["method"]
     assert payload["asset_ids"] == ["CJU_BAOUR"]
 
 
@@ -418,6 +422,8 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(monkeypatch) 
     assert payload["ranked_windows"][0]["opportunity_cost"]["value"] == 5000.0
     evidence = payload["ranked_windows"][0]["expected_curtailed_energy"]
     assert evidence["value_status"] == "calculado"
+    assert evidence["origin"] == "PROXY_CALCULADO"
+    assert payload["ranked_windows"][0]["opportunity_cost"]["origin"] == "PROXY_CALCULADO"
     assert evidence["source"] == "ONS/restricao_coff_eolica_tm"
     assert evidence["provenance_id"].startswith("sha256:")
     assert "não é previsão" in " ".join(payload["limitations"]).lower()
