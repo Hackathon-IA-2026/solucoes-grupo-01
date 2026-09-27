@@ -14,9 +14,20 @@ from curtailess.provenance import (
     EVIDENCE_ID_MAX_LENGTH,
     IssuedProvenanceRepository,
     build_evidence_id,
+    build_public_evidence_id,
 )
+from curtailess.schemas import EvidenceProvenance
 
 client = TestClient(app)
+evidence_contract_app = FastAPI()
+
+
+@evidence_contract_app.post("/evidence")
+def validate_evidence_contract(evidence: EvidenceProvenance) -> EvidenceProvenance:
+    return evidence
+
+
+evidence_contract_client = TestClient(evidence_contract_app)
 
 
 class FakeScenariosTable:
@@ -90,6 +101,60 @@ def test_evidence_ids_are_compact_bounded_digests() -> None:
     evidence_id = build_evidence_id(["x" * 50_000], "field", "method", "context" * 50_000)
     assert evidence_id.startswith("evd1.")
     assert len(evidence_id) <= EVIDENCE_ID_MAX_LENGTH
+
+
+def evidence_contract_payload(origin: str, evidence_id: str) -> dict:
+    return {
+        "evidence_id": evidence_id,
+        "field_name": "test_field",
+        "origin": origin,
+        "source_uri": "curtailess://test/source",
+        "source_key": "dataset/test/source.parquet",
+        "source_sha256": "a" * 64,
+        "effective_at": "2026-09-01T00:00:00Z",
+        "method_version": "test_v1",
+        "limitations": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("origin", "id_builder"),
+    [
+        ("ONS_PUBLICO", build_public_evidence_id),
+        ("PROXY_CALCULADO", build_evidence_id),
+        ("SIMULADO", build_evidence_id),
+        ("CLIENTE_INFORMADO", build_evidence_id),
+    ],
+)
+def test_api_accepts_evidence_id_family_required_by_origin(origin, id_builder) -> None:
+    evidence_id = id_builder("source", "test_field", "test_v1", "context")
+
+    response = evidence_contract_client.post(
+        "/evidence", json=evidence_contract_payload(origin, evidence_id)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["evidence_id"] == evidence_id
+
+
+@pytest.mark.parametrize(
+    ("origin", "wrong_id_builder"),
+    [
+        ("ONS_PUBLICO", build_evidence_id),
+        ("PROXY_CALCULADO", build_public_evidence_id),
+        ("SIMULADO", build_public_evidence_id),
+        ("CLIENTE_INFORMADO", build_public_evidence_id),
+    ],
+)
+def test_api_rejects_evidence_id_family_contradicting_origin(origin, wrong_id_builder) -> None:
+    evidence_id = wrong_id_builder("source", "test_field", "test_v1", "context")
+
+    response = evidence_contract_client.post(
+        "/evidence", json=evidence_contract_payload(origin, evidence_id)
+    )
+
+    assert response.status_code == 422
+    assert "evidence_id family" in response.text
 
 
 def test_operation_persistence_stores_one_commit_and_compact_indexes() -> None:
@@ -1298,9 +1363,10 @@ def test_bess_screen_accepts_legacy_payload_and_infers_client_lineage(monkeypatc
 def test_bess_screen_rejects_unresolvable_server_input_claim(monkeypatch, claimed_origin) -> None:
     monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
     forged = bess_input_provenance()
+    id_builder = build_public_evidence_id if claimed_origin == "ONS_PUBLICO" else build_evidence_id
     forged["power_mw"] = {
         **forged["power_mw"],
-        "evidence_id": main.build_evidence_id(
+        "evidence_id": id_builder(
             MATERIALIZED_ITEM["source_sha256"],
             "power_mw",
             "bess_screen_v1",

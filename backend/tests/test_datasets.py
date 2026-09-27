@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from curtailess.datasets import DATASET_REGISTRY, DatasetPeriod, DatasetSpec, get_dataset_spec
+from curtailess.provenance import build_public_evidence_id
 from curtailess.schemas import (
     DataOrigin,
     EvidenceProvenance,
@@ -173,7 +174,9 @@ def test_dataset_spec_is_strict_and_forbids_unknown_metadata() -> None:
 
 def public_evidence() -> EvidenceProvenance:
     return EvidenceProvenance(
-        evidence_id=build_evidence_id("ons-restricao", "curtailed_mwh", "ons_source_v1", "2026-09"),
+        evidence_id=build_public_evidence_id(
+            "ons-restricao", "curtailed_mwh", "ons_source_v1", "2026-09"
+        ),
         field_name="curtailed_mwh",
         origin=DataOrigin.ONS_PUBLICO,
         source_key=("dataset/restricao_coff_eolica_tm/RESTRICAO_COFF_EOLICA_2026_09.parquet"),
@@ -185,6 +188,55 @@ def public_evidence() -> EvidenceProvenance:
         method_version="ons_source_v1",
         limitations=[],
     )
+
+
+def provenance_payload(origin: DataOrigin, evidence_id: str) -> dict:
+    return {
+        "evidence_id": evidence_id,
+        "field_name": "test_field",
+        "origin": origin,
+        "source_uri": "curtailess://test/source",
+        "source_key": "dataset/test/source.parquet",
+        "source_sha256": "a" * 64,
+        "effective_at": datetime(2026, 9, 1, tzinfo=UTC),
+        "method_version": "test_v1",
+        "limitations": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("origin", "id_builder"),
+    [
+        (DataOrigin.ONS_PUBLICO, build_public_evidence_id),
+        (DataOrigin.PROXY_CALCULADO, build_evidence_id),
+        (DataOrigin.SIMULADO, build_evidence_id),
+        (DataOrigin.CLIENTE_INFORMADO, build_evidence_id),
+    ],
+)
+def test_evidence_provenance_accepts_id_family_required_by_origin(origin, id_builder) -> None:
+    evidence_id = id_builder("source", "test_field", "test_v1", "context")
+
+    provenance = EvidenceProvenance.model_validate(provenance_payload(origin, evidence_id))
+
+    assert provenance.evidence_id == evidence_id
+
+
+@pytest.mark.parametrize(
+    ("origin", "wrong_id_builder"),
+    [
+        (DataOrigin.ONS_PUBLICO, build_evidence_id),
+        (DataOrigin.PROXY_CALCULADO, build_public_evidence_id),
+        (DataOrigin.SIMULADO, build_public_evidence_id),
+        (DataOrigin.CLIENTE_INFORMADO, build_public_evidence_id),
+    ],
+)
+def test_evidence_provenance_rejects_id_family_contradicting_origin(
+    origin, wrong_id_builder
+) -> None:
+    evidence_id = wrong_id_builder("source", "test_field", "test_v1", "context")
+
+    with pytest.raises(ValidationError, match="evidence_id family"):
+        EvidenceProvenance.model_validate(provenance_payload(origin, evidence_id))
 
 
 def test_evidence_provenance_requires_origin_source_and_method_metadata() -> None:
@@ -201,7 +253,7 @@ def test_evidence_provenance_requires_origin_source_and_method_metadata() -> Non
         )
     with pytest.raises(ValidationError, match="source_uri ou source_key"):
         EvidenceProvenance(
-            evidence_id=build_evidence_id("none", "test_field", "ons_source_v1", "none"),
+            evidence_id=build_public_evidence_id("none", "test_field", "ons_source_v1", "none"),
             field_name="test_field",
             origin=DataOrigin.ONS_PUBLICO,
             method_version="ons_source_v1",
@@ -287,7 +339,9 @@ def test_public_observation_and_simulation_require_distinct_ids_and_origins() ->
     ],
 )
 def test_numeric_evidence_enforces_status_origin_mapping(value_status, origin) -> None:
-    provenance = public_evidence().model_copy(update={"origin": origin})
+    id_builder = build_public_evidence_id if origin is DataOrigin.ONS_PUBLICO else build_evidence_id
+    evidence_id = id_builder("source", "test_field", "test_v1", "context")
+    provenance = EvidenceProvenance.model_validate(provenance_payload(origin, evidence_id))
     evidence = NumericEvidence(
         value=1.0,
         unit="MWh",

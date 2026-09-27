@@ -49,6 +49,12 @@ STATUS_ORIGIN: dict[str, DataOrigin] = {
     "simulado": DataOrigin.SIMULADO,
     "informado": DataOrigin.CLIENTE_INFORMADO,
 }
+ORIGIN_EVIDENCE_ID_FAMILY: dict[DataOrigin, str] = {
+    DataOrigin.ONS_PUBLICO: "evp1",
+    DataOrigin.PROXY_CALCULADO: "evd1",
+    DataOrigin.SIMULADO: "evd1",
+    DataOrigin.CLIENTE_INFORMADO: "evd1",
+}
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -125,6 +131,12 @@ class EvidenceProvenance(BaseModel):
 
     @model_validator(mode="after")
     def validate_source_and_interval(self) -> Self:
+        expected_id_family = ORIGIN_EVIDENCE_ID_FAMILY[self.origin]
+        actual_id_family = self.evidence_id.partition(".")[0]
+        if actual_id_family != expected_id_family:
+            raise ValueError(
+                f"evidence_id family must be {expected_id_family} for origin {self.origin.value}"
+            )
         if self.source_uri is None and self.source_key is None:
             raise ValueError("source_uri ou source_key é obrigatório")
         if (
