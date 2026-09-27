@@ -14,6 +14,7 @@ from .artifacts import create_artifact_repository, serialize_report_body
 from .bedrock import BedrockOptimizationError, optimize_with_bedrock
 from .config import get_settings
 from .data_access import create_exposure_repository
+from .provenance import create_issued_provenance_repository
 from .schemas import (
     ApiInfo,
     Asset,
@@ -49,6 +50,9 @@ settings = get_settings()
 repository = create_exposure_repository(settings.exposure_table, settings.aws_region)
 artifact_repository = create_artifact_repository(
     settings.scenarios_table, settings.data_bucket, settings.aws_region
+)
+issued_provenance_repository = create_issued_provenance_repository(
+    settings.scenarios_table, settings.aws_region
 )
 
 
@@ -184,6 +188,8 @@ def _candidate_from_repository(identity: dict, items: list[dict]) -> EvidencePro
     method = identity["method"]
     context = identity["context"]
     hashes = identity["sources"]
+    if _requires_issued_record(identity):
+        return None
     limitation = "Linhagem de campo da materialização; o manifesto bruto permanece privado no S3."
 
     if method in {
@@ -489,6 +495,79 @@ def _candidate_from_repository(identity: dict, items: list[dict]) -> EvidencePro
     return None
 
 
+def _canonical_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _issued_record(
+    *,
+    operation: str,
+    request: MaintenanceRankRequest | BessScreenRequest,
+    output: dict[str, object],
+    provenance: EvidenceProvenance,
+    source_item: dict,
+) -> dict[str, object]:
+    return {
+        "plant_id": "PROVENANCE",
+        "scenario_id": provenance.evidence_id,
+        "record_type": "issued_provenance",
+        "operation": operation,
+        "request_json": _canonical_json(request.model_dump(mode="json")),
+        "output_json": _canonical_json(output),
+        "provenance": provenance.model_dump(mode="json"),
+        "source_item": {
+            "asset_id": source_item["asset_id"],
+            "asset_ids": [source_item["asset_id"]],
+            "period": source_item["period"],
+            "source_bucket": source_item.get("source_bucket", "ons-aws-prod-opendata"),
+            "source_key": source_item["source_key"],
+            "method": source_item.get("method", provenance.method_version),
+        },
+    }
+
+
+def _requires_issued_record(identity: dict) -> bool:
+    if identity["field"] == "residual_exposure_source" or identity["method"] == "bess_screen_v1":
+        return True
+    if identity["method"] in {
+        "maintenance_rank_v1",
+        "maintenance_window_boundary_v1",
+        "opportunity_cost_v1",
+        "maintenance_difference_v1",
+    }:
+        return True
+    try:
+        context = json.loads(identity["context"])
+    except (TypeError, json.JSONDecodeError):
+        return False
+    return isinstance(context, dict) and context.get("kind") in {"maintenance_rank", "bess_screen"}
+
+
+def _resolve_issued_evidence(
+    evidence_id: str,
+    identity: dict,
+    contract: tuple[DataOrigin, Literal["medido", "calculado"]],
+) -> tuple[dict, DataOrigin, Literal["medido", "calculado"], list[dict], EvidenceProvenance]:
+    record = issued_provenance_repository.get(evidence_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Fato derivado não emitido.")
+    try:
+        candidate = EvidenceProvenance.model_validate(record["provenance"])
+        candidate_identity = parse_evidence_id(candidate.evidence_id)
+        source_item = record["source_item"]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="Registro de proveniência inválido.") from exc
+    origin, classification = contract
+    if (
+        candidate.evidence_id != evidence_id
+        or candidate_identity != identity
+        or candidate.origin is not origin
+        or not isinstance(source_item, dict)
+    ):
+        raise HTTPException(status_code=404, detail="Registro de proveniência inconsistente.")
+    return identity, origin, classification, [source_item], candidate
+
+
 def _resolve_server_evidence(
     evidence_id: str,
 ) -> tuple[
@@ -513,6 +592,8 @@ def _resolve_server_evidence(
         for value in source_hashes
     ):
         raise HTTPException(status_code=404, detail="Proveniência externa não materializada.")
+    if _requires_issued_record(identity):
+        return _resolve_issued_evidence(evidence_id, identity, contract)
     source_items = [repository.get_provenance(value) for value in source_hashes]
     if any(item is None for item in source_items):
         raise HTTPException(status_code=404, detail="Proveniência não encontrada.")
@@ -1251,7 +1332,7 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
             )
         )
 
-    return MaintenanceRankResponse(
+    response = MaintenanceRankResponse(
         asset_id=request.asset_id,
         ranking_mode="historical_prototype",
         data_mode="ons_materialized",
@@ -1260,6 +1341,19 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
         ranked_windows=ranked_windows,
         limitations=[limitation],
     )
+    for window in response.ranked_windows:
+        canonical_output = window.model_dump(mode="json")
+        for field_name, provenance in window.field_provenance.items():
+            issued_provenance_repository.put(
+                _issued_record(
+                    operation="maintenance_rank",
+                    request=request,
+                    output={"evidence_field": field_name, "ranked_window": canonical_output},
+                    provenance=provenance,
+                    source_item=asset_item,
+                )
+            )
+    return response
 
 
 @app.post(
@@ -1370,7 +1464,7 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
                 provenance_id=provenance.evidence_id,
                 provenance=provenance,
             )
-    return BessScreenResponse(
+    response = BessScreenResponse(
         asset_id=request.asset_id,
         maintenance_result_id=request.maintenance_result_id,
         screening_mode="historical_deterministic",
@@ -1403,6 +1497,39 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
             ),
         ],
     )
+    screening_output = {
+        field_name: getattr(response, field_name)
+        for field_name in (
+            "residual_exposure_mwh",
+            "technically_absorbable_mwh",
+            "annual_benefit_brl",
+            "annual_net_benefit_brl",
+            "preliminary_viable",
+        )
+    }
+    issued_provenance_repository.put(
+        _issued_record(
+            operation="bess_screen",
+            request=request,
+            output={
+                "evidence_field": "residual_exposure_source",
+                "screening_output": screening_output,
+            },
+            provenance=source_observation,
+            source_item=item,
+        )
+    )
+    for field_name, evidence in response.output_evidence.items():
+        issued_provenance_repository.put(
+            _issued_record(
+                operation="bess_screen",
+                request=request,
+                output={"evidence_field": field_name, "screening_output": screening_output},
+                provenance=evidence.provenance,
+                source_item=item,
+            )
+        )
+    return response
 
 
 @app.get(

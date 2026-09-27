@@ -2,12 +2,47 @@ import hashlib
 import json
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import curtailess.main as main
 from curtailess.main import app
+from curtailess.provenance import IssuedProvenanceRepository
 
 client = TestClient(app)
+
+
+class FakeScenariosTable:
+    def __init__(self) -> None:
+        self.items = {}
+
+    def put_item(self, *, Item) -> dict:
+        self.items[(Item["plant_id"], Item["scenario_id"])] = Item
+        return {}
+
+    def get_item(self, *, Key, ConsistentRead=False) -> dict:
+        del ConsistentRead
+        item = self.items.get((Key["plant_id"], Key["scenario_id"]))
+        return {} if item is None else {"Item": item}
+
+
+@pytest.fixture(autouse=True)
+def issued_provenance_table(monkeypatch) -> FakeScenariosTable:
+    table = FakeScenariosTable()
+    monkeypatch.setattr(
+        main,
+        "issued_provenance_repository",
+        IssuedProvenanceRepository(table),
+    )
+    return table
+
+
+def fresh_api_client() -> TestClient:
+    fresh_app = FastAPI()
+    fresh_app.router.routes.extend(
+        route for route in app.router.routes if getattr(route, "path", "").startswith("/v1")
+    )
+    return TestClient(fresh_app)
 
 
 def client_provenance(field_name: str) -> dict:
@@ -390,6 +425,48 @@ def test_get_provenance_rejects_valid_hash_id_for_non_emitted_context(monkeypatc
     assert response.status_code == 404
 
 
+@pytest.mark.parametrize(
+    ("field_name", "method_version", "context"),
+    [
+        (
+            "expected_curtailed_energy",
+            "monthly_observed_rate_prorated_to_window_v1",
+            main._json_context(
+                "maintenance_rank",
+                asset_id="CJU_BAOUR",
+                candidate_start="2026-08-01T00:00:00+00:00",
+                candidate_end="2026-08-04T00:00:00+00:00",
+                baseline_start="2026-08-15T00:00:00+00:00",
+                request_start="2026-08-01",
+                request_end="2026-08-31",
+                input_evidence_ids={"energy_price": "client:forged"},
+            ),
+        ),
+        (
+            "annual_net_benefit_brl",
+            "bess_screen_v1",
+            main._json_context(
+                "bess_screen",
+                asset_id="CJU_BAOUR",
+                maintenance_result_id="forged",
+                parent_evidence_ids=["client:forged"],
+                inputs={"energy_mwh": 80},
+            ),
+        ),
+    ],
+)
+def test_get_provenance_rejects_valid_hash_unissued_derived_evidence(
+    field_name, method_version, context
+) -> None:
+    forged_id = main.build_evidence_id(
+        MATERIALIZED_ITEM["source_sha256"], field_name, method_version, context
+    )
+
+    response = client.get(f"/v1/provenances/{forged_id}")
+
+    assert response.status_code == 404
+
+
 def test_get_provenance_rejects_arbitrary_dataset_and_context_pairing(monkeypatch) -> None:
     item = {
         **MATERIALIZED_ITEM,
@@ -575,7 +652,9 @@ def test_get_historical_windows_rejects_inverted_period() -> None:
     assert response.status_code == 422
 
 
-def test_rank_maintenance_uses_materialized_ons_historical_windows(monkeypatch) -> None:
+def test_rank_maintenance_uses_materialized_ons_historical_windows(
+    monkeypatch, issued_provenance_table
+) -> None:
     monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
     monkeypatch.setattr(
         main.repository,
@@ -678,12 +757,24 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(monkeypatch) 
         window["expected_curtailed_energy"]["provenance_id"],
         payload["input_provenance"]["energy_price"]["evidence_id"],
     }
-    monkeypatch.setattr(main.repository, "get_provenance", lambda source_sha256: MATERIALIZED_ITEM)
-    for field_name, provenance in window["field_provenance"].items():
-        resolved = client.get(f"/v1/provenances/{provenance['evidence_id']}")
-        assert resolved.status_code == 200
-        assert resolved.json()["field_name"] == field_name
-        assert resolved.json()["parent_evidence_ids"] == provenance["parent_evidence_ids"]
+    assert len(issued_provenance_table.items) == 14
+    stored = issued_provenance_table.items[("PROVENANCE", evidence["provenance_id"])]
+    assert json.loads(stored["request_json"])["asset_id"] == "CJU_BAOUR"
+    stored_output = json.loads(stored["output_json"])
+    assert stored_output["evidence_field"] == "expected_curtailed_energy"
+    monkeypatch.setattr(
+        main,
+        "issued_provenance_repository",
+        IssuedProvenanceRepository(issued_provenance_table),
+    )
+    fresh_client = fresh_api_client()
+    for ranked_window in payload["ranked_windows"]:
+        for field_name, provenance in ranked_window["field_provenance"].items():
+            resolved = fresh_client.get(f"/v1/provenances/{provenance['evidence_id']}")
+            assert resolved.status_code == 200
+            assert resolved.json()["field_name"] == field_name
+            assert resolved.json()["parent_evidence_ids"] == provenance["parent_evidence_ids"]
+            assert resolved.json()["provenance"] == provenance
     assert "não é previsão" in " ".join(payload["limitations"]).lower()
 
 
@@ -787,7 +878,9 @@ def test_rank_maintenance_rejects_unknown_asset() -> None:
     assert response.status_code == 404
 
 
-def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(monkeypatch) -> None:
+def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(
+    monkeypatch, issued_provenance_table
+) -> None:
     monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
 
     response = client.post(
@@ -840,13 +933,32 @@ def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(monkeyp
         set(item["provenance"]["parent_evidence_ids"]) == expected_parents
         for item in output_evidence.values()
     )
-    monkeypatch.setattr(main.repository, "get_provenance", lambda source_sha256: MATERIALIZED_ITEM)
+    assert len(issued_provenance_table.items) == 6
+    source_id = payload["source_observation"]["evidence_id"]
+    assert ("PROVENANCE", source_id) in issued_provenance_table.items
+    stored = issued_provenance_table.items[
+        ("PROVENANCE", output_evidence["annual_net_benefit_brl"]["provenance_id"])
+    ]
+    assert json.loads(stored["request_json"])["energy_mwh"] == 80
+    assert (
+        json.loads(stored["output_json"])["screening_output"]["annual_net_benefit_brl"] == 3300000.0
+    )
+    monkeypatch.setattr(
+        main,
+        "issued_provenance_repository",
+        IssuedProvenanceRepository(issued_provenance_table),
+    )
+    fresh_client = fresh_api_client()
+    source_response = fresh_client.get(f"/v1/provenances/{source_id}")
+    assert source_response.status_code == 200
+    assert source_response.json()["provenance"] == payload["source_observation"]
     for field_name, evidence in output_evidence.items():
-        provenance_response = client.get(f"/v1/provenances/{evidence['provenance_id']}")
+        provenance_response = fresh_client.get(f"/v1/provenances/{evidence['provenance_id']}")
         assert provenance_response.status_code == 200
         assert provenance_response.json()["field_name"] == field_name
         assert provenance_response.json()["origin"] == "PROXY_CALCULADO"
         assert set(provenance_response.json()["parent_evidence_ids"]) == expected_parents
+        assert provenance_response.json()["provenance"] == evidence["provenance"]
     assert "soc_cronológico" in payload["missing_data"]
     assert "não é dimensionamento" in " ".join(payload["limitations"]).lower()
 
