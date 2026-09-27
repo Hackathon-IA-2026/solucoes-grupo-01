@@ -994,25 +994,29 @@ ExposureSectionId = Literal[
 ]
 
 
-class ExposureDisplayAsset(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    asset_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
-    name: BoundedText
-    entity_level: Literal["generation_group"]
-    technology: Literal["wind", "solar"]
-    state: Annotated[str, StringConstraints(min_length=2, max_length=2)]
-    connection_point: BoundedText
-    capacity_mw: FiniteFloat | None = None
-    connected_asset_count: int = Field(ge=0, le=64)
-    operational_data_status: Literal["simulated", "client_connected"] = "simulated"
-
-
 class ExposureDisplayMetric(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     value: FiniteFloat | None
     unit: Annotated[str, StringConstraints(min_length=1, max_length=32)]
+
+
+class ExposureDisplayAsset(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    asset_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    name: BoundedText
+    entity_level: Literal["plant"]
+    technology: Literal["wind", "solar"]
+    state: Annotated[str, StringConstraints(min_length=2, max_length=2)]
+    connection_point: BoundedText
+    capacity_mw: FiniteFloat | None = None
+    connected_asset_count: int = Field(ge=0, le=512)
+    operational_data_status: Literal["simulated", "client_connected"] = "simulated"
+    ons_group_id: Annotated[str, StringConstraints(min_length=1, max_length=64)] | None = None
+    ons_group_name: BoundedText | None = None
+    ceg: Annotated[str, StringConstraints(min_length=1, max_length=64)] | None = None
+    allocation_coverage: ExposureDisplayMetric | None = None
 
 
 class ExposureDistributionPoint(BaseModel):
@@ -1030,6 +1034,12 @@ class ExposureForecastPoint(BaseModel):
     lower_mwh: FiniteFloat = Field(ge=0)
     upper_mwh: FiniteFloat = Field(ge=0)
     curtailment_probability: FiniteFloat = Field(ge=0, le=1)
+    display_label: BoundedText | None = None
+    potential_generation_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    accepted_generation_envelope_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    scheduled_maintenance_relief_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    avoided_curtailment_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    risk_reduction_percentage_points: FiniteFloat | None = None
 
     @model_validator(mode="after")
     def validate_interval(self) -> Self:
@@ -1045,6 +1055,15 @@ class ExposureForecastWindow(BaseModel):
     end: date
     expected_curtailed_mwh: FiniteFloat = Field(ge=0)
     mean_probability: FiniteFloat = Field(ge=0, le=1)
+    rank: int | None = Field(default=None, ge=1, le=3)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    interval_count: int | None = Field(default=None, ge=1)
+    window_hours: FiniteFloat | None = Field(default=None, gt=0)
+    curtailment_probability: FiniteFloat | None = Field(default=None, ge=0, le=1)
+    scheduled_maintenance_relief_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    avoided_curtailment_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    candidate_maintenance_relief_mwh: FiniteFloat | None = Field(default=None, ge=0)
 
 
 class ExposureForecast60d(BaseModel):
@@ -1059,8 +1078,25 @@ class ExposureForecast60d(BaseModel):
     total_upper_mwh: FiniteFloat | None = Field(default=None, ge=0)
     event_threshold_mwh: FiniteFloat | None = Field(default=None, ge=0)
     event_percentile: FiniteFloat | None = Field(default=None, ge=0, le=1)
-    probability_status: Literal["empirical_uncalibrated", "unavailable"] = "unavailable"
+    probability_status: Literal[
+        "empirical_uncalibrated",
+        "backtested_calibrated",
+        "backtested_empirical_uncalibrated",
+        "baseline_historical_frequency",
+        "unavailable",
+    ] = "unavailable"
+    probability_source: (
+        Literal[
+            "model_calibrated_backtested",
+            "model_raw_backtested",
+            "baseline_frequency",
+        ]
+        | None
+    ) = None
+    simulation_method: Annotated[str, StringConstraints(min_length=1, max_length=64)] | None = None
+    window_definition: BoundedText | None = None
     top_windows: tuple[ExposureForecastWindow, ...] = Field(default=(), max_length=3)
+    critical_windows_72h: tuple[ExposureForecastWindow, ...] = Field(default=(), max_length=3)
 
     @model_validator(mode="after")
     def validate_horizon(self) -> Self:
@@ -1073,7 +1109,7 @@ class ExposureForecast60d(BaseModel):
         if (
             self.event_threshold_mwh is None
             or self.event_percentile is None
-            or self.probability_status != "empirical_uncalibrated"
+            or self.probability_status == "unavailable"
         ):
             raise ValueError("demonstrative forecast requires its material-event definition")
         dates = tuple(point.forecast_date for point in self.points)
@@ -1088,6 +1124,96 @@ class ExposureForecast60d(BaseModel):
             raise ValueError("demonstrative forecast requires accumulated interval values")
         if not lower <= expected <= upper:
             raise ValueError("accumulated interval must contain the expected value")
+        for window in self.critical_windows_72h:
+            if window.interval_count != 144 or window.window_hours != 72.0:
+                raise ValueError("critical windows must span exactly 144 half-hour intervals")
+        if self.critical_windows_72h:
+            starts = sorted(window.start for window in self.critical_windows_72h)
+            if len(set(starts)) != len(starts):
+                raise ValueError("critical windows must not repeat a start date")
+            ordered = sorted(self.critical_windows_72h, key=lambda window: window.start)
+            for previous, following in zip(ordered, ordered[1:], strict=False):
+                if following.start <= previous.end:
+                    raise ValueError("critical windows must not overlap")
+        return self
+
+
+class ExposureEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    intercept_mw: FiniteFloat = Field(ge=0)
+    slope: FiniteFloat = Field(ge=0, le=1)
+
+
+class ExposureSimulatedTelemetry(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    generation_mw: FiniteFloat = Field(ge=0)
+    potential_generation_mw: FiniteFloat = Field(ge=0)
+    availability_mw: FiniteFloat = Field(ge=0)
+    operational_capacity_mw: FiniteFloat = Field(ge=0)
+    accepted_generation_limit_mw: FiniteFloat = Field(ge=0)
+    potentially_curtailed_mw: FiniteFloat = Field(ge=0)
+    restricted: bool
+    weather_value: FiniteFloat
+    weather_unit: Annotated[str, StringConstraints(min_length=1, max_length=16)]
+    origin: Literal["SIMULADO", "OBSERVADO"] = "SIMULADO"
+
+    @model_validator(mode="after")
+    def validate_physical_order(self) -> Self:
+        if self.availability_mw > self.operational_capacity_mw:
+            raise ValueError("availability cannot exceed operational capacity")
+        if self.potential_generation_mw > self.operational_capacity_mw:
+            raise ValueError("potential generation cannot exceed operational capacity")
+        if self.generation_mw > self.potential_generation_mw:
+            raise ValueError("delivered generation cannot exceed potential generation")
+        if self.generation_mw > self.accepted_generation_limit_mw:
+            raise ValueError("delivered generation cannot exceed the accepted limit")
+        curtailed = max(self.potential_generation_mw - self.generation_mw, 0.0)
+        if abs(curtailed - self.potentially_curtailed_mw) > 1e-5:
+            raise ValueError("potentially curtailed generation must conserve the plant balance")
+        if self.restricted != (self.potentially_curtailed_mw > 1e-9):
+            raise ValueError("restriction status must match potentially curtailed generation")
+        return self
+
+
+class ExposurePointEntity(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    plant_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    name: BoundedText
+    technology: Literal["wind", "solar"]
+    capacity_mw: FiniteFloat = Field(ge=0)
+    mean_available_generation_mw: FiniteFloat = Field(ge=0)
+    mean_curtailed_generation_mw: FiniteFloat = Field(ge=0)
+    restricted_day_share: FiniteFloat = Field(ge=0, le=1)
+    scheduled_maintenance_intervals: int = Field(ge=0)
+    scheduled_maintenance_derate: FiniteFloat = Field(gt=0, le=1)
+    operational_data_status: Literal["simulated", "observed"] = "simulated"
+    origin: Literal["SIMULADO", "OBSERVADO"] = "SIMULADO"
+
+
+class ExposurePointContext(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    point_id: BoundedText
+    entity_count: int = Field(ge=1, le=512)
+    installed_capacity_mw: FiniteFloat = Field(ge=0)
+    potential_generation_mw: FiniteFloat = Field(ge=0)
+    accepted_generation_envelope_mw: FiniteFloat = Field(ge=0)
+    estimated_excess_mw: FiniteFloat = Field(ge=0)
+    scheduled_maintenance_relief_mw: FiniteFloat = Field(ge=0)
+    envelope: ExposureEnvelope
+    scheduled_maintenance_window_count: int = Field(ge=0)
+    simulated_entities: tuple[ExposurePointEntity, ...] = Field(max_length=512)
+    origin: Literal["SIMULADO", "OBSERVADO"] = "SIMULADO"
+
+    @model_validator(mode="after")
+    def validate_point_balance(self) -> Self:
+        if self.entity_count != len(self.simulated_entities):
+            raise ValueError("point entity count must match the simulated entity list")
+        if self.accepted_generation_envelope_mw > self.potential_generation_mw:
+            raise ValueError("accepted point envelope cannot exceed potential generation")
         return self
 
 
@@ -1102,6 +1228,8 @@ class ExposureObservedImpact(BaseModel):
     exclusive_share: ExposureDisplayMetric
     period_start: date
     period_end: date
+    curtailed_day_share: ExposureDisplayMetric | None = None
+    allocation_coverage: ExposureDisplayMetric | None = None
 
 
 class ExposureAssociatedConditions(BaseModel):
@@ -1155,6 +1283,8 @@ class ExposureViewResponse(BaseModel):
     quality: ExposureQuality
     narrative: ExposureNarrative
     limitations: tuple[BoundedText, ...] = Field(max_length=16)
+    point_context: ExposurePointContext | None = None
+    simulated_telemetry: ExposureSimulatedTelemetry | None = None
 
     @field_validator("last_data_update")
     @classmethod
