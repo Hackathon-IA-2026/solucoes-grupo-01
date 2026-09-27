@@ -110,12 +110,15 @@ def _stream_dataset_objects(
     diagnostics: _MalformedDiagnostics,
     *,
     start_after: str | None = None,
+    page_size: int | None = None,
 ) -> Iterator[dict[str, object]]:
     """Yield one lexicographically ordered object at a time using bounded duplicate state."""
     paginator = s3_client.get_paginator("list_objects_v2")
     request: dict[str, object] = {"Bucket": spec.source_bucket, "Prefix": spec.s3_prefix}
     if start_after is not None:
         request["StartAfter"] = start_after
+    if page_size is not None:
+        request["PaginationConfig"] = {"PageSize": page_size}
 
     pending: _StreamCandidate | None = None
     previous_source_key: str | None = start_after
@@ -394,11 +397,15 @@ def discovery_handler(
     for dataset_index in range(resume_index, len(specs)):
         spec = specs[dataset_index]
         start_after = cursor[2] if cursor is not None and dataset_index == resume_index else None
+        remaining = cap - len(selected)
         for item in _stream_dataset_objects(
             object_store,
             spec,
             diagnostics,
             start_after=start_after,
+            # One extra item proves that another result exists; a second one lets
+            # the streaming deduplicator finalize its pending key in the same S3 page.
+            page_size=min(1_000, remaining + 2),
         ):
             if not _within_period_bounds(item, start, end):
                 continue

@@ -98,8 +98,10 @@ class InstrumentedPagedS3:
     def paginate(self, **kwargs):
         self.pagination_calls.append(kwargs)
         start = self._index(kwargs["StartAfter"]) + 1 if "StartAfter" in kwargs else 0
+        requested_page_size = kwargs.get("PaginationConfig", {}).get("PageSize", self.page_size)
+        effective_page_size = min(self.page_size, requested_page_size)
         while start < self.total:
-            stop = min(start + self.page_size, self.total)
+            stop = min(start + effective_page_size, self.total)
             contents = [source_object(self._key(index)) for index in range(start, stop)]
             self.page_visits += 1
             self.object_visits += len(contents)
@@ -627,9 +629,10 @@ def test_large_inventory_uses_bounded_pages_and_start_after_without_full_rescan(
     assert first["enqueued"] == 25
     assert first["has_more"] is True
     assert s3.page_visits == 1
-    assert s3.object_visits == 1_000
-    assert s3.objects_materialized == 1_000
-    assert s3.returned_ranges == [(0, 1_000)]
+    assert s3.object_visits == 27
+    assert s3.objects_materialized == 27
+    assert s3.returned_ranges == [(0, 27)]
+    assert s3.pagination_calls[0]["PaginationConfig"] == {"PageSize": 27}
 
     second = discovery_handler(
         {
@@ -648,10 +651,11 @@ def test_large_inventory_uses_bounded_pages_and_start_after_without_full_rescan(
     assert second["enqueued"] == 25
     assert second["has_more"] is True
     assert s3.page_visits == 2
-    assert s3.object_visits == 2_000
-    assert s3.objects_materialized == 2_000
-    assert s3.returned_ranges == [(0, 1_000), (25, 1_025)]
+    assert s3.object_visits == 54
+    assert s3.objects_materialized == 54
+    assert s3.returned_ranges == [(0, 27), (25, 52)]
     assert s3.pagination_calls[1]["StartAfter"] == boundary_key
+    assert s3.pagination_calls[1]["PaginationConfig"] == {"PageSize": 27}
     assert s3.boundary_calls == [
         {"Bucket": spec.source_bucket, "Prefix": boundary_key, "MaxKeys": 1}
     ]
