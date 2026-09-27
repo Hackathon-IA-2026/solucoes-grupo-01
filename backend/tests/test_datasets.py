@@ -328,6 +328,58 @@ def test_evidence_provenance_rejects_bad_hash_naive_timestamps_and_invalid_inter
         EvidenceProvenance.model_validate(payload)
 
 
+def test_multi_source_provenance_requires_one_canonical_pair_per_hash() -> None:
+    first_hash, second_hash = "a" * 64, "b" * 64
+    base = {
+        **public_evidence().model_dump(),
+        "source_key": "dataset/test/a.parquet",
+        "source_sha256": first_hash,
+        "source_sha256s": [first_hash, second_hash],
+    }
+
+    invalid_artifacts = [
+        [],
+        [{"source_key": "dataset/test/a.parquet", "source_sha256": first_hash}],
+        [
+            {"source_key": "dataset/test/a.parquet", "source_sha256": first_hash},
+            {"source_key": "dataset/test/b.parquet", "source_sha256": first_hash},
+        ],
+        [
+            {"source_key": "dataset/test/a.parquet", "source_sha256": first_hash},
+            {"source_key": "dataset/test/a.parquet", "source_sha256": second_hash},
+        ],
+        [
+            {"source_key": "dataset/test/a.parquet", "source_sha256": first_hash},
+            {"source_key": "dataset/test/b.parquet", "source_sha256": second_hash},
+            {"source_key": "dataset/test/c.parquet", "source_sha256": "c" * 64},
+        ],
+    ]
+    for source_artifacts in invalid_artifacts:
+        with pytest.raises(ValidationError, match="source_artifacts"):
+            EvidenceProvenance.model_validate({**base, "source_artifacts": source_artifacts})
+
+    complete = EvidenceProvenance.model_validate(
+        {
+            **base,
+            "source_artifacts": [
+                {"source_key": "dataset/test/a.parquet", "source_sha256": first_hash},
+                {"source_key": "dataset/test/b.parquet", "source_sha256": second_hash},
+            ],
+        }
+    )
+    assert [artifact.source_sha256 for artifact in complete.source_artifacts] == [
+        first_hash,
+        second_hash,
+    ]
+
+
+def test_single_source_provenance_remains_compatible_without_source_artifacts() -> None:
+    provenance = public_evidence()
+
+    assert provenance.source_sha256 == "a" * 64
+    assert provenance.source_artifacts == ()
+
+
 def test_parent_lineage_is_structured_unique_and_deterministic() -> None:
     inferred = inferred_client_provenance("duration_hours", 72, "maintenance:asset-1")
     repeated = inferred_client_provenance("duration_hours", 72, "maintenance:asset-1")

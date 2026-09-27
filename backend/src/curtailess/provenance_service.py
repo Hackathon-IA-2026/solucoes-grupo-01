@@ -95,7 +95,7 @@ def field_provenance(
     artifact_identities = {
         (item["source_key"], item["source_sha256"])
         for item in artifact_items
-        if item.get("source_key") and item.get("source_sha256") in hashes
+        if item.get("source_key") and item.get("source_sha256")
     }
     if source_key and len(hashes) == 1:
         artifact_identities.add((source_key, hashes[0]))
@@ -103,8 +103,6 @@ def field_provenance(
         SourceArtifact(source_key=key, source_sha256=sha256)
         for key, sha256 in sorted(artifact_identities)
     )
-    if {artifact.source_sha256 for artifact in artifacts} != set(hashes):
-        artifacts = ()
     representative = artifacts[0] if artifacts else None
     identities = list(hashes) or [source_uri or "curtailess://unspecified"]
     id_builder = build_public_evidence_id if origin is DataOrigin.ONS_PUBLICO else build_evidence_id
@@ -202,11 +200,23 @@ def resolve_server_evidence(
             (source.get("source_key"), source.get("source_sha256")),
             (source.get("capacity_source_key"), source.get("capacity_source_sha256")),
         )
+        if pair[0] is not None and pair[1] is not None
     }
+    persisted_by_key: dict[str, set[str]] = {}
+    persisted_by_hash: dict[str, set[str]] = {}
+    for key, sha256 in persisted_artifacts:
+        persisted_by_key.setdefault(key, set()).add(sha256)
+        persisted_by_hash.setdefault(sha256, set()).add(key)
     if any(
-        (artifact.source_key, artifact.source_sha256) not in persisted_artifacts
-        for artifact in candidate.source_artifacts
+        len(values) != 1 for values in (*persisted_by_key.values(), *persisted_by_hash.values())
     ):
+        raise HTTPException(status_code=404, detail="Linhagem de proveniência conflitante.")
+    expected_artifacts = {
+        (artifact.source_key, artifact.source_sha256) for artifact in candidate.source_artifacts
+    }
+    if not expected_artifacts and candidate.source_key and candidate.source_sha256:
+        expected_artifacts.add((candidate.source_key, candidate.source_sha256))
+    if not expected_artifacts or not expected_artifacts.issubset(persisted_artifacts):
         raise HTTPException(status_code=404, detail="Artefato de proveniência não resolvível.")
     origin, classification = contract
     if candidate.origin is not origin:

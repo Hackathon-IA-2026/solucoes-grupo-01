@@ -16,7 +16,8 @@ from curtailess.provenance import (
     build_evidence_id,
     build_public_evidence_id,
 )
-from curtailess.schemas import EvidenceProvenance
+from curtailess.provenance_service import field_provenance
+from curtailess.schemas import DataOrigin, EvidenceProvenance
 
 client = TestClient(app)
 evidence_contract_app = FastAPI()
@@ -173,6 +174,69 @@ def test_operation_persistence_stores_one_commit_and_compact_indexes() -> None:
     )
     assert "request_json" not in operation and "output_json" not in operation
     assert repository.get(ids[0])["provenance"]["evidence_id"] == ids[0]
+
+
+@pytest.mark.parametrize(
+    ("source_artifacts", "source_records"),
+    [
+        ([], [{"source_key": "raw/a.parquet", "source_sha256": "a" * 64}]),
+        (
+            [{"source_key": "raw/a.parquet", "source_sha256": "a" * 64}],
+            [{"source_key": "raw/a.parquet", "source_sha256": "a" * 64}],
+        ),
+        (
+            [
+                {"source_key": "raw/a.parquet", "source_sha256": "a" * 64},
+                {"source_key": "raw/b.parquet", "source_sha256": "b" * 64},
+            ],
+            [
+                {"source_key": "raw/a.parquet", "source_sha256": "a" * 64},
+                {"source_key": "raw/tampered.parquet", "source_sha256": "b" * 64},
+            ],
+        ),
+    ],
+)
+def test_fresh_resolver_rejects_incomplete_or_unresolvable_multi_source_lineage(
+    monkeypatch, source_artifacts, source_records
+) -> None:
+    first_hash, second_hash = "a" * 64, "b" * 64
+    evidence_id = build_evidence_id(
+        [first_hash, second_hash], "annual_net_benefit_brl", "bess_screen_v1", "ctx"
+    )
+    provenance = {
+        **_stored_provenance(evidence_id),
+        "source_key": "raw/a.parquet",
+        "source_sha256": first_hash,
+        "source_sha256s": [first_hash, second_hash],
+        "source_artifacts": source_artifacts,
+    }
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    repository.put_operation(
+        operation="bess_screen",
+        request_digest="c" * 64,
+        provenances={evidence_id: provenance},
+        source_records=source_records,
+    )
+    monkeypatch.setattr(main, "issued_provenance_repository", repository)
+
+    assert fresh_api_client().get(f"/v1/provenances/{evidence_id}").status_code == 404
+
+
+def test_field_provenance_rejects_incomplete_multi_source_mapping() -> None:
+    with pytest.raises(ValueError, match="source_artifacts"):
+        field_provenance(
+            field_name="total_curtailed_energy",
+            method_version="curtailed_energy_sum_v1",
+            context="ctx",
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=["test"],
+            source_hashes=["a" * 64, "b" * 64],
+            source_items=[
+                {"source_key": "raw/a.parquet", "source_sha256": "a" * 64},
+            ],
+            source_uri="curtailess://test",
+        )
 
 
 def test_partial_multi_write_is_uncommitted_and_retry_safe() -> None:

@@ -182,12 +182,21 @@ class EvidenceProvenance(BaseModel):
             raise ValueError("ONS_PUBLICO requires source_key and source SHA-256")
         if self.source_sha256 is not None and hashes and self.source_sha256 not in hashes:
             raise ValueError("source_sha256 must be included in source_sha256s")
+        if len(hashes) > 1 and not self.source_artifacts:
+            raise ValueError("multi-source provenance requires source_artifacts")
         if self.source_artifacts:
-            artifact_hashes = tuple(
-                sorted({artifact.source_sha256 for artifact in self.source_artifacts})
-            )
-            if artifact_hashes != hashes:
-                raise ValueError("source_artifacts must account for every source_sha256s digest")
+            artifact_hashes = tuple(artifact.source_sha256 for artifact in self.source_artifacts)
+            artifact_keys = tuple(artifact.source_key for artifact in self.source_artifacts)
+            if tuple(sorted(artifact_hashes)) != hashes or len(set(artifact_hashes)) != len(
+                artifact_hashes
+            ):
+                raise ValueError(
+                    "source_artifacts must contain exactly one pair for every source_sha256s digest"
+                )
+            if len(set(artifact_keys)) != len(artifact_keys):
+                raise ValueError(
+                    "source_artifacts cannot pair one source key with multiple digests"
+                )
             representative = self.source_artifacts[0]
             if (
                 self.source_key != representative.source_key
