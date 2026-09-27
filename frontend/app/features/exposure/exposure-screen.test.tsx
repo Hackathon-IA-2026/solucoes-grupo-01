@@ -293,21 +293,24 @@ function section(container: HTMLElement, id: string) {
 beforeEach(() => vi.clearAllMocks());
 
 describe("tela de Exposição por usina", () => {
-  it("titula as seis colunas de interpretação com o mesmo texto", () => {
+  it("marca as seis colunas de interpretação com o ícone de IA", () => {
     const { container } = renderScreen();
 
     const titles = Array.from(container.querySelectorAll("[data-analysis-title]"));
     expect(titles).toHaveLength(6);
-    for (const title of titles) expect(title.textContent).toBe("Análise dos dados");
+    for (const title of titles) {
+      expect(title).toHaveAttribute("aria-label", "Análise gerada por IA");
+      expect(title.textContent).toBe("");
+    }
     expect(container.querySelectorAll("[data-analysis-section]")).toHaveLength(6);
   });
 
-  it("renderiza a narrativa validada de cada seção sem expor procedência nem modos", () => {
+  it("renderiza a análise estática da usina em cada seção sem expor procedência nem modos", () => {
     const { container } = renderScreen();
     const text = container.textContent ?? "";
 
-    expect(text).toContain("A usina selecionada é a entidade principal desta análise.");
-    expect(text).toContain("A faixa cresce depois do horizonte útil.");
+    expect(text).toContain("Ventos de Santa Martina 13 gera 28,5 MW diante de um potencial de 36,1 MW.");
+    expect(text).toContain("A amplitude média da faixa passa de 69,2 MWh/dia nos primeiros 16 dias para 187,0 MWh/dia");
     for (const forbidden of [
       "ONS_PUBLICO",
       "PROXY_CALCULADO",
@@ -327,20 +330,22 @@ describe("tela de Exposição por usina", () => {
     expect(text).not.toMatch(/calculad/i);
   });
 
-  it("apresenta usina, capacidade, conjunto, ponto, tecnologia, estado e telemetria", () => {
+  it("resume a usina e seus dados discretos na ilustração", () => {
     const { container } = renderScreen();
-    const ativo = within(section(container, "secao-ativo"));
+    const ativo = section(container, "secao-ativo");
+    const ilustracao = within(ativo.querySelector("[data-plant-identity-illustration]") as HTMLElement);
 
-    expect(ativo.getAllByText("Ventos de Santa Martina 13").length).toBeGreaterThan(0);
-    expect(ativo.getByText("67,2")).toBeInTheDocument();
-    expect(ativo.getAllByText("Rio do Vento").length).toBeGreaterThan(0);
-    expect(ativo.getAllByText("RNCMM-500-A").length).toBeGreaterThan(0);
-    expect(ativo.getAllByText("Eólica").length).toBeGreaterThan(0);
-    expect(ativo.getByText("RN")).toBeInTheDocument();
-    expect(ativo.getAllByText("15,9").length).toBeGreaterThan(0);
-    expect(ativo.getAllByText("45,2").length).toBeGreaterThan(0);
-    expect(ativo.getByText("8,6")).toBeInTheDocument();
-    expect(ativo.getByText("Sim")).toBeInTheDocument();
+    expect(ilustracao.getByText("Ventos de Santa Martina 13")).toBeInTheDocument();
+    expect(ilustracao.getByText("Rio do Vento")).toBeInTheDocument();
+    expect(ilustracao.getByText("RNCMM-500-A")).toBeInTheDocument();
+    expect(ilustracao.getByText("RN")).toBeInTheDocument();
+    expect(ilustracao.getByText("67,2 MW cadastrados")).toBeInTheDocument();
+    expect(ilustracao.getByText("45,2 MW estimados")).toBeInTheDocument();
+    expect(ativo.querySelector('[data-energy-illustration="wind"]')).not.toBeNull();
+    expect(ativo.querySelector("[data-topology-list]")).toBeNull();
+    expect(ativo.textContent).not.toContain("Eólica");
+    expect(ativo.textContent).not.toContain("CEG");
+    expect(ativo.textContent).not.toContain("CJU_");
   });
 
   it("resume o histórico da própria usina com médias, geração e capacidade", () => {
@@ -357,11 +362,11 @@ describe("tela de Exposição por usina", () => {
     expect(resumo.queryByText("210,4")).toBeNull();
   });
 
-  it("usa linha com faixa, 60 dias e três janelas críticas de 72 horas", () => {
+  it("usa duas linhas, 60 dias e três janelas críticas resumidas", () => {
     const { container } = renderScreen();
     const previsao = section(container, "secao-previsao");
 
-    expect(previsao.querySelector('[data-chart-kind="line"]')).not.toBeNull();
+    expect(previsao.querySelector('[data-chart-lines="2"]')).not.toBeNull();
     expect(previsao.querySelector('[data-forecast-point-count="60"]')).not.toBeNull();
     expect(previsao.querySelector('[data-exposure-forecast="60d"]')).not.toBeNull();
     expect(previsao.querySelector("[data-critical-windows]")?.getAttribute("data-critical-windows")).toBe("3");
@@ -370,22 +375,20 @@ describe("tela de Exposição por usina", () => {
     expect(windows).toHaveLength(3);
     for (const window of windows) expect(window.getAttribute("data-window-hours")).toBe("72");
 
-    expect(previsao.textContent).toContain("12/10/2026 00:00 a 15/10/2026 00:00");
-    expect(previsao.textContent).toContain("144 intervalos de 30 min");
-    expect(previsao.textContent).not.toMatch(/semana/i);
-    expect(within(previsao).getByText("130,5")).toBeInTheDocument();
-    expect(within(previsao).getByText("510")).toBeInTheDocument();
-    expect(within(previsao).getByText("390")).toBeInTheDocument();
+    expect(previsao.textContent).toContain("12 a 14 de outubro");
+    expect(previsao.textContent).toContain("Perda: 130,5 MWh");
+    expect(previsao.textContent).not.toContain("144 intervalos de 30 min");
+    expect(previsao.textContent).not.toContain("Limite inferior");
+    expect(previsao.textContent).not.toContain("Limite superior");
   });
 
-  it("mostra a telemetria de todas as usinas do ponto e a comparação com manutenção", () => {
+  it("remove a telemetria das outras usinas e mantém as estimativas", () => {
     const { container } = renderScreen();
     const razao = section(container, "secao-razao-origem");
 
-    const entities = razao.querySelectorAll("[data-point-entity]");
-    expect(entities).toHaveLength(2);
-    expect(Array.from(entities).map((entity) => entity.getAttribute("data-point-entity"))).toEqual(["RNEM13", "RNEM14"]);
-    expect(razao.textContent).toContain("não é atribuída à usina selecionada");
+    expect(razao.querySelectorAll("[data-point-entity]")).toHaveLength(0);
+    expect(razao.textContent).not.toContain("Ventos de Santa Martina 14");
+    expect(razao.textContent).not.toContain("21,3");
 
     const comparison = razao.querySelector("[data-maintenance-comparison]");
     expect(comparison).not.toBeNull();
@@ -393,21 +396,16 @@ describe("tela de Exposição por usina", () => {
     expect(scope.getByText("210,4")).toBeInTheDocument();
     expect(scope.getByText("216,8")).toBeInTheDocument();
     expect(scope.getByText("6,4")).toBeInTheDocument();
-
-    // A energia da outra usina do ponto aparece somente como contexto do ponto.
-    expect(razao.textContent).toContain("21,3");
-    expect(within(section(container, "secao-resumo")).queryByText("21,3")).toBeNull();
   });
 
-  it("descreve a recorrência e a relação meteorológica sem inventar série horária", () => {
+  it("descreve a recorrência sem relação meteorológica", () => {
     const { container } = renderScreen();
     const recorrencia = section(container, "secao-recorrencia");
 
     expect(recorrencia.textContent).toContain("Distribuição por dia da semana");
     expect(recorrencia.textContent).toContain("não permite calcular uma distribuição por horário");
-    expect(recorrencia.querySelector("[data-weather-relationship]")).not.toBeNull();
-    expect(within(recorrencia).getByText("8,6")).toBeInTheDocument();
-    expect(recorrencia.textContent).toContain("não permite afirmar uma relação horária");
+    expect(recorrencia.querySelector("[data-weather-relationship]")).toBeNull();
+    expect(recorrencia.textContent).not.toContain("Relação com a condição meteorológica");
   });
 
   it("mede cobertura, defasagem, ausências, duplicatas, alocação e a incerteza do horizonte", () => {
@@ -424,60 +422,5 @@ describe("tela de Exposição por usina", () => {
     expect(qualidade.textContent).toContain("Amplitude média da faixa após o horizonte meteorológico útil");
     expect(scope.getByText("2,5")).toBeInTheDocument();
     expect(scope.getByText("6,5")).toBeInTheDocument();
-  });
-
-  it("passa usina, conjunto e ponto para a topologia sem contar a mesma usina duas vezes", () => {
-    const { container } = renderScreen();
-    const topology = section(container, "secao-ativo").querySelector("[data-topology-list]");
-    expect(topology).not.toBeNull();
-    const text = topology?.textContent ?? "";
-
-    expect(text).toContain("Ventos de Santa Martina 13");
-    expect(text).toContain("Rio do Vento");
-    expect(text).toContain("RNCMM-500-A");
-    expect(text).toContain("Ventos de Santa Martina 14");
-    expect(text).toContain("Reconciliação no conjunto (1)");
-    expect(text).toContain("Pressão sistêmica no ponto (1)");
-    expect(text).toContain("1 usinas únicas somando conjunto e ponto, sem dupla contagem.");
-  });
-
-  it("separa a vizinha de mesmo conjunto da vizinha de outro conjunto no ponto", () => {
-    const baseEntities = view.pointContext?.entities ?? [];
-    const otherGroupEntity = {
-      plantId: "RNEM15",
-      name: "Ventos de Santa Martina 15",
-      technology: "wind" as const,
-      onsGroupId: "CJU_OTHER",
-      capacityMw: 30.0,
-      meanAvailableGenerationMw: 12.0,
-      meanCurtailedGenerationMw: 4.0,
-      restrictedDayShare: 0.5,
-      scheduledMaintenanceIntervals: 100,
-      scheduledMaintenanceDerate: 0.5,
-    };
-    const customView: ExposureView = {
-      ...view,
-      pointContext: {
-        ...view.pointContext!,
-        entityCount: baseEntities.length + 1,
-        entities: [...baseEntities, otherGroupEntity],
-      },
-    };
-
-    const { container } = renderScreen(customView);
-    const topology = section(container, "secao-ativo").querySelector("[data-topology-list]");
-    expect(topology).not.toBeNull();
-    const text = topology?.textContent ?? "";
-
-    // One same-group peer and one other-group point peer classify separately.
-    expect(text).toContain("Reconciliação no conjunto (1)");
-    expect(text).toContain("Pressão sistêmica no ponto (2)");
-    expect(text).toContain("2 usinas únicas somando conjunto e ponto, sem dupla contagem.");
-    expect(text).toContain("Ventos de Santa Martina 14");
-    expect(text).toContain("Mesmo conjunto e mesmo ponto");
-    expect(text).toContain("Ventos de Santa Martina 15");
-    expect(text).toContain("Mesmo ponto (pressão sistêmica)");
-    // The selected plant heads the hierarchy exactly once and is never listed as a peer.
-    expect(text.split("Ventos de Santa Martina 13").length).toBe(2);
   });
 });

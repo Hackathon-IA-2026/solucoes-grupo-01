@@ -19,7 +19,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mx-2 flex w-auto flex-wrap items-center gap-x-4 gap-y-3 sm:mx-3">
           <Link to="/exposicao" className="flex min-h-11 shrink-0 items-center gap-3" translate="no">
             <span className="grid size-9 place-items-center rounded-lg bg-accent text-white"><LightningIcon weight="fill" aria-hidden="true" /></span>
-            <strong className="tracking-tight">CurtailLess</strong>
+            <strong className="tracking-tight">CurtaiLess</strong>
           </Link>
           <AssetPicker />
           <nav aria-label="Etapas da decisão" className="order-3 w-full min-w-0 sm:order-2 sm:ml-auto sm:w-auto">
@@ -39,7 +39,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         </div>
       </header>
-      <main id="main-content" tabIndex={-1} className={cn("min-w-0", location.pathname === "/exposicao" ? "w-full max-w-none p-0" : "mx-auto max-w-[1600px] p-4 sm:p-6")}>{children}</main>
+      <main id="main-content" tabIndex={-1} className={cn("min-w-0", ["/exposicao", "/manutencao", "/bateria"].includes(location.pathname) ? "w-full max-w-none p-0" : "mx-auto max-w-[1600px] p-4 sm:p-6")}>{children}</main>
     </div>
   );
 }
