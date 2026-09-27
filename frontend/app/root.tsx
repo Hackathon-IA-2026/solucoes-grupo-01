@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
 import { AnalysisProvider } from "~/state/analysis-context";
+import { ExposureProvider } from "~/state/exposure-context";
 import { AppShell } from "~/components/layout/app-shell";
 import "./app.css";
 
@@ -26,9 +27,11 @@ export function Layout({ children }: { children: ReactNode }) {
 export default function App() {
   return (
     <AnalysisProvider>
-      <AppShell>
-        <Outlet />
-      </AppShell>
+      <ExposureProvider>
+        <AppShell>
+          <Outlet />
+        </AppShell>
+      </ExposureProvider>
     </AnalysisProvider>
   );
 }

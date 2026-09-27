@@ -1,5 +1,16 @@
+import hashlib
 import json
+import shutil
+from copy import deepcopy
+from datetime import UTC, datetime
+from io import BytesIO
+from pathlib import Path
 
+import duckdb
+import pytest
+from botocore.exceptions import ClientError
+
+from curtailess.ingestion_state import ClaimResult
 from curtailess.materialization import aggregate_exposure_rows, materialization_handler
 
 
@@ -61,23 +72,123 @@ def test_aggregate_exposure_rows_uses_apurada_only_when_limited() -> None:
     ]
 
 
+@pytest.fixture
+def ons_parquet(tmp_path: Path) -> Path:
+    path = tmp_path / "curtailess-ons-2026-08.parquet"
+    with duckdb.connect() as connection:
+        connection.execute(
+            """
+            CREATE TABLE ons_fixture (
+                id_ons VARCHAR,
+                nom_usina VARCHAR,
+                id_pontoconexao VARCHAR,
+                nom_pontoconexao VARCHAR,
+                id_estado VARCHAR,
+                din_instante TIMESTAMP,
+                val_geracao DOUBLE,
+                val_disponibilidade DOUBLE,
+                val_geracaolimitada DOUBLE,
+                val_geracaoreferencia DOUBLE,
+                val_geracaonaorealizadaapurada DOUBLE,
+                cod_razaorestricao VARCHAR,
+                cod_origemrestricao VARCHAR
+            )
+            """
+        )
+        connection.executemany(
+            "INSERT INTO ons_fixture VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "CJU_RSSVPA",
+                    "Conjunto Serra Verde",
+                    "PONTO_1",
+                    "Ponto Um",
+                    "RN",
+                    "2026-08-01T00:00:00",
+                    80.0,
+                    100.0,
+                    80.0,
+                    100.0,
+                    20.0,
+                    "CNF",
+                    "LOC",
+                ),
+                (
+                    "CJU_RSSVPA",
+                    "Conjunto Serra Verde",
+                    "PONTO_1",
+                    "Ponto Um",
+                    "RN",
+                    "2026-08-01T00:30:00",
+                    70.0,
+                    100.0,
+                    70.0,
+                    80.0,
+                    10.0,
+                    "REL",
+                    "SIS",
+                ),
+                (
+                    "CJU_TESTE",
+                    "Conjunto Teste",
+                    "PONTO_2",
+                    "Ponto Dois",
+                    "BA",
+                    "2026-08-01T00:00:00",
+                    50.0,
+                    100.0,
+                    None,
+                    100.0,
+                    50.0,
+                    None,
+                    None,
+                ),
+            ],
+        )
+        connection.execute("COPY ons_fixture TO ? (FORMAT PARQUET)", [str(path)])
+    return path
+
+
 class FakeS3:
+    def __init__(self, source_path: Path):
+        self.source_path = source_path
+        self.objects: dict[tuple[str, str], bytes] = {}
+        self.put_calls = []
+
     def download_file(self, bucket, key, filename):
         assert bucket == "data-bucket"
-        assert key.endswith("RESTRICAO_COFF_EOLICA_2026_08.parquet")
-        with (
-            open(filename, "wb") as destination,
-            open("/tmp/curtailess-ons-2026-08.parquet", "rb") as source,
-        ):
-            destination.write(source.read())
+        assert key.endswith(".parquet")
+        shutil.copyfile(self.source_path, filename)
 
     def put_object(self, **kwargs):
-        self.curated = kwargs
+        object_id = (kwargs["Bucket"], kwargs["Key"])
+        if kwargs.get("IfNoneMatch") == "*" and object_id in self.objects:
+            raise ClientError(
+                {"Error": {"Code": "PreconditionFailed", "Message": "exists"}},
+                "PutObject",
+            )
+        self.put_calls.append(kwargs)
+        self.objects[object_id] = kwargs["Body"]
+
+    def upload_file(self, filename, bucket, key, ExtraArgs):
+        body = Path(filename).read_bytes()
+        self.objects[(bucket, key)] = body
+        self.put_calls.append({"Bucket": bucket, "Key": key, "Body": body, "ExtraArgs": ExtraArgs})
+
+    def get_object(self, **kwargs):
+        object_id = (kwargs["Bucket"], kwargs["Key"])
+        if object_id not in self.objects:
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "not found"}},
+                "GetObject",
+            )
+        return {"Body": BytesIO(self.objects[object_id])}
 
 
 class FakeTable:
     def __init__(self):
         self.items = []
+        self.deleted = []
 
     class Batch:
         def __init__(self, owner):
@@ -89,6 +200,9 @@ class FakeTable:
         def put_item(self, *, Item):
             self.owner.items.append(Item)
 
+        def delete_item(self, *, Key):
+            self.owner.deleted.append(Key)
+
         def __exit__(self, *args):
             return False
 
@@ -96,30 +210,159 @@ class FakeTable:
         return self.Batch(self)
 
 
-def test_materialization_handler_validates_and_persists_real_month() -> None:
-    s3 = FakeS3()
+class FakeLedger:
+    def __init__(self, item):
+        self.item = deepcopy(item)
+        self.claims = []
+        self.completed = []
+        self.failed = []
+        self.outcome = "CLAIMED"
+
+    def claim_materialization(self, fingerprint, **kwargs):
+        self.claims.append({"fingerprint": fingerprint, **kwargs})
+        return ClaimResult(self.outcome, deepcopy(self.item))
+
+    def get(self, fingerprint):
+        assert fingerprint == self.item["source_fingerprint"]
+        return deepcopy(self.item)
+
+    def mark_materialized(self, fingerprint, **kwargs):
+        self.completed.append({"fingerprint": fingerprint, **kwargs})
+        return {"state": "MATERIALIZED"}
+
+    def mark_materialization_failed(self, fingerprint, **kwargs):
+        self.failed.append({"fingerprint": fingerprint, **kwargs})
+        return {"state": "FAILED"}
+
+
+def materialization_message(path: Path) -> dict:
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    fingerprint = "a" * 64
+    dataset = "restricao_coff_eolica_tm"
+    return {
+        "bucket": "data-bucket",
+        "dataset": dataset,
+        "source_period": "2026-08",
+        "source_fingerprint": fingerprint,
+        "raw_key": (
+            f"raw/ons/{dataset}/source_year=2026/source_month=08/"
+            f"sha256={digest[:2]}/{digest}.parquet"
+        ),
+        "raw_sha256": digest,
+        "manifest_key": f"manifests/{dataset}/source_fingerprint={fingerprint}.json",
+    }
+
+
+def ledger_item(message: dict) -> dict:
+    return {
+        **message,
+        "source_bucket": "ons-aws-prod-opendata",
+        "source_key": ("dataset/restricao_coff_eolica_tm/RESTRICAO_COFF_EOLICA_2026_08.parquet"),
+        "source_etag": "source-etag",
+        "source_size": 123,
+        "source_last_modified": "2026-09-03T00:00:00+00:00",
+    }
+
+
+def test_materialization_handler_validates_persists_and_finalizes_manifest(
+    ons_parquet: Path,
+) -> None:
+    s3 = FakeS3(ons_parquet)
     table = FakeTable()
+    message = materialization_message(ons_parquet)
+    ledger = FakeLedger(ledger_item(message))
+    summary_key = "curated/ons/restricao_coff_eolica_tm/period=2026-08/summary.json"
+    s3.objects[("data-bucket", summary_key)] = json.dumps(
+        {
+            "dynamodb_keys": [{"asset_id": "OBSOLETE", "period": "2026-08"}],
+            "superseded_dynamodb_keys": [],
+        }
+    ).encode()
+    result = materialization_handler(
+        {"Records": [{"messageId": "materialize-1", "body": json.dumps(message)}]},
+        None,
+        s3_client=s3,
+        table=table,
+        ledger=ledger,
+        environment={"DATA_BUCKET": "data-bucket", "INGESTION_LEASE_SECONDS": "300"},
+        now=lambda: datetime(2026, 9, 27, tzinfo=UTC),
+    )
+    assert result == {"batchItemFailures": []}
+    assert len(table.items) == 2
+    top = max(table.items, key=lambda item: item["curtailed_mwh"])
+    assert top["asset_id"] == "CJU_RSSVPA"
+    assert top["curtailed_mwh"] == 15
+    assert top["data_mode"] == "ons_materialized"
+    assert top["source_sha256"] == message["raw_sha256"]
+    assert top["source_fingerprint"] == message["source_fingerprint"]
+
+    summary = json.loads(s3.objects[("data-bucket", summary_key)])
+    assert summary["row_count"] == 3
+    assert summary["fact_count"] == 2
+    assert summary["metrics"]["asset_count"] == 2
+    assert summary["curated_key"].startswith(
+        "curated/ons/constrained_off/dataset=restricao_coff_eolica_tm/"
+    )
+    assert summary["curated_key"].endswith(
+        f"sha256={summary['curated_sha256'][:2]}/{summary['curated_sha256']}.parquet"
+    )
+    assert table.deleted == [{"asset_id": "OBSOLETE", "period": "2026-08"}]
+    assert summary["superseded_dynamodb_keys"] == table.deleted
+    manifest = json.loads(s3.objects[("data-bucket", message["manifest_key"])])
+    assert manifest["raw"]["sha256"] == message["raw_sha256"]
+    assert manifest["source"]["etag"] == "source-etag"
+    assert ledger.completed[0]["manifest_key"] == message["manifest_key"]
+    assert ledger.failed == []
+    assert s3.put_calls[-1]["IfNoneMatch"] == "*"
+
+
+def test_materialization_retry_reuses_identical_immutable_manifest(ons_parquet: Path) -> None:
+    s3 = FakeS3(ons_parquet)
+    table = FakeTable()
+    message = materialization_message(ons_parquet)
+    first_ledger = FakeLedger(ledger_item(message))
+    event = {"Records": [{"messageId": "first", "body": json.dumps(message)}]}
+    assert materialization_handler(
+        event,
+        None,
+        s3_client=s3,
+        table=table,
+        ledger=first_ledger,
+        environment={"DATA_BUCKET": "data-bucket"},
+    ) == {"batchItemFailures": []}
+
+    retry_ledger = FakeLedger(ledger_item(message))
+    retry = materialization_handler(
+        {"Records": [{"messageId": "retry", "body": json.dumps(message)}]},
+        None,
+        s3_client=s3,
+        table=table,
+        ledger=retry_ledger,
+        environment={"DATA_BUCKET": "data-bucket"},
+    )
+    assert retry == {"batchItemFailures": []}
+    assert retry_ledger.completed
+    manifest_writes = [call for call in s3.put_calls if call["Key"] == message["manifest_key"]]
+    assert len(manifest_writes) == 1
+
+
+def test_materialization_batch_reports_only_failed_record(ons_parquet: Path) -> None:
+    s3 = FakeS3(ons_parquet)
+    table = FakeTable()
+    message = materialization_message(ons_parquet)
+    invalid = {**message, "raw_sha256": "0" * 64}
+    ledger = FakeLedger(ledger_item(message))
     result = materialization_handler(
         {
-            "bucket": "data-bucket",
-            "key": (
-                "raw/ons/restricao_coff_eolica_tm/source_year=2026/source_month=08/"
-                "RESTRICAO_COFF_EOLICA_2026_08.parquet"
-            ),
-            "sha256": "source-sha256",
+            "Records": [
+                {"messageId": "valid", "body": json.dumps(message)},
+                {"messageId": "invalid", "body": json.dumps(invalid)},
+            ]
         },
         None,
         s3_client=s3,
         table=table,
+        ledger=ledger,
+        environment={"DATA_BUCKET": "data-bucket"},
     )
-    assert result["validation_status"] == "valid"
-    assert result["row_count"] == 227664
-    assert result["asset_count"] == 153
-    assert len(table.items) == 153
-    top = max(table.items, key=lambda item: item["curtailed_mwh"])
-    assert top["asset_id"] == "CJU_RSSVPA"
-    assert top["data_mode"] == "ons_materialized"
-    assert top["source_sha256"] == "source-sha256"
-    curated = json.loads(s3.curated["Body"])
-    assert curated["row_count"] == 227664
-    assert curated["asset_count"] == 153
+    assert result == {"batchItemFailures": [{"itemIdentifier": "invalid"}]}

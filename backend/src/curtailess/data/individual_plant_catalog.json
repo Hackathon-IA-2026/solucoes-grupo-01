@@ -1,0 +1,664 @@
+{
+  "schema": "curtailless.individual_plant_catalog.v1",
+  "source": "ONS_PUBLICO",
+  "entity_level": "plant",
+  "window": {
+    "start": "2024-04-01",
+    "end": "2026-09-25"
+  },
+  "limitations": [
+    "Cada usina é uma entidade individual verificada no cadastro público do ONS; nenhum conjunto gerador (CJU_) é selecionável.",
+    "A capacidade é a soma da potência efetiva cadastrada das unidades geradoras ativas.",
+    "A cobertura histórica é contada na base detalhada de meia hora no período informado.",
+    "O ponto de conexão é o publicado no nível do conjunto, não uma medida por usina."
+  ],
+  "plants": [
+    {
+      "asset_id": "RNEM13",
+      "name": "Ventos de Santa Martina 13",
+      "entity_level": "plant",
+      "ons_group_id": "CJU_RNRDV",
+      "ons_group_name": "Rio do Vento",
+      "technology": "wind",
+      "state": "RN",
+      "capacity_mw": 67.2,
+      "ceg": "EOL.CV.RN.038322-8.01",
+      "valid_from": "2021-06-30",
+      "valid_to": null,
+      "operational_data_status": "simulated",
+      "selection": {
+        "link_status": "unambiguous_active",
+        "candidate_count": 8,
+        "observed_days": 908,
+        "coverage_pct": 100.0,
+        "restricted_day_share_pct": 79.9559,
+        "weather_coverage_pct": 100.0,
+        "capacity_units": 3,
+        "capacity_complete": true,
+        "justification": "Selecionada por vínculo cadastral inequívoco e vigente, cobertura histórica de 100.00% (908 dias), variável meteorológica em 100.00% dos intervalos e capacidade cadastrada completa (67.2000 MW em 3 unidades)."
+      },
+      "connection_point": "RNCMM-500-A"
+    },
+    {
+      "asset_id": "BAEA52",
+      "name": "Assuruá 5 II",
+      "entity_level": "plant",
+      "ons_group_id": "CJU_BALRA",
+      "ons_group_name": "Laranjeiras",
+      "technology": "wind",
+      "state": "BA",
+      "capacity_mw": 46.4,
+      "ceg": "EOL.CV.BA.051785-2.01",
+      "valid_from": "2022-12-02",
+      "valid_to": null,
+      "operational_data_status": "simulated",
+      "selection": {
+        "link_status": "unambiguous_active",
+        "candidate_count": 14,
+        "observed_days": 908,
+        "coverage_pct": 100.0,
+        "restricted_day_share_pct": 81.2775,
+        "weather_coverage_pct": 100.0,
+        "capacity_units": 2,
+        "capacity_complete": true,
+        "justification": "Selecionada por vínculo cadastral inequívoco e vigente, cobertura histórica de 100.00% (908 dias), variável meteorológica em 100.00% dos intervalos e capacidade cadastrada completa (46.4000 MW em 2 unidades)."
+      },
+      "connection_point": "BAGOR-230-A"
+    },
+    {
+      "asset_id": "BAEB0B",
+      "name": "Serra da Babilônia B",
+      "entity_level": "plant",
+      "ons_group_id": "CJU_BASDB",
+      "ons_group_name": "Serra da Babilônia",
+      "technology": "wind",
+      "state": "BA",
+      "capacity_mw": 31.8,
+      "ceg": "EOL.CV.BA.040608-2.01",
+      "valid_from": "2021-03-19",
+      "valid_to": null,
+      "operational_data_status": "simulated",
+      "selection": {
+        "link_status": "unambiguous_active",
+        "candidate_count": 14,
+        "observed_days": 908,
+        "coverage_pct": 100.0,
+        "restricted_day_share_pct": 80.1762,
+        "weather_coverage_pct": 100.0,
+        "capacity_units": 2,
+        "capacity_complete": true,
+        "justification": "Selecionada por vínculo cadastral inequívoco e vigente, cobertura histórica de 100.00% (908 dias), variável meteorológica em 100.00% dos intervalos e capacidade cadastrada completa (31.8000 MW em 2 unidades)."
+      },
+      "connection_point": "BAMPD-230-A"
+    },
+    {
+      "asset_id": "RNMVS2",
+      "name": "Monte Verde Solar II",
+      "entity_level": "plant",
+      "ons_group_id": "CJU_RNMVS",
+      "ons_group_name": "Monte Verde Solar",
+      "technology": "solar",
+      "state": "RN",
+      "capacity_mw": 42.48,
+      "ceg": "UFV.RS.RN.045154-1.01",
+      "valid_from": "2023-12-15",
+      "valid_to": null,
+      "operational_data_status": "simulated",
+      "selection": {
+        "link_status": "unambiguous_active",
+        "candidate_count": 5,
+        "observed_days": 908,
+        "coverage_pct": 100.0,
+        "restricted_day_share_pct": 63.2159,
+        "weather_coverage_pct": 100.0,
+        "capacity_units": 2,
+        "capacity_complete": true,
+        "justification": "Selecionada por vínculo cadastral inequívoco e vigente, cobertura histórica de 100.00% (908 dias), variável meteorológica em 100.00% dos intervalos e capacidade cadastrada completa (42.4800 MW em 2 unidades)."
+      },
+      "connection_point": "RNMTV-500-A"
+    },
+    {
+      "asset_id": "PBLZ3",
+      "name": "Luzia 3",
+      "entity_level": "plant",
+      "ons_group_id": "CJU_PBLZA",
+      "ons_group_name": "Luzia",
+      "technology": "solar",
+      "state": "PB",
+      "capacity_mw": 58.95,
+      "ceg": "UFV.RS.PB.044470-7.01",
+      "valid_from": "2022-05-27",
+      "valid_to": null,
+      "operational_data_status": "simulated",
+      "selection": {
+        "link_status": "unambiguous_active",
+        "candidate_count": 2,
+        "observed_days": 908,
+        "coverage_pct": 100.0,
+        "restricted_day_share_pct": 57.0485,
+        "weather_coverage_pct": 100.0,
+        "capacity_units": 3,
+        "capacity_complete": true,
+        "justification": "Selecionada por vínculo cadastral inequívoco e vigente, cobertura histórica de 100.00% (908 dias), variável meteorológica em 100.00% dos intervalos e capacidade cadastrada completa (58.9500 MW em 3 unidades)."
+      },
+      "connection_point": "RNSTL-500-A"
+    }
+  ],
+  "candidate_report": {
+    "contexts": [
+      {
+        "group_id": "CJU_RNRDV",
+        "group_name": "Rio do Vento",
+        "technology": "wind",
+        "candidate_count": 8,
+        "candidates": [
+          {
+            "plant_id": "RNEM13",
+            "name": "Ventos de Santa Martina 13",
+            "ceg": "EOL.CV.RN.038322-8.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 67.2,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "RNEM09",
+            "name": "Ventos de Santa Martina 09",
+            "ceg": "EOL.CV.RN.038318-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 63.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "RNEM10",
+            "name": "Ventos de Santa Martina 10",
+            "ceg": "EOL.CV.RN.038319-8.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 63.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "RNEM11",
+            "name": "Ventos de Santa Martina 11",
+            "ceg": "EOL.CV.RN.038320-1.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 63.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "RNEM12",
+            "name": "Ventos de Santa Martina 12",
+            "ceg": "EOL.CV.RN.038321-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 63.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "RNEM01",
+            "name": "Ventos de Santa Martina 01",
+            "ceg": "EOL.CV.RN.038310-4.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 63.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "RNEM14",
+            "name": "Ventos de Santa Martina 14",
+            "ceg": "EOL.CV.RN.038323-6.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 63.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "RNEJ23",
+            "name": "Ventos de São Januário 23",
+            "ceg": "EOL.CV.RN.040625-2.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 58.8,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          }
+        ]
+      },
+      {
+        "group_id": "CJU_BALRA",
+        "group_name": "Laranjeiras",
+        "technology": "wind",
+        "candidate_count": 14,
+        "candidates": [
+          {
+            "plant_id": "BAEA52",
+            "name": "Assuruá 5 II",
+            "ceg": "EOL.CV.BA.051785-2.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 46.4,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEA54",
+            "name": "Assuruá 5 IV",
+            "ceg": "EOL.CV.BA.051787-9.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 46.4,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEA51",
+            "name": "Assuruá 5 I",
+            "ceg": "EOL.CV.BA.051784-4.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 40.6,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEA53",
+            "name": "Assuruá 5 III",
+            "ceg": "EOL.CV.BA.051786-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 40.6,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEA44",
+            "name": "Assuruá 4 IV",
+            "ceg": "EOL.CV.BA.050466-1.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 36.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEA45",
+            "name": "Assuruá 4 V",
+            "ceg": "EOL.CV.BA.050467-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 36.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEA41",
+            "name": "Assuruá 4 I",
+            "ceg": "EOL.CV.BA.050463-7.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 36.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEA46",
+            "name": "Assuruá 4 VI",
+            "ceg": "EOL.CV.BA.050468-8.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 36.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEA43",
+            "name": "Assuruá 4 III",
+            "ceg": "EOL.CV.BA.050465-3.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 36.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEA55",
+            "name": "Assuruá 5 V",
+            "ceg": "EOL.CV.BA.051788-7.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 34.8,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEA56",
+            "name": "Assuruá 5 VI",
+            "ceg": "EOL.CV.BA.051789-5.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 34.8,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEA42",
+            "name": "Assuruá 4 II",
+            "ceg": "EOL.CV.BA.050464-5.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 31.5,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAELA3",
+            "name": "Laranjeiras III",
+            "ceg": "EOL.CV.BA.033626-2.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 25.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAELA9",
+            "name": "Laranjeiras IX",
+            "ceg": "EOL.CV.BA.033627-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 25.0,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          }
+        ]
+      },
+      {
+        "group_id": "CJU_BASDB",
+        "group_name": "Serra da Babilônia",
+        "technology": "wind",
+        "candidate_count": 14,
+        "candidates": [
+          {
+            "plant_id": "BAEB0B",
+            "name": "Serra da Babilônia B",
+            "ceg": "EOL.CV.BA.040608-2.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 31.8,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB0D",
+            "name": "Serra da Babilônia D",
+            "ceg": "EOL.CV.BA.040610-4.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 31.8,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB02",
+            "name": "Serra da Babilônia II",
+            "ceg": "EOL.CV.BA.032462-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 28.2,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB07",
+            "name": "Serra da Babilônia VII",
+            "ceg": "EOL.CV.BA.032467-1.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 28.2,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB08",
+            "name": "Serra da Babilônia VIII",
+            "ceg": "EOL.CV.BA.032468-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 28.2,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB10",
+            "name": "Serra da Babilônia  X",
+            "ceg": "EOL.CV.BA.032469-8.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 28.2,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB11",
+            "name": "Serra da Babilônia XI",
+            "ceg": "EOL.CV.BA.032470-1.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 28.2,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB12",
+            "name": "Serra da Babilônia XII",
+            "ceg": "EOL.CV.BA.032471-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 28.2,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB9",
+            "name": "Serra da Babilônia IX",
+            "ceg": "EOL.CV.BA.032465-5.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 28.2,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB0C",
+            "name": "Serra da Babilônia C",
+            "ceg": "EOL.CV.BA.040609-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 26.5,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB0E",
+            "name": "Serra da Babilônia E",
+            "ceg": "EOL.CV.BA.040611-2.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 26.5,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB06",
+            "name": "Serra da Babilônia VI",
+            "ceg": "EOL.CV.BA.032466-3.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 25.85,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB0A",
+            "name": "Serra da Babilônia A",
+            "ceg": "EOL.CV.BA.037083-5.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 21.2,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "BAEB0F",
+            "name": "Serra da Babilônia F",
+            "ceg": "EOL.CV.BA.040612-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 21.2,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          }
+        ]
+      },
+      {
+        "group_id": "CJU_RNMVS",
+        "group_name": "Monte Verde Solar",
+        "technology": "solar",
+        "candidate_count": 5,
+        "candidates": [
+          {
+            "plant_id": "RNMVS2",
+            "name": "Monte Verde Solar II",
+            "ceg": "UFV.RS.RN.045154-1.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 42.48,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "RNMVS3",
+            "name": "Monte Verde Solar III",
+            "ceg": "UFV.RS.RN.045155-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 42.48,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "RNMVS5",
+            "name": "Monte Verde Solar V",
+            "ceg": "UFV.RS.RN.045020-0.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 42.47113,
+            "capacity_complete": true,
+            "coverage_pct": 92.1806,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "RNMVS4",
+            "name": "Monte Verde Solar IV",
+            "ceg": "UFV.RS.RN.045156-8.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 42.48,
+            "capacity_complete": true,
+            "coverage_pct": 90.9692,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "RNMVS7",
+            "name": "Monte Verde Solar VII",
+            "ceg": "UFV.RS.RN.045021-9.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 42.47113,
+            "capacity_complete": true,
+            "coverage_pct": 90.9692,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          }
+        ]
+      },
+      {
+        "group_id": "CJU_PBLZA",
+        "group_name": "Luzia",
+        "technology": "solar",
+        "candidate_count": 2,
+        "candidates": [
+          {
+            "plant_id": "PBLZ3",
+            "name": "Luzia 3",
+            "ceg": "UFV.RS.PB.044470-7.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 58.95,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          },
+          {
+            "plant_id": "PBLZ2",
+            "name": "Luzia 2",
+            "ceg": "UFV.RS.PB.044469-3.01",
+            "link_status": "unambiguous_active",
+            "capacity_mw": 58.938,
+            "capacity_complete": true,
+            "coverage_pct": 100.0,
+            "weather_coverage_pct": 100.0,
+            "eligible": true
+          }
+        ]
+      }
+    ]
+  }
+}

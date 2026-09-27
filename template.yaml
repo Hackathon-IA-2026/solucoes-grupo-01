@@ -37,6 +37,9 @@ Globals:
     MemorySize: 2048
     Timeout: 60
     Tracing: Active
+    Environment:
+      Variables:
+        PYTHONPATH: /var/task/src
 
 Resources:
   HttpApi:
@@ -65,10 +68,12 @@ Resources:
           DATA_BUCKET: !Ref DataBucket
           SCENARIOS_TABLE: !Ref ScenariosTable
           EXPOSURE_TABLE: !Ref ExposureTable
+          EXPOSURE_NARRATIVES_TABLE: !Ref ExposureNarrativesTable
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_FALLBACK_MODEL_ID: !Ref BedrockFallbackModelId
           BEDROCK_EMERGENCY_MODEL_ID: !Ref BedrockEmergencyModelId
           BEDROCK_KNOWLEDGE_BASE_ID: !Ref BedrockKnowledgeBaseId
+          PUBLIC_DATA_MAX_AGE_HOURS: "48"
       Policies:
         - S3ReadPolicy:
             BucketName: !Ref DataBucket
@@ -76,6 +81,8 @@ Resources:
             TableName: !Ref ScenariosTable
         - DynamoDBReadPolicy:
             TableName: !Ref ExposureTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ExposureNarrativesTable
         - S3WritePolicy:
             BucketName: !Ref DataBucket
         - Statement:
@@ -128,13 +135,46 @@ Resources:
         deadLetterTargetArn: !GetAtt IngestionDeadLetterQueue.Arn
         maxReceiveCount: 3
 
+  MaterializationDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  MaterializationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 360
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt MaterializationDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  IngestionLedgerTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: source_fingerprint
+          AttributeType: S
+      KeySchema:
+        - AttributeName: source_fingerprint
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
   IngestionDiscoveryFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: backend/
       Handler: src.curtailess.ingestion.discovery_handler
       Runtime: python3.12
-      Description: Descobre o Parquet mais recente no S3 publico do ONS
+      Description: Descobre objetos publicos ONS com backfill limitado e idempotente
       MemorySize: 512
       Timeout: 60
       Environment:
@@ -143,9 +183,14 @@ Resources:
           SOURCE_DATASET: !Ref OnsSourceDataset
           SOURCE_PREFIX: !Ref OnsSourcePrefix
           INGESTION_QUEUE_URL: !Ref IngestionQueue
+          INGESTION_LEDGER_TABLE: !Ref IngestionLedgerTable
+          INGESTION_LEASE_SECONDS: "300"
+          DISCOVERY_MAX_MESSAGES: "100"
       Policies:
         - SQSSendMessagePolicy:
             QueueName: !GetAtt IngestionQueue.QueueName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref IngestionLedgerTable
         - Statement:
             - Sid: ListPublicOnsDataset
               Effect: Allow
@@ -155,7 +200,7 @@ Resources:
               Condition:
                 StringLike:
                   s3:prefix:
-                    - !Sub ${OnsSourcePrefix}*
+                    - dataset/*
       Events:
         DailyOnsDiscovery:
           Type: ScheduleV2
@@ -185,21 +230,22 @@ Resources:
       Environment:
         Variables:
           DATA_BUCKET: !Ref DataBucket
-          MATERIALIZATION_FUNCTION: !Ref ExposureMaterializationFunction
+          MATERIALIZATION_QUEUE_URL: !Ref MaterializationQueue
+          INGESTION_LEDGER_TABLE: !Ref IngestionLedgerTable
+          INGESTION_LEASE_SECONDS: "300"
       Policies:
         - S3CrudPolicy:
             BucketName: !Ref DataBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref IngestionLedgerTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt MaterializationQueue.QueueName
         - Statement:
             - Sid: ReadPublicOnsDataset
               Effect: Allow
               Action:
                 - s3:GetObject
-              Resource: !Sub arn:${AWS::Partition}:s3:::${OnsSourceBucket}/${OnsSourcePrefix}*
-            - Sid: StartExposureMaterialization
-              Effect: Allow
-              Action:
-                - lambda:InvokeFunction
-              Resource: !GetAtt ExposureMaterializationFunction.Arn
+              Resource: !Sub arn:${AWS::Partition}:s3:::${OnsSourceBucket}/dataset/*
       Events:
         IngestionQueueEvent:
           Type: SQS
@@ -221,19 +267,32 @@ Resources:
       CodeUri: backend/
       Handler: src.curtailess.materialization.materialization_handler
       Runtime: python3.12
-      Description: Valida e materializa exposicao mensal real do ONS
+      Description: Valida e materializa fatos publicos ONS sem misturar granularidades
       MemorySize: 2048
       Timeout: 300
       EphemeralStorage:
         Size: 1024
       Environment:
         Variables:
+          DATA_BUCKET: !Ref DataBucket
           EXPOSURE_TABLE: !Ref ExposureTable
+          INGESTION_LEDGER_TABLE: !Ref IngestionLedgerTable
+          INGESTION_LEASE_SECONDS: "300"
       Policies:
         - S3CrudPolicy:
             BucketName: !Ref DataBucket
         - DynamoDBCrudPolicy:
             TableName: !Ref ExposureTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref IngestionLedgerTable
+      Events:
+        MaterializationQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt MaterializationQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
 
   ExposureMaterializationLogGroup:
     Type: AWS::Logs::LogGroup
@@ -331,6 +390,27 @@ Resources:
       SSESpecification:
         SSEEnabled: true
 
+  ExposureNarrativesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: asset_id
+          AttributeType: S
+        - AttributeName: version
+          AttributeType: S
+      KeySchema:
+        - AttributeName: asset_id
+          KeyType: HASH
+        - AttributeName: version
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
 Outputs:
   ApiUrl:
     Description: URL publica da API
@@ -347,12 +427,21 @@ Outputs:
   ScenariosTableName:
     Description: Tabela de planos e cenarios
     Value: !Ref ScenariosTable
+  IngestionLedgerTableName:
+    Description: Tabela de estado idempotente da ingestao
+    Value: !Ref IngestionLedgerTable
   IngestionQueueUrl:
     Description: URL da fila privada de ingestao ONS
     Value: !Ref IngestionQueue
   IngestionDeadLetterQueueUrl:
     Description: URL da fila de mensagens com falha
     Value: !Ref IngestionDeadLetterQueue
+  MaterializationQueueUrl:
+    Description: URL da fila privada de materializacao ONS
+    Value: !Ref MaterializationQueue
+  MaterializationDeadLetterQueueUrl:
+    Description: URL da fila de materializacoes com falha
+    Value: !Ref MaterializationDeadLetterQueue
   IngestionDiscoveryFunctionName:
     Description: Lambda de descoberta do dataset ONS
     Value: !Ref IngestionDiscoveryFunction
@@ -365,3 +454,6 @@ Outputs:
   ExposureTableName:
     Description: Tabela de exposicao mensal por ativo
     Value: !Ref ExposureTable
+  ExposureNarrativesTableName:
+    Description: Tabela de narrativas validadas por ativo e entrada
+    Value: !Ref ExposureNarrativesTable

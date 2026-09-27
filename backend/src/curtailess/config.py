@@ -12,10 +12,12 @@ class Settings(BaseSettings):
     data_bucket: str | None = None
     scenarios_table: str | None = None
     exposure_table: str | None = None
+    exposure_narratives_table: str | None = None
     bedrock_model_id: str = "us.anthropic.claude-opus-5"
     bedrock_fallback_model_id: str = "us.anthropic.claude-sonnet-5"
     bedrock_emergency_model_id: str = "us.amazon.nova-pro-v1:0"
     bedrock_knowledge_base_id: str | None = None
+    public_data_max_age_hours: int = 48
 
     model_config = SettingsConfigDict(
         env_file=".env",

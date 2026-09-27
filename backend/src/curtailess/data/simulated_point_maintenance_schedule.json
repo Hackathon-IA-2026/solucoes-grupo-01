@@ -1,0 +1,2750 @@
+{
+  "schema": "curtailless.simulated_point_maintenance_schedule.v1",
+  "input_manifest": {
+    "algorithm": "sha256",
+    "digest": "58e9efc5a1f53f0f6eb6403e6f6f4ac36dba932646d676fe729963994ad12dc1",
+    "inputs": [
+      {
+        "role": "catalog",
+        "file_count": 1,
+        "sha256": "187d7d911aa4ca071e4dbbaff5d10c64dc65546c9c47ae3a7eefe53587d1a461",
+        "files": [
+          {
+            "path": "individual_plant_catalog.json",
+            "bytes": 22684,
+            "sha256": "f1f899744a23948c91eda061d0c755aa8a47d61344dac046eb945c6924e9176d"
+          }
+        ]
+      },
+      {
+        "role": "history",
+        "file_count": 1,
+        "sha256": "9bf1a079760d891270d98053ddfc9b821414f0dd772a9e9eb3ea4bee949f4e93",
+        "files": [
+          {
+            "path": "individual_plant_history.json",
+            "bytes": 827893,
+            "sha256": "bf8a1a105c6cc1db3a22b0d295b5d1496f981f33dc069290023a3eb6ab911cd2"
+          }
+        ]
+      },
+      {
+        "role": "relationship",
+        "file_count": 1,
+        "sha256": "0dda6f02369db54cbae4af9451f07aa74091aab8d45cc67e2be09bfd0fbb2c31",
+        "files": [
+          {
+            "path": "ons-groups.parquet",
+            "bytes": 69707,
+            "sha256": "9d1ac6c30981c7d1ba005855532948b395c2e0a1da536a8a64263d220c31fbf2"
+          }
+        ]
+      },
+      {
+        "role": "capacity",
+        "file_count": 1,
+        "sha256": "55656d4a4c43df21a0cafca303c4ebcca354648934c709ddb45439d33f9935f5",
+        "files": [
+          {
+            "path": "ons-capacity.parquet",
+            "bytes": 237591,
+            "sha256": "f44537847a888c538a83d53657410c234df934bb925af1f5e47d24eced92c9e8"
+          }
+        ]
+      },
+      {
+        "role": "wind_aggregate",
+        "file_count": 60,
+        "sha256": "dca5cd05a45c24c5fa5156acce45ad3988d1e7785cae949021ca6364d7c2397b",
+        "files": [
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_04.parquet",
+            "bytes": 2830457,
+            "sha256": "29bb33d966b4d23f7bee1ea008542deec1fee69272a9722d5160f8b0e4ba12b5"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_05.parquet",
+            "bytes": 3272193,
+            "sha256": "7496be757b93f0305f5d32d48a3da640de8b25fddec6aea88e8b89157744fab3"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_06.parquet",
+            "bytes": 3462283,
+            "sha256": "db1c2f9f6ecc2cb1d9f8fe889682a4b7bd119259f31c5b6fc9f7366f0ca2e5c9"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_07.parquet",
+            "bytes": 3971926,
+            "sha256": "58480926990a653065e94bbbb04bcc115ff458eee9d90d09b60fdfaddb33b2a0"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_08.parquet",
+            "bytes": 4360354,
+            "sha256": "bf779f5387fd55c1384028859075eca20018adf0dda02fe3c2444c7154bff33d"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_09.parquet",
+            "bytes": 4324853,
+            "sha256": "2439a86bd92444f520ab8990c3e0f6624ea8507a9d2ebf8851855344ed7843fe"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_10.parquet",
+            "bytes": 3911506,
+            "sha256": "e86692858654621fe169e1487835133c92afcd8d6462e7c0ee8135df61d0074d"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_11.parquet",
+            "bytes": 3525276,
+            "sha256": "16a3ebd7c7c22c94bc215ad5d35d59f5a36a4b2d87b16e349a9b8dfef270ab24"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_12.parquet",
+            "bytes": 3719705,
+            "sha256": "cba1f0de63b498a0eae3b671b68fb7a62fd8dab186199aa42629180104bb4c5a"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_01.parquet",
+            "bytes": 3253368,
+            "sha256": "431709d434d065213a3f4ce1404f718a2ca2a3ab05f22feb28b257753892a763"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_02.parquet",
+            "bytes": 3722753,
+            "sha256": "2389034a0011d07e60ffbfc1aeefd3bfd7c823b37dc3499978dcc2b28da2019a"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_03.parquet",
+            "bytes": 3498526,
+            "sha256": "c584081112a5efd475a130c976ac1d59fe0829c3629ad6f1ca6ee8f9e3ba9630"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_04.parquet",
+            "bytes": 3225522,
+            "sha256": "0aaff25651b79edcea2d10ed6b1ba04e15e57d60b4e1ac70b39b410f2e42bfee"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_05.parquet",
+            "bytes": 4105618,
+            "sha256": "edda6abd19f0a21247f7bc31af3f7dd4302d38b04c88d3a346a95a30774ec1a4"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_06.parquet",
+            "bytes": 3973542,
+            "sha256": "025b8067cd6fe36198eca3a8ccbe93386f1c0a0a9a8047c36d481fdb707d0b40"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_07.parquet",
+            "bytes": 4273457,
+            "sha256": "a5d9316788012f58bbfe254970d3d509f42e4db4eb07d324967bc65eb5e0d793"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_08.parquet",
+            "bytes": 4509482,
+            "sha256": "0b86dc86836127ee05f2638bedea44d5846f98f6bbbe4199dc935681b0e3f92b"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_09.parquet",
+            "bytes": 4453066,
+            "sha256": "bd07d2fda2cafcddc9171cc550a520365af1cc18b30ac2bdc635b363366fa6cd"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_10.parquet",
+            "bytes": 4649456,
+            "sha256": "e2e6104c01f35f51441a18e26f2f811e7a7cdb6f74da0c65f4bf33e1e8e78f9d"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_11.parquet",
+            "bytes": 4106610,
+            "sha256": "8d070364171414387c366a96497dbbeeeca857e3d8332206e2634a664d36c943"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_12.parquet",
+            "bytes": 3971259,
+            "sha256": "602e7f45d187d7bbcde05a8347d81ecb42df436122a7a83c0b0bfb6a7efddcc3"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_01.parquet",
+            "bytes": 4165544,
+            "sha256": "d8832a130a93dd40878da1545a6271a69c2d85e4840f42d0774003e253aded8e"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_02.parquet",
+            "bytes": 2934696,
+            "sha256": "0d18bf06337840c839d55da443bdf3b8b59b0e493f6c5f87e0c515b8d742b762"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_03.parquet",
+            "bytes": 3462171,
+            "sha256": "43da00348fe53edf5802afeca42d64133e3b8591313d1d5e6901cbe1794c950b"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_04.parquet",
+            "bytes": 3547016,
+            "sha256": "539444b1390664c08c27bd8195a268cd65284f63b737d6e250fdecd180b5e486"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_05.parquet",
+            "bytes": 4050889,
+            "sha256": "ac295852533b956a921e3188e70987b79508c36e9614fb5eca89ecf962638ce4"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_06.parquet",
+            "bytes": 3696290,
+            "sha256": "e0dc62ffafa0211b84d601a4933fb835eed94de8b308403791012846e0625d52"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_07.parquet",
+            "bytes": 4234747,
+            "sha256": "66f09c1a6dc236ef4a3e83d47599ceaaa468eb621f30199f1ff73e9d2c8cc0f1"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_08.parquet",
+            "bytes": 4419667,
+            "sha256": "8338c711f7187e6743b17f62b743da14fc7e7bb482863f2f8b7c52714beaad86"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_09.parquet",
+            "bytes": 3528003,
+            "sha256": "af05bc9304497ce40c21343be867e9349f9a5fdbf60bf2e52c025f7be6588128"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_04.parquet",
+            "bytes": 677734,
+            "sha256": "3693f72949440ec924d25a155f6c52ed3c723621d2bc5c6a21c8b8f1fa42c531"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_05.parquet",
+            "bytes": 713779,
+            "sha256": "1269500cb88e4cd67b0f64ebc04a8888540c2babc0c826478c7d3cd2241f5eae"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_06.parquet",
+            "bytes": 727389,
+            "sha256": "c04b80e63021d88348bdbe4227ad510b88e340660515ca496dd638d11e657e42"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_07.parquet",
+            "bytes": 787740,
+            "sha256": "73a85868d3e00d40b6b2d99c8ad345166a68545921b9a62b2590cac4fd7fbb9c"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_08.parquet",
+            "bytes": 824058,
+            "sha256": "28940d6d11c3f2f51be3ac08604b8f836cf8781e2c121fe5eeb9b1484a8ec9f3"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_09.parquet",
+            "bytes": 808610,
+            "sha256": "b1dbabe16a08fe19cc801e975854155f6d462be746b5f0bcdd3066541e46b8db"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_10.parquet",
+            "bytes": 846289,
+            "sha256": "035e40a53a72915dc367c295ecf073b3bc0330a33e72fc6fbb17a10fe451de7a"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_11.parquet",
+            "bytes": 823475,
+            "sha256": "07cc52972216b6d66fdb49a6552cd5e79be023945f054e70d5fbc8273a41282f"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_12.parquet",
+            "bytes": 906837,
+            "sha256": "f157c80cbf0c62ed5beb0b72ab8b88daecf6c8173a7c649564d43e5a92857f5f"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_01.parquet",
+            "bytes": 1030629,
+            "sha256": "f9960fd7954d7305c48194e338764cafa961a7b01c379d840f334ad20320eb71"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_02.parquet",
+            "bytes": 991484,
+            "sha256": "7702565f1a2e82fac0ec88c506816dbad9aa608ac007d71609d649c02aef3a76"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_03.parquet",
+            "bytes": 1016432,
+            "sha256": "a3b6e9488e2f03873c43a5d17127bda47c83100ea1a37ad20a380e864c4040a7"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_04.parquet",
+            "bytes": 957849,
+            "sha256": "d71681651229c96cb174b91c59e3139206c44b5ad3ce04651ac0f60d8d64d081"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_05.parquet",
+            "bytes": 1125095,
+            "sha256": "3a2fe3f06ca1f51bbf066fcb67d56580ba654150fd8accc5bb7f19b50ca7c8d7"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_06.parquet",
+            "bytes": 1055413,
+            "sha256": "74f4cee8a6cef29d2abe3922ffa05da026a7ab27521e43ee2db390c26765985c"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_07.parquet",
+            "bytes": 1147572,
+            "sha256": "12ddc02784ee0c15f2c699c2b129d2919a71a5d6f798d022aca2fd95c13d4596"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_08.parquet",
+            "bytes": 1185801,
+            "sha256": "6547bdf4f7877774a20d4465e93d19eee1d1a3be14dff24eb49d6fd1dbb7389e"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_09.parquet",
+            "bytes": 1200817,
+            "sha256": "90d6336b3add45dcf7cba038d1a29b8e5d539db9c02781e0dfb6f8c349abe76b"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_10.parquet",
+            "bytes": 1277532,
+            "sha256": "e615c3919e13228dfc9840a009341eb8f07d7b9247d29c4b1723fcd7575f47d9"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_11.parquet",
+            "bytes": 1225806,
+            "sha256": "7da952371b3a5ff2d28b7294dec8ded22df7f00e15a99fcaf572393bad3c2917"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_12.parquet",
+            "bytes": 1232727,
+            "sha256": "b86fe52f0ba149ea2d84af5c4f23f1ff648185a2ef3ad87f020b13bafb4e1128"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_01.parquet",
+            "bytes": 1257823,
+            "sha256": "82d7bfb5a22feab4de1b3dd2cfe3b9ee58241a966c88fc5f6782c0721c9a3cea"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_02.parquet",
+            "bytes": 1028057,
+            "sha256": "bbd081c99e9b45ef4ca05f4bbc30ee68d629c1252fe34a2213b676fbacc36d9d"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_03.parquet",
+            "bytes": 1301640,
+            "sha256": "0758fc32da44d1f1d1a3f0307ec092b98eb05b214ca77fd7a322e05ed75f0261"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_04.parquet",
+            "bytes": 1311407,
+            "sha256": "f1abbb1e48649e88903d389734924488c6a38b11fd148b5cfd37111cde307e4a"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_05.parquet",
+            "bytes": 1345985,
+            "sha256": "75fce8ef8715cbd815d6ffef28b66726f62bcb8233766457da383b492c5604e2"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_06.parquet",
+            "bytes": 1231733,
+            "sha256": "6070a9fb630ea9aa2e44fff773a5b36a2b320d8560005b1ffd5fda263f3aa1df"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_07.parquet",
+            "bytes": 1339148,
+            "sha256": "a4a8f538ee8879abb15045323ed86c6202210351811a9ff76a61476ef0f4e681"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_08.parquet",
+            "bytes": 1417630,
+            "sha256": "7c609a08af4aece39f0cf42583b7713ab64d73cd347ab572d49124ad592fa791"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_09.parquet",
+            "bytes": 1201260,
+            "sha256": "818c93df602430bf5343a08380d1eecb6d9172bbe0b8449a13a48a57e01a2b45"
+          }
+        ]
+      },
+      {
+        "role": "solar_aggregate",
+        "file_count": 60,
+        "sha256": "dca5cd05a45c24c5fa5156acce45ad3988d1e7785cae949021ca6364d7c2397b",
+        "files": [
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_04.parquet",
+            "bytes": 2830457,
+            "sha256": "29bb33d966b4d23f7bee1ea008542deec1fee69272a9722d5160f8b0e4ba12b5"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_05.parquet",
+            "bytes": 3272193,
+            "sha256": "7496be757b93f0305f5d32d48a3da640de8b25fddec6aea88e8b89157744fab3"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_06.parquet",
+            "bytes": 3462283,
+            "sha256": "db1c2f9f6ecc2cb1d9f8fe889682a4b7bd119259f31c5b6fc9f7366f0ca2e5c9"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_07.parquet",
+            "bytes": 3971926,
+            "sha256": "58480926990a653065e94bbbb04bcc115ff458eee9d90d09b60fdfaddb33b2a0"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_08.parquet",
+            "bytes": 4360354,
+            "sha256": "bf779f5387fd55c1384028859075eca20018adf0dda02fe3c2444c7154bff33d"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_09.parquet",
+            "bytes": 4324853,
+            "sha256": "2439a86bd92444f520ab8990c3e0f6624ea8507a9d2ebf8851855344ed7843fe"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_10.parquet",
+            "bytes": 3911506,
+            "sha256": "e86692858654621fe169e1487835133c92afcd8d6462e7c0ee8135df61d0074d"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_11.parquet",
+            "bytes": 3525276,
+            "sha256": "16a3ebd7c7c22c94bc215ad5d35d59f5a36a4b2d87b16e349a9b8dfef270ab24"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2024_12.parquet",
+            "bytes": 3719705,
+            "sha256": "cba1f0de63b498a0eae3b671b68fb7a62fd8dab186199aa42629180104bb4c5a"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_01.parquet",
+            "bytes": 3253368,
+            "sha256": "431709d434d065213a3f4ce1404f718a2ca2a3ab05f22feb28b257753892a763"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_02.parquet",
+            "bytes": 3722753,
+            "sha256": "2389034a0011d07e60ffbfc1aeefd3bfd7c823b37dc3499978dcc2b28da2019a"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_03.parquet",
+            "bytes": 3498526,
+            "sha256": "c584081112a5efd475a130c976ac1d59fe0829c3629ad6f1ca6ee8f9e3ba9630"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_04.parquet",
+            "bytes": 3225522,
+            "sha256": "0aaff25651b79edcea2d10ed6b1ba04e15e57d60b4e1ac70b39b410f2e42bfee"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_05.parquet",
+            "bytes": 4105618,
+            "sha256": "edda6abd19f0a21247f7bc31af3f7dd4302d38b04c88d3a346a95a30774ec1a4"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_06.parquet",
+            "bytes": 3973542,
+            "sha256": "025b8067cd6fe36198eca3a8ccbe93386f1c0a0a9a8047c36d481fdb707d0b40"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_07.parquet",
+            "bytes": 4273457,
+            "sha256": "a5d9316788012f58bbfe254970d3d509f42e4db4eb07d324967bc65eb5e0d793"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_08.parquet",
+            "bytes": 4509482,
+            "sha256": "0b86dc86836127ee05f2638bedea44d5846f98f6bbbe4199dc935681b0e3f92b"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_09.parquet",
+            "bytes": 4453066,
+            "sha256": "bd07d2fda2cafcddc9171cc550a520365af1cc18b30ac2bdc635b363366fa6cd"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_10.parquet",
+            "bytes": 4649456,
+            "sha256": "e2e6104c01f35f51441a18e26f2f811e7a7cdb6f74da0c65f4bf33e1e8e78f9d"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_11.parquet",
+            "bytes": 4106610,
+            "sha256": "8d070364171414387c366a96497dbbeeeca857e3d8332206e2634a664d36c943"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2025_12.parquet",
+            "bytes": 3971259,
+            "sha256": "602e7f45d187d7bbcde05a8347d81ecb42df436122a7a83c0b0bfb6a7efddcc3"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_01.parquet",
+            "bytes": 4165544,
+            "sha256": "d8832a130a93dd40878da1545a6271a69c2d85e4840f42d0774003e253aded8e"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_02.parquet",
+            "bytes": 2934696,
+            "sha256": "0d18bf06337840c839d55da443bdf3b8b59b0e493f6c5f87e0c515b8d742b762"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_03.parquet",
+            "bytes": 3462171,
+            "sha256": "43da00348fe53edf5802afeca42d64133e3b8591313d1d5e6901cbe1794c950b"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_04.parquet",
+            "bytes": 3547016,
+            "sha256": "539444b1390664c08c27bd8195a268cd65284f63b737d6e250fdecd180b5e486"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_05.parquet",
+            "bytes": 4050889,
+            "sha256": "ac295852533b956a921e3188e70987b79508c36e9614fb5eca89ecf962638ce4"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_06.parquet",
+            "bytes": 3696290,
+            "sha256": "e0dc62ffafa0211b84d601a4933fb835eed94de8b308403791012846e0625d52"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_07.parquet",
+            "bytes": 4234747,
+            "sha256": "66f09c1a6dc236ef4a3e83d47599ceaaa468eb621f30199f1ff73e9d2c8cc0f1"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_08.parquet",
+            "bytes": 4419667,
+            "sha256": "8338c711f7187e6743b17f62b743da14fc7e7bb482863f2f8b7c52714beaad86"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_2026_09.parquet",
+            "bytes": 3528003,
+            "sha256": "af05bc9304497ce40c21343be867e9349f9a5fdbf60bf2e52c025f7be6588128"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_04.parquet",
+            "bytes": 677734,
+            "sha256": "3693f72949440ec924d25a155f6c52ed3c723621d2bc5c6a21c8b8f1fa42c531"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_05.parquet",
+            "bytes": 713779,
+            "sha256": "1269500cb88e4cd67b0f64ebc04a8888540c2babc0c826478c7d3cd2241f5eae"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_06.parquet",
+            "bytes": 727389,
+            "sha256": "c04b80e63021d88348bdbe4227ad510b88e340660515ca496dd638d11e657e42"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_07.parquet",
+            "bytes": 787740,
+            "sha256": "73a85868d3e00d40b6b2d99c8ad345166a68545921b9a62b2590cac4fd7fbb9c"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_08.parquet",
+            "bytes": 824058,
+            "sha256": "28940d6d11c3f2f51be3ac08604b8f836cf8781e2c121fe5eeb9b1484a8ec9f3"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_09.parquet",
+            "bytes": 808610,
+            "sha256": "b1dbabe16a08fe19cc801e975854155f6d462be746b5f0bcdd3066541e46b8db"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_10.parquet",
+            "bytes": 846289,
+            "sha256": "035e40a53a72915dc367c295ecf073b3bc0330a33e72fc6fbb17a10fe451de7a"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_11.parquet",
+            "bytes": 823475,
+            "sha256": "07cc52972216b6d66fdb49a6552cd5e79be023945f054e70d5fbc8273a41282f"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2024_12.parquet",
+            "bytes": 906837,
+            "sha256": "f157c80cbf0c62ed5beb0b72ab8b88daecf6c8173a7c649564d43e5a92857f5f"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_01.parquet",
+            "bytes": 1030629,
+            "sha256": "f9960fd7954d7305c48194e338764cafa961a7b01c379d840f334ad20320eb71"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_02.parquet",
+            "bytes": 991484,
+            "sha256": "7702565f1a2e82fac0ec88c506816dbad9aa608ac007d71609d649c02aef3a76"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_03.parquet",
+            "bytes": 1016432,
+            "sha256": "a3b6e9488e2f03873c43a5d17127bda47c83100ea1a37ad20a380e864c4040a7"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_04.parquet",
+            "bytes": 957849,
+            "sha256": "d71681651229c96cb174b91c59e3139206c44b5ad3ce04651ac0f60d8d64d081"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_05.parquet",
+            "bytes": 1125095,
+            "sha256": "3a2fe3f06ca1f51bbf066fcb67d56580ba654150fd8accc5bb7f19b50ca7c8d7"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_06.parquet",
+            "bytes": 1055413,
+            "sha256": "74f4cee8a6cef29d2abe3922ffa05da026a7ab27521e43ee2db390c26765985c"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_07.parquet",
+            "bytes": 1147572,
+            "sha256": "12ddc02784ee0c15f2c699c2b129d2919a71a5d6f798d022aca2fd95c13d4596"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_08.parquet",
+            "bytes": 1185801,
+            "sha256": "6547bdf4f7877774a20d4465e93d19eee1d1a3be14dff24eb49d6fd1dbb7389e"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_09.parquet",
+            "bytes": 1200817,
+            "sha256": "90d6336b3add45dcf7cba038d1a29b8e5d539db9c02781e0dfb6f8c349abe76b"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_10.parquet",
+            "bytes": 1277532,
+            "sha256": "e615c3919e13228dfc9840a009341eb8f07d7b9247d29c4b1723fcd7575f47d9"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_11.parquet",
+            "bytes": 1225806,
+            "sha256": "7da952371b3a5ff2d28b7294dec8ded22df7f00e15a99fcaf572393bad3c2917"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2025_12.parquet",
+            "bytes": 1232727,
+            "sha256": "b86fe52f0ba149ea2d84af5c4f23f1ff648185a2ef3ad87f020b13bafb4e1128"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_01.parquet",
+            "bytes": 1257823,
+            "sha256": "82d7bfb5a22feab4de1b3dd2cfe3b9ee58241a966c88fc5f6782c0721c9a3cea"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_02.parquet",
+            "bytes": 1028057,
+            "sha256": "bbd081c99e9b45ef4ca05f4bbc30ee68d629c1252fe34a2213b676fbacc36d9d"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_03.parquet",
+            "bytes": 1301640,
+            "sha256": "0758fc32da44d1f1d1a3f0307ec092b98eb05b214ca77fd7a322e05ed75f0261"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_04.parquet",
+            "bytes": 1311407,
+            "sha256": "f1abbb1e48649e88903d389734924488c6a38b11fd148b5cfd37111cde307e4a"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_05.parquet",
+            "bytes": 1345985,
+            "sha256": "75fce8ef8715cbd815d6ffef28b66726f62bcb8233766457da383b492c5604e2"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_06.parquet",
+            "bytes": 1231733,
+            "sha256": "6070a9fb630ea9aa2e44fff773a5b36a2b320d8560005b1ffd5fda263f3aa1df"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_07.parquet",
+            "bytes": 1339148,
+            "sha256": "a4a8f538ee8879abb15045323ed86c6202210351811a9ff76a61476ef0f4e681"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_08.parquet",
+            "bytes": 1417630,
+            "sha256": "7c609a08af4aece39f0cf42583b7713ab64d73cd347ab572d49124ad592fa791"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_2026_09.parquet",
+            "bytes": 1201260,
+            "sha256": "818c93df602430bf5343a08380d1eecb6d9172bbe0b8449a13a48a57e01a2b45"
+          }
+        ]
+      },
+      {
+        "role": "wind_detail",
+        "file_count": 60,
+        "sha256": "25fe6048588787f46e2850130f58166d4128f3c21372270e5e254a0723bd699d",
+        "files": [
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_04.parquet",
+            "bytes": 9747652,
+            "sha256": "55c28a56413e8bce4527df7d3f447b932c6c606047960f8ff16e5662d24ddd91"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_05.parquet",
+            "bytes": 9879134,
+            "sha256": "331b6a0393942ac2d62bfa9053f66c44ad9743460f3cff8a6c12922e080b9d48"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_06.parquet",
+            "bytes": 10114222,
+            "sha256": "fe795bfe70e3677c64d9c3e118babf6c42ab1214accaab370808e7a167d1adbd"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_07.parquet",
+            "bytes": 10728345,
+            "sha256": "dd36f2bf2d0aae5e69af71f77a2b2922a853005d966e5ca6ce2b78b39c72f659"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_08.parquet",
+            "bytes": 10611991,
+            "sha256": "67090f4f913606a357e5c89371d6e99ade3f40b00e47c790913092465893c855"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_09.parquet",
+            "bytes": 10175026,
+            "sha256": "db554a1680829662ee75884b059dbb18a07a85b32484efd5e4d15fa5dea76a7f"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_10.parquet",
+            "bytes": 10803266,
+            "sha256": "277952727ecf1a9e309a8e4aa264f5f6e8d37448c8accd65d3f3513da29167d9"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_11.parquet",
+            "bytes": 10753871,
+            "sha256": "c47969480f468288aa5ad48c23810a8c764965d7071b30bf0f5738797e3ad486"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_12.parquet",
+            "bytes": 11014550,
+            "sha256": "d6580f3bb409142df9b00cbff9fe2ff0d83ab0648840e8389f58026b4781b01a"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_01.parquet",
+            "bytes": 12621204,
+            "sha256": "312cc3ca3d8beec2b5ba036fca69f8241e9df1eca871e139ab888273f6d48d9a"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_02.parquet",
+            "bytes": 14090589,
+            "sha256": "eb61acc234c39725775cb27cfe22bdd26eb910429ca3140ec0b660668b0ef863"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_03.parquet",
+            "bytes": 11465749,
+            "sha256": "cf06e1ae38ea02977beb6265b192db194ce8fbb49acb6933af941c0bbf46f6b7"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_04.parquet",
+            "bytes": 11293493,
+            "sha256": "99f069c17be9165b085b20168db79a96c442fe3e6bcb0748aa96e7b01c4a43e7"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_05.parquet",
+            "bytes": 11375165,
+            "sha256": "eaeff63997e5fa63d58ae1dae96cd3b5de371b7ec90fa2de3dd5cb0755e90c98"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_06.parquet",
+            "bytes": 12700670,
+            "sha256": "753488236c0d9cae5f249c7e2322f3e15c27450bf7cc4129216d2935837f15bb"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_07.parquet",
+            "bytes": 15090771,
+            "sha256": "1b28e25f6fff27a784e48b99eef0fd598d98acee1d99db57cbffbc51b41b33d5"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_08.parquet",
+            "bytes": 13750498,
+            "sha256": "95fa84e232c7b4d1bfc5417ecb97d780f27174c13656002fce0ef9ef285c53df"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_09.parquet",
+            "bytes": 12609078,
+            "sha256": "713c7672c07a07c932fcf7bc9be6b17fa6d94120b4913fc5b7a6477c8f3f19b1"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_10.parquet",
+            "bytes": 13156022,
+            "sha256": "dea9dfa4bf568eca9c5dbbe64a316186da51cabe1b3566129042e48c6d584351"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_11.parquet",
+            "bytes": 12640152,
+            "sha256": "cd0edcf9994d5878b69c4d7bd4c03e1d20f07b99e82a7762ad8d652a66ddc437"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_12.parquet",
+            "bytes": 12231843,
+            "sha256": "b00c788abe3494df34a1825270238615401c0dcc8c2096e4deddaa0bc12314fc"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_01.parquet",
+            "bytes": 11478122,
+            "sha256": "58cd406541ed0663244316f885e334a6ce8b750a9afdc175c7f00a2379245c51"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_02.parquet",
+            "bytes": 11770904,
+            "sha256": "b8818aea51d6d4bd82b3fe86f4d1c325d4ee21b745e6508364fdafcbece973d1"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_03.parquet",
+            "bytes": 13830685,
+            "sha256": "715eafc955659f04e498ba2a87e757bf139132cef5455c0f13faf32f9f09fe9d"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_04.parquet",
+            "bytes": 13635942,
+            "sha256": "f26a503652d5fd81b8f5735122383abec79b2def085b999ac802fa04486573cd"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_05.parquet",
+            "bytes": 14237419,
+            "sha256": "5311c36d218dfd6fb1ef9ef6b704a433381568e27096b4ce4903d3ddd9e991a6"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_06.parquet",
+            "bytes": 13746141,
+            "sha256": "7bb31d579b4f0875cc630602c95a2b0dac002c411298d4df2ad49ddbfda6a983"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_07.parquet",
+            "bytes": 13246231,
+            "sha256": "1304e67b498ab099701c7cf0dead184754dfe5e3a5c7ecf7349618ea7479cdb5"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_08.parquet",
+            "bytes": 12772610,
+            "sha256": "fa4eac8e985689b4c9c3892846d3fb01dbb808b92c6b778df6f0412267231885"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_09.parquet",
+            "bytes": 12496795,
+            "sha256": "f1654567b63b2d6d041ab2f2dded424d338ba231d3dc36468c8ad27098c5f2b2"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_04.parquet",
+            "bytes": 3224844,
+            "sha256": "c1fba8fa7e176d30b67ec3f1420e5b9b47994c54e46d44493a264a3a3cc44eb0"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_05.parquet",
+            "bytes": 3406434,
+            "sha256": "5f0f8ec006e8f51252194bd3785051880487916bba5aeef56e171e3cb5a10941"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_06.parquet",
+            "bytes": 3404529,
+            "sha256": "1513fbf47514ef4290d745af8d4ea5ea36e36b917cc65a0bc462f396bd737a41"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_07.parquet",
+            "bytes": 3560793,
+            "sha256": "77c025a4aafef50e30fa8ec125af11d070c29280a2ebfef8a69bd2cb8bf25ef1"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_08.parquet",
+            "bytes": 3664284,
+            "sha256": "49845484411b65b30c151ad4f74da908e109494ea90387bcacae20403afd273b"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_09.parquet",
+            "bytes": 3706048,
+            "sha256": "fdb3cfeca035c026f7fa2456522c0a10e9ee1f3832d8c4265cf38947b92433e1"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_10.parquet",
+            "bytes": 4126619,
+            "sha256": "d28f7de12d695c50418c722a949feb20ea8e28f81c016c9e8445018035656d2f"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_11.parquet",
+            "bytes": 4145005,
+            "sha256": "b39281567b1baffb2fc1dfdcee9f845431713c569caae95f217c389aab9aa9de"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_12.parquet",
+            "bytes": 4529189,
+            "sha256": "e6ebe809399c063c6a23a8f37dda12ff090d591275ebce7b8d54ffa79b0ecc2c"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_01.parquet",
+            "bytes": 4793503,
+            "sha256": "6a0ec9d72ed3d6d449265b84197e953300aaa6d3f477ded45bf1babd6bf0cc5a"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_02.parquet",
+            "bytes": 4371606,
+            "sha256": "3569b9e0e02e8c1c15655583c543d032613be109fbf61c5945b5ad5a34466557"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_03.parquet",
+            "bytes": 4607680,
+            "sha256": "8ebaf8a03f4e106faaa22df41ef701fd36f3c35ec4e6f04f0122e0cdbe760a21"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_04.parquet",
+            "bytes": 4357027,
+            "sha256": "71a212b7d6a6836d97f724fb59448b07a7d1c4268f5e507e310a17184a96904d"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_05.parquet",
+            "bytes": 4328380,
+            "sha256": "e65d7263c2a81bf50a1ff66a270a2088d1e56b922bc2701f5b27ce6f05f2522a"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_06.parquet",
+            "bytes": 4229410,
+            "sha256": "18d11198b0a8702c1c2583befb0f73c6823129f1a8c34c8e2626c5f32913916f"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_07.parquet",
+            "bytes": 4369707,
+            "sha256": "2b5272f3a68043cdb93da0d358c4dca7e4d919d1e1d850333209d484342d44d2"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_08.parquet",
+            "bytes": 4413712,
+            "sha256": "985b68bd3886ecee1d3c04bef7d442d66927b758c9b740371277e3d789c0a1e2"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_09.parquet",
+            "bytes": 4741251,
+            "sha256": "81c46d7128ec18653be28a8ab0983e928a972d541b5ece3bcd39a5a25a5e90b5"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_10.parquet",
+            "bytes": 5148031,
+            "sha256": "da5f9946ae8ec9114059cbd1a0e6cfca11064bb0750e241f0160d0790fc77b37"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_11.parquet",
+            "bytes": 5048141,
+            "sha256": "9652c8af2a3aa42f4f6cb6ddae443ee4752b0e767a5e5457b26138e1cc39a112"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_12.parquet",
+            "bytes": 5405812,
+            "sha256": "611469b7902cf177f57e50a61c463d7deb8683a7b6dd3f0c99facd70ee65d7f6"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_01.parquet",
+            "bytes": 5520928,
+            "sha256": "b7df86f64ef0cc3ae4587fee260f1c367f24dd7ff8bbbd65e640620b75608e37"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_02.parquet",
+            "bytes": 4826107,
+            "sha256": "92ffa83f739ad5963a6203f7f2174edc51f99734da6cc1f0f3f6aa52cef71b2c"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_03.parquet",
+            "bytes": 5495803,
+            "sha256": "aef5e01e3db0ead7454dd241303a857223300d853398cba27eb4b2404ab86871"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_04.parquet",
+            "bytes": 5353906,
+            "sha256": "9f096a605f666e263578503c13d8a49664b0b65e594c326961bdfdfa190e94f7"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_05.parquet",
+            "bytes": 5432214,
+            "sha256": "eaff990aa73023a5bca3c8a0abba98b8f1e8d9ab638b9ca0835ed117b216ef3e"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_06.parquet",
+            "bytes": 5346163,
+            "sha256": "53e72cb1447e53c3e79654ee4bc15ed41481b619f9c45c8f13114cc23325fb19"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_07.parquet",
+            "bytes": 5304542,
+            "sha256": "b483b22d155de9b082aff3bd4c9f78b862256fb0557a6c517e5af07ef7c1dba0"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_08.parquet",
+            "bytes": 5405652,
+            "sha256": "1da8cf4e61646dc80df1be7309beeb0163db0f8ca73a5055fba1a8f23eaaff27"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_09.parquet",
+            "bytes": 4627037,
+            "sha256": "a6ce3c9efa56f18ef328c230825c05a07b093a6c4d7d5812dca2ce3d5ba1c98f"
+          }
+        ]
+      },
+      {
+        "role": "solar_detail",
+        "file_count": 60,
+        "sha256": "25fe6048588787f46e2850130f58166d4128f3c21372270e5e254a0723bd699d",
+        "files": [
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_04.parquet",
+            "bytes": 9747652,
+            "sha256": "55c28a56413e8bce4527df7d3f447b932c6c606047960f8ff16e5662d24ddd91"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_05.parquet",
+            "bytes": 9879134,
+            "sha256": "331b6a0393942ac2d62bfa9053f66c44ad9743460f3cff8a6c12922e080b9d48"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_06.parquet",
+            "bytes": 10114222,
+            "sha256": "fe795bfe70e3677c64d9c3e118babf6c42ab1214accaab370808e7a167d1adbd"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_07.parquet",
+            "bytes": 10728345,
+            "sha256": "dd36f2bf2d0aae5e69af71f77a2b2922a853005d966e5ca6ce2b78b39c72f659"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_08.parquet",
+            "bytes": 10611991,
+            "sha256": "67090f4f913606a357e5c89371d6e99ade3f40b00e47c790913092465893c855"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_09.parquet",
+            "bytes": 10175026,
+            "sha256": "db554a1680829662ee75884b059dbb18a07a85b32484efd5e4d15fa5dea76a7f"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_10.parquet",
+            "bytes": 10803266,
+            "sha256": "277952727ecf1a9e309a8e4aa264f5f6e8d37448c8accd65d3f3513da29167d9"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_11.parquet",
+            "bytes": 10753871,
+            "sha256": "c47969480f468288aa5ad48c23810a8c764965d7071b30bf0f5738797e3ad486"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2024_12.parquet",
+            "bytes": 11014550,
+            "sha256": "d6580f3bb409142df9b00cbff9fe2ff0d83ab0648840e8389f58026b4781b01a"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_01.parquet",
+            "bytes": 12621204,
+            "sha256": "312cc3ca3d8beec2b5ba036fca69f8241e9df1eca871e139ab888273f6d48d9a"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_02.parquet",
+            "bytes": 14090589,
+            "sha256": "eb61acc234c39725775cb27cfe22bdd26eb910429ca3140ec0b660668b0ef863"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_03.parquet",
+            "bytes": 11465749,
+            "sha256": "cf06e1ae38ea02977beb6265b192db194ce8fbb49acb6933af941c0bbf46f6b7"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_04.parquet",
+            "bytes": 11293493,
+            "sha256": "99f069c17be9165b085b20168db79a96c442fe3e6bcb0748aa96e7b01c4a43e7"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_05.parquet",
+            "bytes": 11375165,
+            "sha256": "eaeff63997e5fa63d58ae1dae96cd3b5de371b7ec90fa2de3dd5cb0755e90c98"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_06.parquet",
+            "bytes": 12700670,
+            "sha256": "753488236c0d9cae5f249c7e2322f3e15c27450bf7cc4129216d2935837f15bb"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_07.parquet",
+            "bytes": 15090771,
+            "sha256": "1b28e25f6fff27a784e48b99eef0fd598d98acee1d99db57cbffbc51b41b33d5"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_08.parquet",
+            "bytes": 13750498,
+            "sha256": "95fa84e232c7b4d1bfc5417ecb97d780f27174c13656002fce0ef9ef285c53df"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_09.parquet",
+            "bytes": 12609078,
+            "sha256": "713c7672c07a07c932fcf7bc9be6b17fa6d94120b4913fc5b7a6477c8f3f19b1"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_10.parquet",
+            "bytes": 13156022,
+            "sha256": "dea9dfa4bf568eca9c5dbbe64a316186da51cabe1b3566129042e48c6d584351"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_11.parquet",
+            "bytes": 12640152,
+            "sha256": "cd0edcf9994d5878b69c4d7bd4c03e1d20f07b99e82a7762ad8d652a66ddc437"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2025_12.parquet",
+            "bytes": 12231843,
+            "sha256": "b00c788abe3494df34a1825270238615401c0dcc8c2096e4deddaa0bc12314fc"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_01.parquet",
+            "bytes": 11478122,
+            "sha256": "58cd406541ed0663244316f885e334a6ce8b750a9afdc175c7f00a2379245c51"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_02.parquet",
+            "bytes": 11770904,
+            "sha256": "b8818aea51d6d4bd82b3fe86f4d1c325d4ee21b745e6508364fdafcbece973d1"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_03.parquet",
+            "bytes": 13830685,
+            "sha256": "715eafc955659f04e498ba2a87e757bf139132cef5455c0f13faf32f9f09fe9d"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_04.parquet",
+            "bytes": 13635942,
+            "sha256": "f26a503652d5fd81b8f5735122383abec79b2def085b999ac802fa04486573cd"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_05.parquet",
+            "bytes": 14237419,
+            "sha256": "5311c36d218dfd6fb1ef9ef6b704a433381568e27096b4ce4903d3ddd9e991a6"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_06.parquet",
+            "bytes": 13746141,
+            "sha256": "7bb31d579b4f0875cc630602c95a2b0dac002c411298d4df2ad49ddbfda6a983"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_07.parquet",
+            "bytes": 13246231,
+            "sha256": "1304e67b498ab099701c7cf0dead184754dfe5e3a5c7ecf7349618ea7479cdb5"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_08.parquet",
+            "bytes": 12772610,
+            "sha256": "fa4eac8e985689b4c9c3892846d3fb01dbb808b92c6b778df6f0412267231885"
+          },
+          {
+            "path": "RESTRICAO_COFF_EOLICA_DETAIL_2026_09.parquet",
+            "bytes": 12496795,
+            "sha256": "f1654567b63b2d6d041ab2f2dded424d338ba231d3dc36468c8ad27098c5f2b2"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_04.parquet",
+            "bytes": 3224844,
+            "sha256": "c1fba8fa7e176d30b67ec3f1420e5b9b47994c54e46d44493a264a3a3cc44eb0"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_05.parquet",
+            "bytes": 3406434,
+            "sha256": "5f0f8ec006e8f51252194bd3785051880487916bba5aeef56e171e3cb5a10941"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_06.parquet",
+            "bytes": 3404529,
+            "sha256": "1513fbf47514ef4290d745af8d4ea5ea36e36b917cc65a0bc462f396bd737a41"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_07.parquet",
+            "bytes": 3560793,
+            "sha256": "77c025a4aafef50e30fa8ec125af11d070c29280a2ebfef8a69bd2cb8bf25ef1"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_08.parquet",
+            "bytes": 3664284,
+            "sha256": "49845484411b65b30c151ad4f74da908e109494ea90387bcacae20403afd273b"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_09.parquet",
+            "bytes": 3706048,
+            "sha256": "fdb3cfeca035c026f7fa2456522c0a10e9ee1f3832d8c4265cf38947b92433e1"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_10.parquet",
+            "bytes": 4126619,
+            "sha256": "d28f7de12d695c50418c722a949feb20ea8e28f81c016c9e8445018035656d2f"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_11.parquet",
+            "bytes": 4145005,
+            "sha256": "b39281567b1baffb2fc1dfdcee9f845431713c569caae95f217c389aab9aa9de"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2024_12.parquet",
+            "bytes": 4529189,
+            "sha256": "e6ebe809399c063c6a23a8f37dda12ff090d591275ebce7b8d54ffa79b0ecc2c"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_01.parquet",
+            "bytes": 4793503,
+            "sha256": "6a0ec9d72ed3d6d449265b84197e953300aaa6d3f477ded45bf1babd6bf0cc5a"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_02.parquet",
+            "bytes": 4371606,
+            "sha256": "3569b9e0e02e8c1c15655583c543d032613be109fbf61c5945b5ad5a34466557"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_03.parquet",
+            "bytes": 4607680,
+            "sha256": "8ebaf8a03f4e106faaa22df41ef701fd36f3c35ec4e6f04f0122e0cdbe760a21"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_04.parquet",
+            "bytes": 4357027,
+            "sha256": "71a212b7d6a6836d97f724fb59448b07a7d1c4268f5e507e310a17184a96904d"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_05.parquet",
+            "bytes": 4328380,
+            "sha256": "e65d7263c2a81bf50a1ff66a270a2088d1e56b922bc2701f5b27ce6f05f2522a"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_06.parquet",
+            "bytes": 4229410,
+            "sha256": "18d11198b0a8702c1c2583befb0f73c6823129f1a8c34c8e2626c5f32913916f"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_07.parquet",
+            "bytes": 4369707,
+            "sha256": "2b5272f3a68043cdb93da0d358c4dca7e4d919d1e1d850333209d484342d44d2"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_08.parquet",
+            "bytes": 4413712,
+            "sha256": "985b68bd3886ecee1d3c04bef7d442d66927b758c9b740371277e3d789c0a1e2"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_09.parquet",
+            "bytes": 4741251,
+            "sha256": "81c46d7128ec18653be28a8ab0983e928a972d541b5ece3bcd39a5a25a5e90b5"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_10.parquet",
+            "bytes": 5148031,
+            "sha256": "da5f9946ae8ec9114059cbd1a0e6cfca11064bb0750e241f0160d0790fc77b37"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_11.parquet",
+            "bytes": 5048141,
+            "sha256": "9652c8af2a3aa42f4f6cb6ddae443ee4752b0e767a5e5457b26138e1cc39a112"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2025_12.parquet",
+            "bytes": 5405812,
+            "sha256": "611469b7902cf177f57e50a61c463d7deb8683a7b6dd3f0c99facd70ee65d7f6"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_01.parquet",
+            "bytes": 5520928,
+            "sha256": "b7df86f64ef0cc3ae4587fee260f1c367f24dd7ff8bbbd65e640620b75608e37"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_02.parquet",
+            "bytes": 4826107,
+            "sha256": "92ffa83f739ad5963a6203f7f2174edc51f99734da6cc1f0f3f6aa52cef71b2c"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_03.parquet",
+            "bytes": 5495803,
+            "sha256": "aef5e01e3db0ead7454dd241303a857223300d853398cba27eb4b2404ab86871"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_04.parquet",
+            "bytes": 5353906,
+            "sha256": "9f096a605f666e263578503c13d8a49664b0b65e594c326961bdfdfa190e94f7"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_05.parquet",
+            "bytes": 5432214,
+            "sha256": "eaff990aa73023a5bca3c8a0abba98b8f1e8d9ab638b9ca0835ed117b216ef3e"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_06.parquet",
+            "bytes": 5346163,
+            "sha256": "53e72cb1447e53c3e79654ee4bc15ed41481b619f9c45c8f13114cc23325fb19"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_07.parquet",
+            "bytes": 5304542,
+            "sha256": "b483b22d155de9b082aff3bd4c9f78b862256fb0557a6c517e5af07ef7c1dba0"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_08.parquet",
+            "bytes": 5405652,
+            "sha256": "1da8cf4e61646dc80df1be7309beeb0163db0f8ca73a5055fba1a8f23eaaff27"
+          },
+          {
+            "path": "RESTRICAO_COFF_FOTOVOLTAICA_DETAIL_2026_09.parquet",
+            "bytes": 4627037,
+            "sha256": "a6ce3c9efa56f18ef328c230825c05a07b093a6c4d7d5812dca2ce3d5ba1c98f"
+          }
+        ]
+      },
+      {
+        "role": "weather_snapshot",
+        "file_count": 1,
+        "sha256": "36b623a9ecbb360a61c33a00ff18a3d0d8a0ceedc4fe6ad2ead165b4f0b269ed",
+        "files": [
+          {
+            "path": "snapshot-climatico-prospectivo-20260926T193941760308Z-afa674ff.json",
+            "bytes": 969914,
+            "sha256": "ed1a3217e2f24490e3da07f2aef55215898ce8ca0c1c4c8040737c1b127e7854"
+          }
+        ]
+      },
+      {
+        "role": "weather_snapshot_solar",
+        "file_count": 1,
+        "sha256": "36b623a9ecbb360a61c33a00ff18a3d0d8a0ceedc4fe6ad2ead165b4f0b269ed",
+        "files": [
+          {
+            "path": "snapshot-climatico-prospectivo-20260926T193941760308Z-afa674ff.json",
+            "bytes": 969914,
+            "sha256": "ed1a3217e2f24490e3da07f2aef55215898ce8ca0c1c4c8040737c1b127e7854"
+          }
+        ]
+      }
+    ]
+  },
+  "origin": "SIMULADO",
+  "cutoff": "2026-09-25 23:30:00",
+  "window": {
+    "start": "2026-09-26",
+    "end": "2026-11-24"
+  },
+  "method": "Agendas simuladas das usinas participantes do ponto, geradas de forma determinística a partir do identificador da usina.",
+  "limitations": [
+    "As agendas são simuladas nesta etapa e não representam coordenação real.",
+    "A aba Manutenção não consome esta agenda."
+  ],
+  "points": {
+    "BAGOR-230-A": {
+      "point_id": "BAGOR-230-A",
+      "plant_count": 52,
+      "windows": [
+        {
+          "plant_id": "BAEA41",
+          "start_date": "2026-10-01",
+          "end_date": "2026-10-05",
+          "start_interval": 240,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA44",
+          "start_date": "2026-10-01",
+          "end_date": "2026-10-05",
+          "start_interval": 240,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA03",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-05",
+          "start_interval": 336,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA18",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-07",
+          "start_interval": 336,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA22",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-06",
+          "start_interval": 336,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV03",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-05",
+          "start_interval": 336,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV07",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-07",
+          "start_interval": 336,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA45",
+          "start_date": "2026-10-07",
+          "end_date": "2026-10-11",
+          "start_interval": 528,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA15",
+          "start_date": "2026-10-08",
+          "end_date": "2026-10-10",
+          "start_interval": 576,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA20",
+          "start_date": "2026-10-09",
+          "end_date": "2026-10-11",
+          "start_interval": 624,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA21",
+          "start_date": "2026-10-11",
+          "end_date": "2026-10-13",
+          "start_interval": 720,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV10",
+          "start_date": "2026-10-11",
+          "end_date": "2026-10-16",
+          "start_interval": 720,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA12",
+          "start_date": "2026-10-12",
+          "end_date": "2026-10-14",
+          "start_interval": 768,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV08",
+          "start_date": "2026-10-13",
+          "end_date": "2026-10-15",
+          "start_interval": 816,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA06",
+          "start_date": "2026-10-18",
+          "end_date": "2026-10-23",
+          "start_interval": 1056,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA08",
+          "start_date": "2026-10-19",
+          "end_date": "2026-10-21",
+          "start_interval": 1104,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA07",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-25",
+          "start_interval": 1152,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA13",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-24",
+          "start_interval": 1152,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV04",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-25",
+          "start_interval": 1200,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV14",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-26",
+          "start_interval": 1200,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAELA9",
+          "start_date": "2026-10-22",
+          "end_date": "2026-10-27",
+          "start_interval": 1248,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA14",
+          "start_date": "2026-10-24",
+          "end_date": "2026-10-27",
+          "start_interval": 1344,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV11",
+          "start_date": "2026-10-25",
+          "end_date": "2026-10-28",
+          "start_interval": 1392,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAELA3",
+          "start_date": "2026-10-28",
+          "end_date": "2026-11-02",
+          "start_interval": 1536,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA46",
+          "start_date": "2026-10-29",
+          "end_date": "2026-11-01",
+          "start_interval": 1584,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA05",
+          "start_date": "2026-10-30",
+          "end_date": "2026-11-02",
+          "start_interval": 1632,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA16",
+          "start_date": "2026-10-31",
+          "end_date": "2026-11-05",
+          "start_interval": 1680,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV09",
+          "start_date": "2026-10-31",
+          "end_date": "2026-11-03",
+          "start_interval": 1680,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA56",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-03",
+          "start_interval": 1728,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV01",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-05",
+          "start_interval": 1728,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV12",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-03",
+          "start_interval": 1728,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA42",
+          "start_date": "2026-11-03",
+          "end_date": "2026-11-08",
+          "start_interval": 1824,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA51",
+          "start_date": "2026-11-08",
+          "end_date": "2026-11-10",
+          "start_interval": 2064,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA02",
+          "start_date": "2026-11-10",
+          "end_date": "2026-11-12",
+          "start_interval": 2160,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA10",
+          "start_date": "2026-11-12",
+          "end_date": "2026-11-17",
+          "start_interval": 2256,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV02",
+          "start_date": "2026-11-13",
+          "end_date": "2026-11-18",
+          "start_interval": 2304,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        }
+      ],
+      "candidate_asset_id": "BAEA52",
+      "candidate_asset_ids": [
+        "BAEA52"
+      ],
+      "origin": "SIMULADO",
+      "method": "agenda simulada das usinas participantes"
+    },
+    "BAMPD-230-A": {
+      "point_id": "BAMPD-230-A",
+      "plant_count": 44,
+      "windows": [
+        {
+          "plant_id": "BAEB18",
+          "start_date": "2026-10-02",
+          "end_date": "2026-10-06",
+          "start_interval": 288,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB09",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-05",
+          "start_interval": 336,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB9",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-05",
+          "start_interval": 336,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB27",
+          "start_date": "2026-10-05",
+          "end_date": "2026-10-09",
+          "start_interval": 432,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASB02",
+          "start_date": "2026-10-06",
+          "end_date": "2026-10-09",
+          "start_interval": 480,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB06",
+          "start_date": "2026-10-07",
+          "end_date": "2026-10-12",
+          "start_interval": 528,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAUEPR",
+          "start_date": "2026-10-07",
+          "end_date": "2026-10-11",
+          "start_interval": 528,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB11",
+          "start_date": "2026-10-09",
+          "end_date": "2026-10-13",
+          "start_interval": 624,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB0E",
+          "start_date": "2026-10-17",
+          "end_date": "2026-10-20",
+          "start_interval": 1008,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESAU",
+          "start_date": "2026-10-17",
+          "end_date": "2026-10-20",
+          "start_interval": 1008,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB02",
+          "start_date": "2026-10-18",
+          "end_date": "2026-10-20",
+          "start_interval": 1056,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB0B",
+          "start_date": "2026-10-18",
+          "end_date": "2026-10-23",
+          "start_interval": 1056,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESBE",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-23",
+          "start_interval": 1152,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB23",
+          "start_date": "2026-10-27",
+          "end_date": "2026-10-31",
+          "start_interval": 1488,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAUEDA",
+          "start_date": "2026-10-27",
+          "end_date": "2026-11-01",
+          "start_interval": 1488,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB13",
+          "start_date": "2026-10-28",
+          "end_date": "2026-11-02",
+          "start_interval": 1536,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASB04",
+          "start_date": "2026-10-28",
+          "end_date": "2026-10-31",
+          "start_interval": 1536,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAUEDR",
+          "start_date": "2026-10-31",
+          "end_date": "2026-11-02",
+          "start_interval": 1680,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESMR",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-05",
+          "start_interval": 1728,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESAC",
+          "start_date": "2026-11-04",
+          "end_date": "2026-11-07",
+          "start_interval": 1872,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESTA",
+          "start_date": "2026-11-06",
+          "end_date": "2026-11-08",
+          "start_interval": 1968,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESTD",
+          "start_date": "2026-11-08",
+          "end_date": "2026-11-10",
+          "start_interval": 2064,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB0F",
+          "start_date": "2026-11-11",
+          "end_date": "2026-11-13",
+          "start_interval": 2208,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESTE",
+          "start_date": "2026-11-13",
+          "end_date": "2026-11-17",
+          "start_interval": 2304,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB0C",
+          "start_date": "2026-11-14",
+          "end_date": "2026-11-18",
+          "start_interval": 2352,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        }
+      ],
+      "candidate_asset_id": "BAEB0B",
+      "candidate_asset_ids": [
+        "BAEB0B"
+      ],
+      "origin": "SIMULADO",
+      "method": "agenda simulada das usinas participantes"
+    },
+    "RNCMM-500-A": {
+      "point_id": "RNCMM-500-A",
+      "plant_count": 16,
+      "windows": [
+        {
+          "plant_id": "RNEM12",
+          "start_date": "2026-09-30",
+          "end_date": "2026-10-03",
+          "start_interval": 192,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEM14",
+          "start_date": "2026-09-30",
+          "end_date": "2026-10-04",
+          "start_interval": 192,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE04",
+          "start_date": "2026-10-10",
+          "end_date": "2026-10-15",
+          "start_interval": 672,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEM10",
+          "start_date": "2026-10-17",
+          "end_date": "2026-10-20",
+          "start_interval": 1008,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE12",
+          "start_date": "2026-10-23",
+          "end_date": "2026-10-26",
+          "start_interval": 1296,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEM11",
+          "start_date": "2026-10-27",
+          "end_date": "2026-11-01",
+          "start_interval": 1488,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEJ23",
+          "start_date": "2026-10-29",
+          "end_date": "2026-11-03",
+          "start_interval": 1584,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE01",
+          "start_date": "2026-10-31",
+          "end_date": "2026-11-02",
+          "start_interval": 1680,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE02",
+          "start_date": "2026-11-09",
+          "end_date": "2026-11-13",
+          "start_interval": 2112,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE05",
+          "start_date": "2026-11-11",
+          "end_date": "2026-11-14",
+          "start_interval": 2208,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE13",
+          "start_date": "2026-11-17",
+          "end_date": "2026-11-20",
+          "start_interval": 2496,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        }
+      ],
+      "candidate_asset_id": "RNEM13",
+      "candidate_asset_ids": [
+        "RNEM13"
+      ],
+      "origin": "SIMULADO",
+      "method": "agenda simulada das usinas participantes"
+    },
+    "RNMTV-500-A": {
+      "point_id": "RNMTV-500-A",
+      "plant_count": 43,
+      "windows": [
+        {
+          "plant_id": "RNEMV2",
+          "start_date": "2026-09-27",
+          "end_date": "2026-10-02",
+          "start_interval": 48,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEJR4",
+          "start_date": "2026-09-29",
+          "end_date": "2026-10-03",
+          "start_interval": 144,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEBQ2",
+          "start_date": "2026-10-01",
+          "end_date": "2026-10-05",
+          "start_interval": 240,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES18",
+          "start_date": "2026-10-02",
+          "end_date": "2026-10-05",
+          "start_interval": 288,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNECT1",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-05",
+          "start_interval": 336,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES04",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-06",
+          "start_interval": 336,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES26",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-08",
+          "start_interval": 336,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNSDO4",
+          "start_date": "2026-10-05",
+          "end_date": "2026-10-09",
+          "start_interval": 432,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNITA3",
+          "start_date": "2026-10-07",
+          "end_date": "2026-10-11",
+          "start_interval": 528,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEJR5",
+          "start_date": "2026-10-10",
+          "end_date": "2026-10-12",
+          "start_interval": 672,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNSDO1",
+          "start_date": "2026-10-13",
+          "end_date": "2026-10-17",
+          "start_interval": 816,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEJR2",
+          "start_date": "2026-10-15",
+          "end_date": "2026-10-19",
+          "start_interval": 912,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES17",
+          "start_date": "2026-10-19",
+          "end_date": "2026-10-23",
+          "start_interval": 1104,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES14",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-25",
+          "start_interval": 1152,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNITA1",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-25",
+          "start_interval": 1152,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNITA2",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-23",
+          "start_interval": 1200,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNECT2",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-06",
+          "start_interval": 1728,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES27",
+          "start_date": "2026-11-02",
+          "end_date": "2026-11-07",
+          "start_interval": 1776,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEMV4",
+          "start_date": "2026-11-05",
+          "end_date": "2026-11-09",
+          "start_interval": 1920,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNMVS7",
+          "start_date": "2026-11-05",
+          "end_date": "2026-11-07",
+          "start_interval": 1920,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEMV3",
+          "start_date": "2026-11-06",
+          "end_date": "2026-11-08",
+          "start_interval": 1968,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES02",
+          "start_date": "2026-11-07",
+          "end_date": "2026-11-09",
+          "start_interval": 2016,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES03",
+          "start_date": "2026-11-08",
+          "end_date": "2026-11-10",
+          "start_interval": 2064,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNMVS3",
+          "start_date": "2026-11-08",
+          "end_date": "2026-11-10",
+          "start_interval": 2064,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNMVS4",
+          "start_date": "2026-11-11",
+          "end_date": "2026-11-15",
+          "start_interval": 2208,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEMV1",
+          "start_date": "2026-11-13",
+          "end_date": "2026-11-17",
+          "start_interval": 2304,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES01",
+          "start_date": "2026-11-14",
+          "end_date": "2026-11-19",
+          "start_interval": 2352,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES05",
+          "start_date": "2026-11-15",
+          "end_date": "2026-11-18",
+          "start_interval": 2400,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEMV5",
+          "start_date": "2026-11-16",
+          "end_date": "2026-11-21",
+          "start_interval": 2448,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEJR3",
+          "start_date": "2026-11-17",
+          "end_date": "2026-11-22",
+          "start_interval": 2496,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEBQ1",
+          "start_date": "2026-11-18",
+          "end_date": "2026-11-20",
+          "start_interval": 2544,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNSDO2",
+          "start_date": "2026-11-18",
+          "end_date": "2026-11-21",
+          "start_interval": 2544,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNSDO5",
+          "start_date": "2026-11-18",
+          "end_date": "2026-11-22",
+          "start_interval": 2544,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        }
+      ],
+      "candidate_asset_id": "RNMVS2",
+      "candidate_asset_ids": [
+        "RNMVS2"
+      ],
+      "origin": "SIMULADO",
+      "method": "agenda simulada das usinas participantes"
+    },
+    "RNSTL-500-A": {
+      "point_id": "RNSTL-500-A",
+      "plant_count": 67,
+      "windows": [
+        {
+          "plant_id": "RNLZ17",
+          "start_date": "2026-09-26",
+          "end_date": "2026-09-28",
+          "start_interval": 0,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRF10",
+          "start_date": "2026-09-26",
+          "end_date": "2026-09-28",
+          "start_interval": 0,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS17",
+          "start_date": "2026-09-27",
+          "end_date": "2026-10-02",
+          "start_interval": 48,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBVA3",
+          "start_date": "2026-09-27",
+          "end_date": "2026-09-30",
+          "start_interval": 48,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS05",
+          "start_date": "2026-09-28",
+          "end_date": "2026-09-30",
+          "start_interval": 96,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL08",
+          "start_date": "2026-09-29",
+          "end_date": "2026-10-01",
+          "start_interval": 144,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF7",
+          "start_date": "2026-09-30",
+          "end_date": "2026-10-04",
+          "start_interval": 192,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL03",
+          "start_date": "2026-10-01",
+          "end_date": "2026-10-05",
+          "start_interval": 240,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH5",
+          "start_date": "2026-10-02",
+          "end_date": "2026-10-05",
+          "start_interval": 288,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS03",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-08",
+          "start_interval": 336,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS04",
+          "start_date": "2026-10-04",
+          "end_date": "2026-10-08",
+          "start_interval": 384,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH6",
+          "start_date": "2026-10-05",
+          "end_date": "2026-10-07",
+          "start_interval": 432,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL01",
+          "start_date": "2026-10-05",
+          "end_date": "2026-10-09",
+          "start_interval": 432,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF5",
+          "start_date": "2026-10-06",
+          "end_date": "2026-10-09",
+          "start_interval": 480,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH4",
+          "start_date": "2026-10-10",
+          "end_date": "2026-10-12",
+          "start_interval": 672,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH2",
+          "start_date": "2026-10-17",
+          "end_date": "2026-10-21",
+          "start_interval": 1008,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRF11",
+          "start_date": "2026-10-17",
+          "end_date": "2026-10-20",
+          "start_interval": 1008,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH3",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-22",
+          "start_interval": 1152,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF9",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-23",
+          "start_interval": 1152,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCN2",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-25",
+          "start_interval": 1200,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL15",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-25",
+          "start_interval": 1200,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS07",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-24",
+          "start_interval": 1200,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBLG3",
+          "start_date": "2026-10-22",
+          "end_date": "2026-10-26",
+          "start_interval": 1248,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS12",
+          "start_date": "2026-10-23",
+          "end_date": "2026-10-25",
+          "start_interval": 1296,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS02",
+          "start_date": "2026-10-24",
+          "end_date": "2026-10-27",
+          "start_interval": 1344,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBLG4",
+          "start_date": "2026-10-25",
+          "end_date": "2026-10-28",
+          "start_interval": 1392,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF4",
+          "start_date": "2026-10-25",
+          "end_date": "2026-10-28",
+          "start_interval": 1392,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF8",
+          "start_date": "2026-10-26",
+          "end_date": "2026-10-28",
+          "start_interval": 1440,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBLZ3",
+          "start_date": "2026-10-28",
+          "end_date": "2026-10-30",
+          "start_interval": 1536,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS01",
+          "start_date": "2026-10-29",
+          "end_date": "2026-10-31",
+          "start_interval": 1584,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS06",
+          "start_date": "2026-10-29",
+          "end_date": "2026-11-03",
+          "start_interval": 1584,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS11",
+          "start_date": "2026-10-29",
+          "end_date": "2026-11-01",
+          "start_interval": 1584,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL17",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-04",
+          "start_interval": 1728,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL20",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-03",
+          "start_interval": 1728,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL04",
+          "start_date": "2026-11-02",
+          "end_date": "2026-11-06",
+          "start_interval": 1776,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF3",
+          "start_date": "2026-11-02",
+          "end_date": "2026-11-05",
+          "start_interval": 1776,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS14",
+          "start_date": "2026-11-04",
+          "end_date": "2026-11-09",
+          "start_interval": 1872,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBVA1",
+          "start_date": "2026-11-04",
+          "end_date": "2026-11-07",
+          "start_interval": 1872,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL05",
+          "start_date": "2026-11-06",
+          "end_date": "2026-11-10",
+          "start_interval": 1968,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS12",
+          "start_date": "2026-11-11",
+          "end_date": "2026-11-13",
+          "start_interval": 2208,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS06",
+          "start_date": "2026-11-12",
+          "end_date": "2026-11-16",
+          "start_interval": 2256,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS04",
+          "start_date": "2026-11-13",
+          "end_date": "2026-11-17",
+          "start_interval": 2304,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS10",
+          "start_date": "2026-11-15",
+          "end_date": "2026-11-19",
+          "start_interval": 2400,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCN3",
+          "start_date": "2026-11-16",
+          "end_date": "2026-11-18",
+          "start_interval": 2448,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS02",
+          "start_date": "2026-11-16",
+          "end_date": "2026-11-18",
+          "start_interval": 2448,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS03",
+          "start_date": "2026-11-16",
+          "end_date": "2026-11-20",
+          "start_interval": 2448,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH1",
+          "start_date": "2026-11-21",
+          "end_date": "2026-11-24",
+          "start_interval": 2688,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        }
+      ],
+      "candidate_asset_id": "PBLZ3",
+      "candidate_asset_ids": [
+        "PBLZ3"
+      ],
+      "origin": "SIMULADO",
+      "method": "agenda simulada das usinas participantes"
+    }
+  }
+}

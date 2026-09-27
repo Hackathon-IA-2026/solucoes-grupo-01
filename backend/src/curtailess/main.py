@@ -1,18 +1,56 @@
 import hashlib
+import logging
 import uuid
 from datetime import UTC, date, datetime
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from mangum import Mangum
 
 from . import __version__
 from .artifacts import create_artifact_repository, serialize_report_body
 from .bedrock import BedrockOptimizationError, optimize_with_bedrock
+from .canonical import canonical_json as _canonical_json
 from .config import get_settings
 from .data_access import create_exposure_repository
+from .decision_operations import build_rank_maintenance, build_screen_bess
+from .exposure_narrative_repository import (
+    create_exposure_narrative_repository,
+    resolve_exposure_narrative,
+)
+from .exposure_view import (
+    UnknownExposureAssetError,
+    build_exposure_view,
+    list_exposure_assets,
+)
+from .maintenance_decisions import (
+    DecisionPersistenceUnavailable,
+    IdempotencyConflict,
+    create_maintenance_decision,
+    create_maintenance_decision_repository,
+)
+from .plant_state import build_plant_state, create_plant_state_repository
+from .provenance import build_evidence_id as build_evidence_id
+from .provenance import create_issued_provenance_repository
+from .provenance_service import (
+    field_provenance as _field_provenance,
+)
+from .provenance_service import (
+    persist_operation as _persist_operation,
+)
+from .provenance_service import (
+    resolve_server_evidence as _resolve_server_evidence_impl,
+)
+from .response_assembly import (
+    build_exposure_response,
+    build_historical_windows_response,
+    materialized_asset,
+)
 from .schemas import (
+    MAX_PLANNING_DAYS,
     ApiInfo,
     Asset,
     AssetList,
@@ -20,40 +58,87 @@ from .schemas import (
     BessScreenResponse,
     CurtailmentRecommendation,
     CurtailmentScenario,
+    DataOrigin,
     DataQualityResponse,
+    ExposureAssetCatalog,
+    ExposureNarrative,
     ExposureResponse,
+    ExposureViewResponse,
     HealthResponse,
-    HistoricalWindow,
     HistoricalWindowsResponse,
+    MaintenanceDecisionRequest,
+    MaintenanceDecisionResponse,
     MaintenanceRankRequest,
     MaintenanceRankResponse,
     ModelRunResponse,
-    MonetaryEvidence,
     NumericEvidence,
     Period,
+    PlantStateResponse,
     PointContextResponse,
     ProvenanceResponse,
-    RankedMaintenanceWindow,
     ReportCreateRequest,
     ReportFileResponse,
     ReportResponse,
 )
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 repository = create_exposure_repository(settings.exposure_table, settings.aws_region)
 artifact_repository = create_artifact_repository(
     settings.scenarios_table, settings.data_bucket, settings.aws_region
 )
-
-DEMO_ASSET = Asset(
-    asset_id="demo-wind-ne-001",
-    name="Ativo eólico de demonstração",
-    technology="wind",
-    capacity_mw=100.0,
-    ons_group="Conjunto anonimizado NE-001",
-    connection_point="Ponto cadastral anonimizado NE-001",
-    data_mode="demo",
+issued_provenance_repository = create_issued_provenance_repository(
+    settings.scenarios_table, settings.aws_region
 )
+plant_state_repository = create_plant_state_repository(
+    settings.scenarios_table, settings.aws_region
+)
+maintenance_decision_repository = create_maintenance_decision_repository(
+    settings.scenarios_table, settings.aws_region
+)
+exposure_narrative_repository = create_exposure_narrative_repository(
+    settings.exposure_narratives_table, settings.aws_region
+)
+
+
+def _json_context(kind: str, **values: object) -> str:
+    return _canonical_json({"kind": kind, **values})
+
+
+_CONSTRAINED_OFF_DATASETS = (
+    "restricao_coff_eolica_tm",
+    "restricao_coff_fotovoltaica_tm",
+)
+
+
+def _point_context_datasets(records: list[dict]) -> list[str]:
+    datasets = set()
+    for record in records:
+        source_key = record.get("source_key", "")
+        dataset = next(
+            (
+                candidate
+                for candidate in _CONSTRAINED_OFF_DATASETS
+                if f"/{candidate}/" in f"/{source_key}/"
+            ),
+            None,
+        )
+        if dataset is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Contexto contém fonte que não é constrained-off eólica/fotovoltaica.",
+            )
+        datasets.add(dataset)
+    return sorted(datasets)
+
+
+def _point_context_source(records: list[dict]) -> str:
+    return " + ".join(f"ONS/{dataset}" for dataset in _point_context_datasets(records))
+
+
+def _resolve_server_evidence(evidence_id: str):
+    return _resolve_server_evidence_impl(evidence_id, issued_provenance_repository)
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -68,6 +153,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Starlette cannot serialize NaN/Infinity echoed in Pydantic's error `input` field.
+    errors = [
+        {key: value for key, value in error.items() if key != "input"} for error in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 @app.get("/", response_model=ApiInfo, tags=["system"])
@@ -89,27 +183,55 @@ def health() -> HealthResponse:
     )
 
 
-def get_demo_asset(asset_id: str) -> Asset:
-    if asset_id != DEMO_ASSET.asset_id:
-        raise HTTPException(status_code=404, detail="Ativo não encontrado.")
-    return DEMO_ASSET
-
-
-def materialized_asset(item: dict) -> Asset:
-    return Asset(
-        asset_id=item["asset_id"],
-        name=item["asset_name"],
-        technology="wind",
-        capacity_mw=None,
-        ons_group=item["asset_id"],
-        connection_point=item["point_id"],
-        data_mode="ons_materialized",
+def _persist_asset(item: dict, asset: Asset) -> None:
+    _persist_operation(
+        issued_provenance_repository,
+        operation="materialized_asset",
+        request_value={"asset_id": asset.asset_id, "period": item["period"]},
+        provenances=list(asset.field_provenance.values()),
+        source_records=[item],
     )
 
 
 @app.get("/v1/assets", response_model=AssetList, tags=["assets"])
 def list_assets() -> AssetList:
-    return AssetList(items=[materialized_asset(item) for item in repository.list_assets()])
+    assets = []
+    for item in repository.list_assets():
+        asset = materialized_asset(item)
+        _persist_asset(item, asset)
+        assets.append(asset)
+    return AssetList(items=assets)
+
+
+@app.get(
+    "/v1/exposure/assets",
+    response_model=ExposureAssetCatalog,
+    tags=["exposure"],
+)
+def get_exposure_assets() -> ExposureAssetCatalog:
+    return list_exposure_assets(repository)
+
+
+@app.get(
+    "/v1/assets/{asset_id}/exposure-view",
+    response_model=ExposureViewResponse,
+    response_model_by_alias=True,
+    tags=["exposure"],
+)
+def get_exposure_view(asset_id: str) -> ExposureViewResponse:
+    try:
+        deterministic_view = build_exposure_view(asset_id, repository)
+    except UnknownExposureAssetError as exc:
+        raise HTTPException(status_code=404, detail="Ativo de Exposição não encontrado.") from exc
+    narrative: ExposureNarrative | None = None
+    try:
+        narrative = resolve_exposure_narrative(deterministic_view, exposure_narrative_repository)
+    except Exception:
+        # A storage or cache failure must never surface to the customer: the deterministic
+        # metrics, charts and fallback text stay available without any technical detail.
+        logger.exception("Narrativa armazenada indisponível para %s", asset_id)
+        narrative = None
+    return build_exposure_view(asset_id, repository, narrative)
 
 
 @app.get("/v1/assets/{asset_id}", response_model=Asset, tags=["assets"])
@@ -117,7 +239,29 @@ def get_asset(asset_id: str) -> Asset:
     item = repository.get_asset(asset_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Ativo não encontrado.")
-    return materialized_asset(item)
+    asset = materialized_asset(item)
+    _persist_asset(item, asset)
+    return asset
+
+
+@app.get(
+    "/v1/assets/{asset_id}/plant-state",
+    response_model=PlantStateResponse,
+    tags=["assets"],
+)
+def get_plant_state(asset_id: str, as_of: datetime) -> PlantStateResponse:
+    if as_of.tzinfo is None:
+        raise HTTPException(status_code=422, detail="as_of requer fuso horário.")
+    try:
+        return build_plant_state(
+            asset_id,
+            as_of,
+            repository,
+            plant_state_repository,
+            max_forecast_age_hours=settings.public_data_max_age_hours,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado.") from exc
 
 
 @app.get(
@@ -158,24 +302,67 @@ def get_data_quality(asset_id: str) -> DataQualityResponse:
     tags=["audit"],
 )
 def get_provenance(provenance_id: str) -> ProvenanceResponse:
-    if not provenance_id.startswith("sha256:"):
-        raise HTTPException(status_code=422, detail="provenance_id deve usar o prefixo sha256:.")
-    source_sha256 = provenance_id.removeprefix("sha256:")
-    item = repository.get_provenance(source_sha256)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Proveniência não encontrada.")
-    limitation = "Linhagem da materialização mensal; o manifesto bruto permanece privado no S3."
+    identity, origin, classification, items, provenance = _resolve_server_evidence(provenance_id)
+    source_hashes = identity["sources"]
+    item = items[0]
+    source_key = provenance.source_key or item["source_key"]
+    dataset = next(
+        (
+            dataset_id
+            for dataset_id in (
+                "capacidade-geracao",
+                "usina_conjunto",
+                "restricao_coff_eolica_tm",
+                "restricao_coff_fotovoltaica_tm",
+                "programacao_x_previsao",
+                "geracao_usina_2_ho",
+            )
+            if f"/{dataset_id}/" in f"/{source_key}"
+        ),
+        "restricao_coff_eolica_tm",
+    )
+    source = f"ONS/{dataset}"
+    method = item.get("capacity_method", item.get("method", identity["method"]))
+    if identity["field"] in {"anonymized_entity_count", "simultaneity_rate"}:
+        datasets = _point_context_datasets(items)
+        dataset = " + ".join(datasets)
+        source = " + ".join(f"ONS/{value}" for value in datasets)
+        method = identity["method"]
+    limitation = "Linhagem de campo da materialização; o manifesto bruto permanece privado no S3."
+    asset_ids = sorted(
+        {
+            asset_id
+            for source_item in items
+            for asset_id in source_item.get("asset_ids", [source_item["asset_id"]])
+        }
+    )
     return ProvenanceResponse(
         provenance_id=provenance_id,
-        classification="calculado",
-        source="ONS/restricao_coff_eolica_tm",
-        source_bucket=item.get("source_bucket"),
-        source_key=item["source_key"],
-        source_sha256=source_sha256,
-        data_version=item["period"],
-        method=item["method"],
-        asset_ids=item.get("asset_ids", [item["asset_id"]]),
-        limitations=[limitation],
+        evidence_id=provenance_id,
+        classification=classification,
+        origin=provenance.origin,
+        dataset=dataset,
+        source=source,
+        source_bucket=item.get("source_bucket", "ons-aws-prod-opendata"),
+        source_key=source_key,
+        source_sha256=provenance.source_sha256 or source_hashes[0],
+        source_sha256s=source_hashes,
+        data_version=(
+            item.get("capacity_data_version", "snapshot")
+            if dataset == "capacidade-geracao"
+            else ",".join(sorted({source_item["period"] for source_item in items}))
+        ),
+        method=method,
+        method_version=identity["method"],
+        field_name=identity["field"],
+        observed_at=provenance.observed_at,
+        effective_at=provenance.effective_at,
+        valid_from=provenance.valid_from,
+        valid_to=provenance.valid_to,
+        asset_ids=asset_ids,
+        parent_evidence_ids=list(provenance.parent_evidence_ids),
+        limitations=provenance.limitations or [limitation],
+        provenance=provenance,
     )
 
 
@@ -204,33 +391,15 @@ def get_asset_exposure(
     if exposure is None:
         raise HTTPException(status_code=404, detail="Sem dados materializados para o período.")
 
-    limitation = (
-        "Agregado mensal materializado de dados públicos do ONS; períodos mensais "
-        "sobrepostos são incluídos integralmente."
+    response, provenance = build_exposure_response(asset_id, start, end, reason, exposure)
+    _persist_operation(
+        issued_provenance_repository,
+        operation="exposure",
+        request_value={"asset_id": asset_id, "start": start, "end": end, "reason": reason},
+        provenances=[provenance],
+        source_records=exposure["items"],
     )
-    first_item = exposure["items"][0]
-    data_version = ",".join(exposure["periods"])
-    provenance_id = "sha256:" + ",".join(exposure["source_sha256s"])
-    return ExposureResponse(
-        asset_id=asset_id,
-        perspective_type="historical_observed",
-        data_mode="ons_materialized",
-        granularity="period",
-        reason=reason,
-        technology="wind",
-        total_curtailed_energy=NumericEvidence(
-            value=float(exposure["curtailed_mwh"]),
-            unit="MWh",
-            period=Period(start=start, end=end),
-            source="ONS/restricao_coff_eolica_tm",
-            data_version=data_version,
-            method=first_item["method"],
-            value_status="calculado",
-            limitations=[limitation],
-            provenance_id=provenance_id,
-        ),
-        limitations=[limitation],
-    )
+    return response
 
 
 @app.get(
@@ -239,11 +408,15 @@ def get_asset_exposure(
     tags=["exposure"],
 )
 def get_asset_point_context(asset_id: str) -> PointContextResponse:
-    if repository.get_asset(asset_id) is None:
+    asset_item = repository.get_asset(asset_id)
+    if asset_item is None:
         raise HTTPException(status_code=404, detail="Ativo não encontrado.")
-    context = repository.get_point_context(asset_id)
+    context = repository.get_point_context(asset_id, asset_item)
     if context is None:
         raise HTTPException(status_code=404, detail="Contexto materializado não encontrado.")
+    source_records = context["items"]
+    if len(context["source_sha256s"]) > 32 or len(source_records) > 32:
+        raise HTTPException(status_code=422, detail="Contexto excede o limite de 32 fontes.")
     period = Period(
         start=date.fromisoformat(context["period_start"]),
         end=date.fromisoformat(context["period_end"]),
@@ -257,8 +430,48 @@ def get_asset_point_context(asset_id: str) -> PointContextResponse:
         if context["entity_count"]
         else 0
     )
-    provenance_id = "sha256:" + ",".join(context["source_sha256s"])
-    return PointContextResponse(
+    source = _point_context_source(source_records)
+    record_identities = [
+        {
+            "asset_id": item["asset_id"],
+            "period": item["period"],
+            "source_key": item["source_key"],
+            "source_sha256": item["source_sha256"],
+        }
+        for item in source_records
+    ]
+    provenance_context = _json_context(
+        "point_context",
+        asset_id=asset_id,
+        connection_point=context["connection_point"],
+        period_start=period.start,
+        period_end=period.end,
+        records=record_identities,
+    )
+    entity_method = "distinct_latest_constrained_off_assets_at_point_v1"
+    entity_provenance = _field_provenance(
+        field_name="anonymized_entity_count",
+        method_version=entity_method,
+        context=provenance_context,
+        origin=DataOrigin.PROXY_CALCULADO,
+        limitations=[limitation],
+        source_hashes=context["source_sha256s"],
+        source_items=source_records,
+        source_item=asset_item,
+        source_uri=f"curtailess://assets/{asset_id}/point-context",
+    )
+    simultaneity_provenance = _field_provenance(
+        field_name="simultaneity_rate",
+        method_version="historical_simultaneity_v1",
+        context=provenance_context,
+        origin=DataOrigin.PROXY_CALCULADO,
+        limitations=[limitation],
+        source_hashes=context["source_sha256s"],
+        source_items=source_records,
+        source_item=asset_item,
+        source_uri=f"curtailess://assets/{asset_id}/point-context",
+    )
+    response = PointContextResponse(
         asset_id=asset_id,
         connection_point=context["connection_point"],
         data_mode="ons_materialized",
@@ -266,27 +479,39 @@ def get_asset_point_context(asset_id: str) -> PointContextResponse:
             value=context["entity_count"],
             unit="entities",
             period=period,
-            source="ONS/usina_conjunto",
+            source=source,
             data_version=context["data_version"],
-            method="point_context_v1",
+            method=entity_method,
             value_status="calculado",
+            origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
-            provenance_id=provenance_id,
+            provenance_id=entity_provenance.evidence_id,
+            provenance=entity_provenance,
         ),
         simultaneity_rate=NumericEvidence(
             value=simultaneity_rate,
             unit="%",
             period=period,
-            source="ONS/restricao_coff_eolica_tm",
+            source=source,
             data_version=context["data_version"],
             method="historical_simultaneity_v1",
             value_status="calculado",
+            origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
-            provenance_id=provenance_id,
+            provenance_id=simultaneity_provenance.evidence_id,
+            provenance=simultaneity_provenance,
         ),
         physical_limit_available=False,
         limitations=[limitation],
     )
+    _persist_operation(
+        issued_provenance_repository,
+        operation="point_context",
+        request_value={"asset_id": asset_id, "data_version": context["data_version"]},
+        provenances=[entity_provenance, simultaneity_provenance],
+        source_records=source_records,
+    )
+    return response
 
 
 @app.get(
@@ -303,128 +528,92 @@ def get_asset_windows(
 ) -> HistoricalWindowsResponse:
     if start > end:
         raise HTTPException(status_code=422, detail="start deve ser anterior ou igual a end.")
-    if duration_hours <= 0:
-        raise HTTPException(status_code=422, detail="duration_hours deve ser positivo.")
-    if repository.get_asset(asset_id) is None:
+    if (end - start).days + 1 > MAX_PLANNING_DAYS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Período de planejamento excede {MAX_PLANNING_DAYS} dias.",
+        )
+    if duration_hours <= 0 or duration_hours > MAX_PLANNING_DAYS * 24:
+        raise HTTPException(
+            status_code=422,
+            detail=f"duration_hours deve estar entre 1 e {MAX_PLANNING_DAYS * 24}.",
+        )
+    asset_item = repository.get_asset(asset_id)
+    if asset_item is None:
         raise HTTPException(status_code=404, detail="Ativo não encontrado.")
     materialized_windows = repository.get_historical_windows(
         asset_id, start, end, duration_hours, reason
     )
     if not materialized_windows:
         raise HTTPException(status_code=404, detail="Sem sinal histórico materializado.")
-    limitation = (
-        "Sinal derivado da taxa mensal histórica materializada; não é previsão "
-        "operacional ex ante nem preserva a distribuição intramensal."
+    response = build_historical_windows_response(
+        asset_id, duration_hours, reason, materialized_windows
     )
-    return HistoricalWindowsResponse(
-        asset_id=asset_id,
-        perspective_type="historical_seasonal",
-        validation_status="historical_signal",
-        data_mode="ons_materialized",
-        duration_hours=duration_hours,
-        reason=reason,
-        windows=[
-            HistoricalWindow(
-                start=window["start"],
-                end=window["end"],
-                expected_curtailed_energy=NumericEvidence(
-                    value=window["curtailed_mwh"],
-                    unit="MWh",
-                    period=Period(start=window["start"].date(), end=window["end"].date()),
-                    source="ONS/restricao_coff_eolica_tm",
-                    data_version=window["period"],
-                    method=window["method"],
-                    value_status="calculado",
-                    limitations=[limitation],
-                    provenance_id=f"sha256:{window['source_sha256']}",
-                ),
-            )
-            for window in materialized_windows
-        ],
-        limitations=[limitation],
+    _persist_operation(
+        issued_provenance_repository,
+        operation="historical_windows",
+        request_value={
+            "asset_id": asset_id,
+            "start": start,
+            "end": end,
+            "duration_hours": duration_hours,
+            "reason": reason,
+        },
+        provenances=[window.expected_curtailed_energy.provenance for window in response.windows],
+        source_records=[window["source_record"] for window in materialized_windows],
     )
+    return response
 
 
 @app.post(
     "/v1/maintenance/rank",
     response_model=MaintenanceRankResponse,
+    response_model_exclude_none=True,
     tags=["maintenance"],
 )
 def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse:
-    if repository.get_asset(request.asset_id) is None:
-        raise HTTPException(status_code=404, detail="Ativo não encontrado.")
-    if request.start > request.end:
-        raise HTTPException(status_code=422, detail="start deve ser anterior ou igual a end.")
+    return build_rank_maintenance(request, repository, issued_provenance_repository)
 
-    baseline = request.baseline_window_start
-    if baseline.tzinfo is None:
-        baseline = baseline.replace(tzinfo=UTC)
-    period_start = datetime.combine(request.start, datetime.min.time(), tzinfo=UTC)
-    period_end = datetime.combine(request.end, datetime.max.time(), tzinfo=UTC)
-    if not period_start <= baseline <= period_end:
-        raise HTTPException(status_code=422, detail="Janela-base fora do período informado.")
 
-    candidates = repository.get_historical_windows(
-        request.asset_id,
-        request.start,
-        request.end,
-        request.duration_hours,
-    )
-    if not candidates:
-        raise HTTPException(status_code=404, detail="Sem sinal histórico materializado.")
-
-    limitation = (
-        "Ranking baseado em taxa mensal histórica materializada do ONS: não é previsão "
-        "operacional e não preserva a distribuição intramensal; não coordena nem revela "
-        "manutenções de terceiros."
-    )
-    candidates.sort(key=lambda item: item["curtailed_mwh"], reverse=True)
-    baseline_candidate = min(
-        candidates,
-        key=lambda item: abs(item["start"] - baseline),
-    )
-    baseline_energy = baseline_candidate["curtailed_mwh"]
-
-    ranked_windows = []
-    for rank, candidate in enumerate(candidates, start=1):
-        energy = candidate["curtailed_mwh"]
-        ranked_windows.append(
-            RankedMaintenanceWindow(
-                rank=rank,
-                start=candidate["start"],
-                end=candidate["end"],
-                expected_curtailed_energy=NumericEvidence(
-                    value=energy,
-                    unit="MWh",
-                    period=Period(
-                        start=candidate["start"].date(),
-                        end=candidate["end"].date(),
-                    ),
-                    source="ONS/restricao_coff_eolica_tm",
-                    data_version=candidate["period"],
-                    method=candidate["method"],
-                    value_status="calculado",
-                    limitations=[limitation],
-                    provenance_id=f"sha256:{candidate['source_sha256']}",
-                ),
-                opportunity_cost=MonetaryEvidence(
-                    value=energy * request.energy_price.value,
-                    unit="BRL",
-                    source=request.energy_price.source,
-                    value_status="calculado",
-                ),
-                difference_from_baseline_mwh=energy - baseline_energy,
-            )
+@app.post(
+    "/v1/maintenance/decisions",
+    response_model=MaintenanceDecisionResponse,
+    tags=["maintenance"],
+)
+def post_maintenance_decision(
+    request: MaintenanceDecisionRequest,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=8, max_length=128),
+    ],
+) -> MaintenanceDecisionResponse:
+    try:
+        return create_maintenance_decision(
+            request,
+            idempotency_key,
+            exposure_repository=repository,
+            plant_state_repository=plant_state_repository,
+            decision_repository=maintenance_decision_repository,
+            settings=settings,
         )
+    except IdempotencyConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except DecisionPersistenceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado.") from exc
 
-    return MaintenanceRankResponse(
-        asset_id=request.asset_id,
-        ranking_mode="historical_prototype",
-        data_mode="ons_materialized",
-        baseline_window_start=baseline,
-        ranked_windows=ranked_windows,
-        limitations=[limitation],
-    )
+
+@app.get(
+    "/v1/maintenance/decisions/{decision_id}",
+    response_model=MaintenanceDecisionResponse,
+    tags=["maintenance"],
+)
+def get_maintenance_decision(decision_id: str) -> MaintenanceDecisionResponse:
+    response = maintenance_decision_repository.get_decision(decision_id)
+    if response is None:
+        raise HTTPException(status_code=404, detail="Decisão não encontrada.")
+    return response
 
 
 @app.post(
@@ -433,40 +622,7 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
     tags=["bess"],
 )
 def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
-    item = repository.get_asset(request.asset_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Ativo não encontrado.")
-    residual_exposure = float(item["curtailed_mwh"])
-    annual_energy_capacity = (
-        request.energy_mwh * request.cycles_per_year * request.round_trip_efficiency
-    )
-    absorbable = min(residual_exposure, annual_energy_capacity)
-    annual_benefit = absorbable * request.energy_price_brl_mwh
-    annual_net_benefit = annual_benefit - request.annualized_cost_brl
-    limitation = (
-        "Triagem determinística sobre exposição histórica: não é dimensionamento, previsão "
-        "de despacho ou garantia de corte evitado."
-    )
-    return BessScreenResponse(
-        asset_id=request.asset_id,
-        maintenance_result_id=request.maintenance_result_id,
-        screening_mode="historical_deterministic",
-        data_mode="ons_materialized",
-        residual_exposure_mwh=round(residual_exposure, 6),
-        technically_absorbable_mwh=round(absorbable, 6),
-        annual_benefit_brl=round(annual_benefit, 2),
-        annual_net_benefit_brl=round(annual_net_benefit, 2),
-        preliminary_viable=annual_net_benefit > 0,
-        missing_data=[
-            "soc_cronológico",
-            "degradação",
-            "disponibilidade",
-            "limite_de_conexão",
-            "preço_horário",
-            "fronteira_de_medição",
-        ],
-        limitations=[limitation],
-    )
+    return build_screen_bess(request, repository, issued_provenance_repository)
 
 
 @app.get(
