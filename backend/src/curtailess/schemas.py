@@ -1251,23 +1251,39 @@ class ExposureQuality(BaseModel):
     duplicate_count: ExposureDisplayMetric
 
 
+ExposureNarrativeGenerationMode = Literal["bedrock", "cached_bedrock", "deterministic_fallback"]
+
+
+class ExposureNarrativeSection(BaseModel):
+    """One Exposure interpretation block with its internal generation mode."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    paragraphs: tuple[BoundedText, ...] = Field(min_length=1, max_length=4)
+    generation_mode: ExposureNarrativeGenerationMode
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_paragraph_list(cls, value: Any) -> Any:
+        # Transitional compatibility: internal callers still build a flat paragraph list.
+        # The canonical persisted shape is always the section object below.
+        if isinstance(value, (list, tuple)):
+            return {
+                "paragraphs": list(value),
+                "generation_mode": "deterministic_fallback",
+            }
+        return value
+
+
 class ExposureNarrative(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    secao_ativo: tuple[BoundedText, ...] = Field(alias="secao-ativo", min_length=1, max_length=4)
-    secao_resumo: tuple[BoundedText, ...] = Field(alias="secao-resumo", min_length=1, max_length=4)
-    secao_previsao: tuple[BoundedText, ...] = Field(
-        alias="secao-previsao", min_length=1, max_length=4
-    )
-    secao_razao_origem: tuple[BoundedText, ...] = Field(
-        alias="secao-razao-origem", min_length=1, max_length=4
-    )
-    secao_recorrencia: tuple[BoundedText, ...] = Field(
-        alias="secao-recorrencia", min_length=1, max_length=4
-    )
-    secao_qualidade: tuple[BoundedText, ...] = Field(
-        alias="secao-qualidade", min_length=1, max_length=4
-    )
+    secao_ativo: ExposureNarrativeSection = Field(alias="secao-ativo")
+    secao_resumo: ExposureNarrativeSection = Field(alias="secao-resumo")
+    secao_previsao: ExposureNarrativeSection = Field(alias="secao-previsao")
+    secao_razao_origem: ExposureNarrativeSection = Field(alias="secao-razao-origem")
+    secao_recorrencia: ExposureNarrativeSection = Field(alias="secao-recorrencia")
+    secao_qualidade: ExposureNarrativeSection = Field(alias="secao-qualidade")
 
 
 class ExposureViewResponse(BaseModel):
