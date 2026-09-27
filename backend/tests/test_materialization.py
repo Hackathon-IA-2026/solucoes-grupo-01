@@ -1,4 +1,9 @@
 import json
+import shutil
+from pathlib import Path
+
+import duckdb
+import pytest
 
 from curtailess.materialization import aggregate_exposure_rows, materialization_handler
 
@@ -61,15 +66,75 @@ def test_aggregate_exposure_rows_uses_apurada_only_when_limited() -> None:
     ]
 
 
+@pytest.fixture
+def ons_parquet(tmp_path: Path) -> Path:
+    path = tmp_path / "curtailess-ons-2026-08.parquet"
+    with duckdb.connect() as connection:
+        connection.execute(
+            """
+            CREATE TABLE ons_fixture (
+                id_ons VARCHAR,
+                nom_usina VARCHAR,
+                id_pontoconexao VARCHAR,
+                nom_pontoconexao VARCHAR,
+                id_estado VARCHAR,
+                din_instante TIMESTAMP,
+                val_geracaolimitada DOUBLE,
+                val_geracaonaorealizadaapurada DOUBLE,
+                cod_razaorestricao VARCHAR
+            )
+            """
+        )
+        connection.executemany(
+            "INSERT INTO ons_fixture VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "CJU_RSSVPA",
+                    "Conjunto Serra Verde",
+                    "PONTO_1",
+                    "Ponto Um",
+                    "RN",
+                    "2026-08-01T00:00:00",
+                    80.0,
+                    20.0,
+                    "CNF",
+                ),
+                (
+                    "CJU_RSSVPA",
+                    "Conjunto Serra Verde",
+                    "PONTO_1",
+                    "Ponto Um",
+                    "RN",
+                    "2026-08-01T00:30:00",
+                    70.0,
+                    10.0,
+                    "REL",
+                ),
+                (
+                    "CJU_TESTE",
+                    "Conjunto Teste",
+                    "PONTO_2",
+                    "Ponto Dois",
+                    "BA",
+                    "2026-08-01T00:00:00",
+                    None,
+                    50.0,
+                    None,
+                ),
+            ],
+        )
+        connection.execute("COPY ons_fixture TO ? (FORMAT PARQUET)", [str(path)])
+    return path
+
+
 class FakeS3:
+    def __init__(self, source_path: Path):
+        self.source_path = source_path
+
     def download_file(self, bucket, key, filename):
         assert bucket == "data-bucket"
         assert key.endswith("RESTRICAO_COFF_EOLICA_2026_08.parquet")
-        with (
-            open(filename, "wb") as destination,
-            open("/tmp/curtailess-ons-2026-08.parquet", "rb") as source,
-        ):
-            destination.write(source.read())
+        shutil.copyfile(self.source_path, filename)
 
     def put_object(self, **kwargs):
         self.curated = kwargs
@@ -96,8 +161,8 @@ class FakeTable:
         return self.Batch(self)
 
 
-def test_materialization_handler_validates_and_persists_real_month() -> None:
-    s3 = FakeS3()
+def test_materialization_handler_validates_and_persists_month(ons_parquet: Path) -> None:
+    s3 = FakeS3(ons_parquet)
     table = FakeTable()
     result = materialization_handler(
         {
@@ -113,13 +178,14 @@ def test_materialization_handler_validates_and_persists_real_month() -> None:
         table=table,
     )
     assert result["validation_status"] == "valid"
-    assert result["row_count"] == 227664
-    assert result["asset_count"] == 153
-    assert len(table.items) == 153
+    assert result["row_count"] == 3
+    assert result["asset_count"] == 2
+    assert len(table.items) == 2
     top = max(table.items, key=lambda item: item["curtailed_mwh"])
     assert top["asset_id"] == "CJU_RSSVPA"
+    assert top["curtailed_mwh"] == 15
     assert top["data_mode"] == "ons_materialized"
     assert top["source_sha256"] == "source-sha256"
     curated = json.loads(s3.curated["Body"])
-    assert curated["row_count"] == 227664
-    assert curated["asset_count"] == 153
+    assert curated["row_count"] == 3
+    assert curated["asset_count"] == 2
