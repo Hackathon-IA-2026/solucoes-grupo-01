@@ -124,6 +124,22 @@ Resources:
         deadLetterTargetArn: !GetAtt IngestionDeadLetterQueue.Arn
         maxReceiveCount: 3
 
+  MaterializationDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  MaterializationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 360
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt MaterializationDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
   IngestionLedgerTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -203,7 +219,7 @@ Resources:
       Environment:
         Variables:
           DATA_BUCKET: !Ref DataBucket
-          MATERIALIZATION_FUNCTION: !Ref ExposureMaterializationFunction
+          MATERIALIZATION_QUEUE_URL: !Ref MaterializationQueue
           INGESTION_LEDGER_TABLE: !Ref IngestionLedgerTable
           INGESTION_LEASE_SECONDS: "300"
       Policies:
@@ -211,17 +227,14 @@ Resources:
             BucketName: !Ref DataBucket
         - DynamoDBCrudPolicy:
             TableName: !Ref IngestionLedgerTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt MaterializationQueue.QueueName
         - Statement:
             - Sid: ReadPublicOnsDataset
               Effect: Allow
               Action:
                 - s3:GetObject
               Resource: !Sub arn:${AWS::Partition}:s3:::${OnsSourceBucket}/dataset/*
-            - Sid: StartExposureMaterialization
-              Effect: Allow
-              Action:
-                - lambda:InvokeFunction
-              Resource: !GetAtt ExposureMaterializationFunction.Arn
       Events:
         IngestionQueueEvent:
           Type: SQS
@@ -250,12 +263,25 @@ Resources:
         Size: 1024
       Environment:
         Variables:
+          DATA_BUCKET: !Ref DataBucket
           EXPOSURE_TABLE: !Ref ExposureTable
+          INGESTION_LEDGER_TABLE: !Ref IngestionLedgerTable
+          INGESTION_LEASE_SECONDS: "300"
       Policies:
         - S3CrudPolicy:
             BucketName: !Ref DataBucket
         - DynamoDBCrudPolicy:
             TableName: !Ref ExposureTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref IngestionLedgerTable
+      Events:
+        MaterializationQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt MaterializationQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
 
   ExposureMaterializationLogGroup:
     Type: AWS::Logs::LogGroup
@@ -378,6 +404,12 @@ Outputs:
   IngestionDeadLetterQueueUrl:
     Description: URL da fila de mensagens com falha
     Value: !Ref IngestionDeadLetterQueue
+  MaterializationQueueUrl:
+    Description: URL da fila privada de materializacao ONS
+    Value: !Ref MaterializationQueue
+  MaterializationDeadLetterQueueUrl:
+    Description: URL da fila de materializacoes com falha
+    Value: !Ref MaterializationDeadLetterQueue
   IngestionDiscoveryFunctionName:
     Description: Lambda de descoberta do dataset ONS
     Value: !Ref IngestionDiscoveryFunction

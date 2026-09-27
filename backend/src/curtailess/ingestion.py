@@ -629,7 +629,7 @@ def copy_handler(
     context: Any,
     *,
     s3_client: Any | None = None,
-    lambda_client: Any | None = None,
+    sqs_client: Any | None = None,
     environment: dict[str, str] | None = None,
     now: Any | None = None,
     ledger: IngestionLedger | None = None,
@@ -639,9 +639,9 @@ def copy_handler(
     state = _ledger_from_environment(env, ledger)
     copy_owner = _request_owner(context, "copy")
     lease_seconds = _lease_seconds(env)
-    function_client = lambda_client
-    if function_client is None and env.get("MATERIALIZATION_FUNCTION"):
-        function_client = boto3.client("lambda", region_name="us-west-2")
+    materialization_queue = sqs_client
+    if materialization_queue is None and env.get("MATERIALIZATION_QUEUE_URL"):
+        materialization_queue = boto3.client("sqs", region_name="us-west-2")
     clock = now or (lambda: datetime.now(UTC))
     failures = []
 
@@ -728,20 +728,22 @@ def copy_handler(
                         raise RuntimeError("content-addressed upload could not be verified")
 
             manifest_key = _immutable_manifest_key(message["dataset"], fingerprint)
-            if function_client is not None and env.get("MATERIALIZATION_FUNCTION"):
-                function_client.invoke(
-                    FunctionName=env["MATERIALIZATION_FUNCTION"],
-                    InvocationType="Event",
-                    Payload=json.dumps(
-                        {
-                            "bucket": env["DATA_BUCKET"],
-                            "key": raw_key,
-                            "sha256": digest,
-                            "manifest_key": manifest_key,
-                            "source_fingerprint": fingerprint,
-                        }
-                    ).encode(),
+            materialization_message_id = None
+            if materialization_queue is not None and env.get("MATERIALIZATION_QUEUE_URL"):
+                materialization_message = {
+                    "bucket": env["DATA_BUCKET"],
+                    "dataset": message["dataset"],
+                    "source_period": period.label,
+                    "source_fingerprint": fingerprint,
+                    "raw_key": raw_key,
+                    "raw_sha256": digest,
+                    "manifest_key": manifest_key,
+                }
+                queue_response = materialization_queue.send_message(
+                    QueueUrl=env["MATERIALIZATION_QUEUE_URL"],
+                    MessageBody=json.dumps(materialization_message),
                 )
+                materialization_message_id = str(queue_response["MessageId"])
             if state is not None and claimed_fingerprint is not None:
                 state.mark_copied(
                     claimed_fingerprint,
@@ -750,6 +752,8 @@ def copy_handler(
                     raw_key=raw_key,
                     raw_sha256=digest,
                     manifest_key=manifest_key,
+                    source_period=period.label,
+                    materialization_message_id=materialization_message_id,
                 )
         except Exception as exc:
             if state is not None and claimed_fingerprint is not None:

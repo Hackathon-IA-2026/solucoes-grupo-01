@@ -970,13 +970,13 @@ class FakeDestinationS3:
         self.objects.append(kwargs)
 
 
-class FakeLambda:
+class FakeMaterializationQueue:
     def __init__(self):
         self.calls = []
 
-    def invoke(self, **kwargs):
+    def send_message(self, **kwargs):
         self.calls.append(kwargs)
-        return {"StatusCode": 202}
+        return {"MessageId": "materialization-message-1"}
 
 
 def test_copy_handler_writes_verified_content_addressed_raw_object() -> None:
@@ -1111,9 +1111,11 @@ def test_copy_handler_rejects_downloaded_size_mismatch_before_upload() -> None:
     assert s3.head_calls == []
 
 
-def test_copy_handler_starts_materialization_with_provenance() -> None:
+def test_copy_handler_enqueues_materialization_with_provenance() -> None:
     s3 = FakeDestinationS3()
-    lambda_client = FakeLambda()
+    materialization_queue = FakeMaterializationQueue()
+    ledger_table = MemoryLedgerTable()
+    ledger = IngestionLedger(ledger_table)
     event = {
         "Records": [
             {
@@ -1137,27 +1139,33 @@ def test_copy_handler_starts_materialization_with_provenance() -> None:
         event,
         None,
         s3_client=s3,
-        lambda_client=lambda_client,
+        sqs_client=materialization_queue,
         environment={
             "DATA_BUCKET": "curtailess-data",
-            "MATERIALIZATION_FUNCTION": "materialize-function",
+            "MATERIALIZATION_QUEUE_URL": "https://sqs.example/materialization",
         },
         now=lambda: datetime(2026, 9, 26, 18, 30, tzinfo=UTC),
+        ledger=ledger,
     )
     assert result == {"batchItemFailures": []}
-    call = lambda_client.calls[0]
-    assert call["FunctionName"] == "materialize-function"
-    assert call["InvocationType"] == "Event"
-    payload = json.loads(call["Payload"])
+    call = materialization_queue.calls[0]
+    assert call["QueueUrl"] == "https://sqs.example/materialization"
+    payload = json.loads(call["MessageBody"])
     assert payload["bucket"] == "curtailess-data"
-    assert payload["key"] == (
-        f"raw/ons/restricao_coff_eolica_tm/source_year=2026/source_month=09/sha256={payload['sha256'][:2]}/"
-        f"{payload['sha256']}.parquet"
+    assert payload["dataset"] == "restricao_coff_eolica_tm"
+    assert payload["source_period"] == "2026-09"
+    assert payload["raw_key"] == (
+        f"raw/ons/restricao_coff_eolica_tm/source_year=2026/source_month=09/"
+        f"sha256={payload['raw_sha256'][:2]}/{payload['raw_sha256']}.parquet"
     )
-    assert len(payload["sha256"]) == 64
+    assert len(payload["raw_sha256"]) == 64
     assert payload["manifest_key"].endswith(
         f"source_fingerprint={payload['source_fingerprint']}.json"
     )
+    ledger_item = ledger_table.items[payload["source_fingerprint"]]
+    assert ledger_item["state"] == "COPIED"
+    assert ledger_item["source_period"] == "2026-09"
+    assert ledger_item["materialization_message_id"] == "materialization-message-1"
     assert s3.objects == []
 
 

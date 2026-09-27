@@ -288,3 +288,91 @@ def test_materialized_state_cannot_transition_backwards() -> None:
             next_state="DISCOVERED",
             now=NOW,
         )
+
+
+def test_materialization_lease_recovers_failure_and_suppresses_completed_replay() -> None:
+    table = FakeLedgerTable()
+    ledger = IngestionLedger(table)
+    item, _ = ledger.ensure_discovered(identity(), now=NOW)
+    fingerprint = item["source_fingerprint"]
+    before_copy = ledger.claim_materialization(
+        fingerprint, owner="materialize-early", now=NOW, lease_seconds=60
+    )
+    assert before_copy.outcome == "BUSY"
+    ledger.claim_copy(fingerprint, owner="copy", now=NOW, lease_seconds=60)
+    copied = ledger.mark_copied(
+        fingerprint,
+        owner="copy",
+        now=NOW,
+        raw_key="raw/key",
+        raw_sha256="a" * 64,
+        manifest_key="manifest/key",
+        materialization_message_id="message-1",
+    )
+    assert copied["materialization_message_id"] == "message-1"
+
+    first = ledger.claim_materialization(
+        fingerprint, owner="materialize-1", now=NOW, lease_seconds=60
+    )
+    assert first.claimed
+    busy = ledger.claim_materialization(
+        fingerprint,
+        owner="materialize-2",
+        now=NOW + timedelta(seconds=30),
+        lease_seconds=60,
+    )
+    assert busy.outcome == "BUSY"
+    failed = ledger.mark_materialization_failed(
+        fingerprint,
+        owner="materialize-1",
+        now=NOW + timedelta(seconds=31),
+        error="curated write failed",
+    )
+    assert failed["state"] == "FAILED"
+    retry = ledger.claim_materialization(
+        fingerprint,
+        owner="materialize-2",
+        now=NOW + timedelta(seconds=32),
+        lease_seconds=60,
+    )
+    assert retry.claimed
+    completed = ledger.mark_materialized(
+        fingerprint,
+        owner="materialize-2",
+        now=NOW + timedelta(seconds=33),
+        manifest_key="manifest/key",
+        summary_key="curated/summary.json",
+    )
+    assert completed["state"] == "MATERIALIZED"
+    replay = ledger.claim_materialization(
+        fingerprint,
+        owner="materialize-3",
+        now=NOW + timedelta(seconds=34),
+        lease_seconds=60,
+    )
+    assert replay.outcome == "COMPLETE"
+
+
+def test_expired_materialization_lease_can_be_reclaimed() -> None:
+    table = FakeLedgerTable()
+    ledger = IngestionLedger(table)
+    item, _ = ledger.ensure_discovered(identity(), now=NOW)
+    fingerprint = item["source_fingerprint"]
+    ledger.claim_copy(fingerprint, owner="copy", now=NOW, lease_seconds=60)
+    ledger.mark_copied(
+        fingerprint,
+        owner="copy",
+        now=NOW,
+        raw_key="raw/key",
+        raw_sha256="a" * 64,
+        manifest_key="manifest/key",
+    )
+    ledger.claim_materialization(fingerprint, owner="materialize-1", now=NOW, lease_seconds=10)
+    reclaimed = ledger.claim_materialization(
+        fingerprint,
+        owner="materialize-2",
+        now=NOW + timedelta(seconds=11),
+        lease_seconds=10,
+    )
+    assert reclaimed.claimed
+    assert reclaimed.item["lease_owner"] == "materialize-2"

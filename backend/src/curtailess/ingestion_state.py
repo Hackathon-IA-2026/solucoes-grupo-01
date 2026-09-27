@@ -225,11 +225,27 @@ class IngestionLedger:
             lease_seconds=lease_seconds,
         )
 
+    def claim_materialization(
+        self,
+        fingerprint: str,
+        *,
+        owner: str,
+        now: datetime,
+        lease_seconds: int,
+    ) -> ClaimResult:
+        return self._claim(
+            fingerprint,
+            stage="MATERIALIZATION",
+            owner=owner,
+            now=now,
+            lease_seconds=lease_seconds,
+        )
+
     def _claim(
         self,
         fingerprint: str,
         *,
-        stage: Literal["DISPATCH", "COPY"],
+        stage: Literal["DISPATCH", "COPY", "MATERIALIZATION"],
         owner: str,
         now: datetime,
         lease_seconds: int,
@@ -253,8 +269,17 @@ class IngestionLedger:
                     "MATERIALIZED",
                 }:
                     return ClaimResult("COMPLETE", item)
-            elif state in {"COPIED", "MATERIALIZING", "MATERIALIZED"}:
-                return ClaimResult("COMPLETE", item)
+            elif stage == "COPY":
+                if state in {"COPIED", "MATERIALIZING", "MATERIALIZED"}:
+                    return ClaimResult("COMPLETE", item)
+            else:
+                if state == "MATERIALIZED":
+                    return ClaimResult("COMPLETE", item)
+                retryable_failure = (
+                    state == "FAILED" and item.get("failure_stage") == "MATERIALIZING"
+                )
+                if state not in {"COPIED", "MATERIALIZING"} and not retryable_failure:
+                    return ClaimResult("BUSY", item)
             if self._lease_active(item, stage, now):
                 return ClaimResult("BUSY", item)
 
@@ -269,6 +294,10 @@ class IngestionLedger:
                 claimed["state"] = "COPYING"
                 claimed.pop("failure_stage", None)
                 claimed.pop("failure_error", None)
+            elif stage == "MATERIALIZATION":
+                claimed["state"] = "MATERIALIZING"
+                claimed.pop("failure_stage", None)
+                claimed.pop("failure_error", None)
             try:
                 self._replace(claimed, int(item["version"]))
                 claimed["version"] = int(item["version"]) + 1
@@ -281,7 +310,7 @@ class IngestionLedger:
         self,
         fingerprint: str,
         *,
-        stage: Literal["DISPATCH", "COPY"],
+        stage: Literal["DISPATCH", "COPY", "MATERIALIZATION"],
         owner: str,
         now: datetime,
         next_state: str | None,
@@ -339,19 +368,27 @@ class IngestionLedger:
         raw_key: str,
         raw_sha256: str,
         manifest_key: str,
+        source_period: str | None = None,
+        materialization_message_id: str | None = None,
     ) -> dict[str, Any]:
+        extra = {
+            "copied_at": _iso(now),
+            "raw_key": raw_key,
+            "raw_sha256": raw_sha256,
+            "manifest_key": manifest_key,
+        }
+        if source_period is not None:
+            extra["source_period"] = source_period
+        if materialization_message_id is not None:
+            extra["materialization_message_id"] = materialization_message_id
+            extra["materialization_enqueued_at"] = _iso(now)
         return self._finish_lease(
             fingerprint,
             stage="COPY",
             owner=owner,
             now=now,
             next_state="COPIED",
-            extra={
-                "copied_at": _iso(now),
-                "raw_key": raw_key,
-                "raw_sha256": raw_sha256,
-                "manifest_key": manifest_key,
-            },
+            extra=extra,
         )
 
     def mark_failed(
@@ -372,6 +409,49 @@ class IngestionLedger:
             extra={
                 "failed_at": _iso(now),
                 "failure_stage": stage,
+                "failure_error": error[:_MAX_ERROR_LENGTH],
+            },
+        )
+
+    def mark_materialized(
+        self,
+        fingerprint: str,
+        *,
+        owner: str,
+        now: datetime,
+        manifest_key: str,
+        summary_key: str,
+    ) -> dict[str, Any]:
+        return self._finish_lease(
+            fingerprint,
+            stage="MATERIALIZATION",
+            owner=owner,
+            now=now,
+            next_state="MATERIALIZED",
+            extra={
+                "materialized_at": _iso(now),
+                "manifest_key": manifest_key,
+                "summary_key": summary_key,
+            },
+        )
+
+    def mark_materialization_failed(
+        self,
+        fingerprint: str,
+        *,
+        owner: str,
+        now: datetime,
+        error: str,
+    ) -> dict[str, Any]:
+        return self._finish_lease(
+            fingerprint,
+            stage="MATERIALIZATION",
+            owner=owner,
+            now=now,
+            next_state="FAILED",
+            extra={
+                "failed_at": _iso(now),
+                "failure_stage": "MATERIALIZING",
                 "failure_error": error[:_MAX_ERROR_LENGTH],
             },
         )

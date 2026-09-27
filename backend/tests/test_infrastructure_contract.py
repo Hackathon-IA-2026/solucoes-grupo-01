@@ -109,6 +109,49 @@ def test_ingestion_functions_use_ledger_and_all_registered_ons_dataset_prefixes(
     }
 
 
+def test_sam_decouples_copy_and_materialization_with_encrypted_sqs() -> None:
+    template = load_template()
+    resources = template["Resources"]
+    queue = resources["MaterializationQueue"]["Properties"]
+    dead_letter_queue = resources["MaterializationDeadLetterQueue"]["Properties"]
+    copy = resources["IngestionCopyFunction"]["Properties"]
+    materialization = resources["ExposureMaterializationFunction"]["Properties"]
+
+    assert queue["SqsManagedSseEnabled"] is True
+    assert dead_letter_queue["SqsManagedSseEnabled"] is True
+    assert queue["VisibilityTimeout"] > materialization["Timeout"]
+    assert queue["RedrivePolicy"] == {
+        "deadLetterTargetArn": {"Fn::GetAtt": "MaterializationDeadLetterQueue.Arn"},
+        "maxReceiveCount": 3,
+    }
+    copy_variables = copy["Environment"]["Variables"]
+    assert copy_variables["MATERIALIZATION_QUEUE_URL"] == {"Ref": "MaterializationQueue"}
+    assert "MATERIALIZATION_FUNCTION" not in copy_variables
+    assert {
+        "SQSSendMessagePolicy": {"QueueName": {"Fn::GetAtt": "MaterializationQueue.QueueName"}}
+    } in copy["Policies"]
+    assert not any(
+        "lambda:InvokeFunction" in statement.get("Action", [])
+        for policy in copy["Policies"]
+        for statement in policy.get("Statement", [])
+    )
+
+    variables = materialization["Environment"]["Variables"]
+    assert variables["DATA_BUCKET"] == {"Ref": "DataBucket"}
+    assert variables["INGESTION_LEDGER_TABLE"] == {"Ref": "IngestionLedgerTable"}
+    assert variables["INGESTION_LEASE_SECONDS"] == "300"
+    assert {
+        "DynamoDBCrudPolicy": {"TableName": {"Ref": "IngestionLedgerTable"}}
+    } in materialization["Policies"]
+    event = materialization["Events"]["MaterializationQueueEvent"]
+    assert event["Type"] == "SQS"
+    assert event["Properties"]["Queue"] == {"Fn::GetAtt": "MaterializationQueue.Arn"}
+    assert event["Properties"]["FunctionResponseTypes"] == ["ReportBatchItemFailures"]
+    assert template["Outputs"]["MaterializationQueueUrl"]["Value"] == {
+        "Ref": "MaterializationQueue"
+    }
+
+
 def test_samconfig_centralizes_non_secret_deploy_parameters() -> None:
     config = tomllib.loads((ROOT / "samconfig.toml").read_text())
     deploy = config["default"]["deploy"]["parameters"]
