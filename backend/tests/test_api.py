@@ -503,6 +503,81 @@ def test_get_asset_exposure_returns_materialized_ons_values(monkeypatch) -> None
     assert "materializado" in " ".join(payload["limitations"]).lower()
 
 
+def test_multi_source_exposure_preserves_key_hash_pairs_and_is_order_invariant(
+    monkeypatch, issued_provenance_table
+) -> None:
+    hashes = {"2026-01": "f" * 64, "2026-02": "8" * 64, "2026-03": "0" * 64}
+    items = [
+        {
+            **MATERIALIZED_ITEM,
+            "period": period,
+            "period_start": f"{period}-01T00:00:00",
+            "period_end": f"{period}-28T23:30:00",
+            "source_key": f"raw/ons/restricao/source_month={period[-2:]}/file.parquet",
+            "source_sha256": source_hash,
+        }
+        for period, source_hash in hashes.items()
+    ]
+
+    def exposure(source_items):
+        return {
+            "curtailed_mwh": 30.0,
+            "periods": sorted(hashes),
+            "source_sha256s": [item["source_sha256"] for item in source_items],
+            "items": source_items,
+        }
+
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    monkeypatch.setattr(
+        main.repository,
+        "get_exposure",
+        lambda asset_id, start, end, reason=None: exposure(items),
+    )
+    first = client.get(
+        "/v1/assets/CJU_BAOUR/exposure",
+        params={"start": "2026-01-01", "end": "2026-03-31"},
+    )
+    assert first.status_code == 200
+    first_provenance = first.json()["total_curtailed_energy"]["provenance"]
+    expected_artifacts = [
+        {"source_key": item["source_key"], "source_sha256": item["source_sha256"]} for item in items
+    ]
+    assert first_provenance["source_artifacts"] == expected_artifacts
+    assert first_provenance["source_key"] == items[0]["source_key"]
+    assert first_provenance["source_sha256"] == items[0]["source_sha256"]
+
+    monkeypatch.setattr(
+        main.repository,
+        "get_exposure",
+        lambda asset_id, start, end, reason=None: exposure([*reversed(items), items[1]]),
+    )
+    duplicate = client.get(
+        "/v1/assets/CJU_BAOUR/exposure",
+        params={"start": "2026-01-01", "end": "2026-03-31"},
+    )
+    assert duplicate.status_code == 200
+    duplicate_provenance = duplicate.json()["total_curtailed_energy"]["provenance"]
+    assert duplicate_provenance == first_provenance
+
+    fresh_client = fresh_api_client()
+    resolved = fresh_client.get(f"/v1/provenances/{first_provenance['evidence_id']}")
+    assert resolved.status_code == 200
+    assert resolved.json()["provenance"]["source_artifacts"] == expected_artifacts
+    assert resolved.json()["source_key"] == items[0]["source_key"]
+    assert resolved.json()["source_sha256"] == items[0]["source_sha256"]
+
+    operation = next(
+        item
+        for item in issued_provenance_table.items.values()
+        if item["record_type"] == "provenance_operation"
+        and first_provenance["evidence_id"] in item["provenances"]
+    )
+    operation["provenances"][first_provenance["evidence_id"]]["source_artifacts"][0][
+        "source_sha256"
+    ] = "1" * 64
+    assert fresh_client.get(f"/v1/provenances/{first_provenance['evidence_id']}").status_code == 404
+
+
 def test_get_asset_exposure_filters_materialized_reason(monkeypatch) -> None:
     item = {
         **MATERIALIZED_ITEM,

@@ -83,6 +83,15 @@ def inferred_client_provenance(field_name: str, value: Any, context: str) -> "Ev
     )
 
 
+class SourceArtifact(BaseModel):
+    """One immutable source location paired with the digest of its contents."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_key: Annotated[str, StringConstraints(min_length=1, max_length=1024)]
+    source_sha256: Sha256
+
+
 class EvidenceProvenance(BaseModel):
     """Authoritative, bounded source and method metadata for one field."""
 
@@ -95,6 +104,7 @@ class EvidenceProvenance(BaseModel):
     source_key: Annotated[str, StringConstraints(min_length=1, max_length=1024)] | None = None
     source_sha256: Sha256 | None = None
     source_sha256s: tuple[Sha256, ...] = Field(default=(), max_length=32)
+    source_artifacts: tuple[SourceArtifact, ...] = Field(default=(), max_length=32)
     parent_evidence_ids: tuple[EvidenceId, ...] = Field(default=(), max_length=32)
     observed_at: datetime | None = None
     effective_at: datetime | None = None
@@ -111,6 +121,16 @@ class EvidenceProvenance(BaseModel):
             raise ValueError("source_sha256s must contain SHA-256 hex digests")
         if tuple(sorted(set(values))) != values:
             raise ValueError("source_sha256s must be sorted and unique")
+        return values
+
+    @field_validator("source_artifacts")
+    @classmethod
+    def validate_source_artifacts(
+        cls, values: tuple[SourceArtifact, ...]
+    ) -> tuple[SourceArtifact, ...]:
+        identities = tuple((value.source_key, value.source_sha256) for value in values)
+        if tuple(sorted(set(identities))) != identities:
+            raise ValueError("source_artifacts must be sorted and unique by source key and SHA-256")
         return values
 
     @field_validator("parent_evidence_ids")
@@ -162,6 +182,20 @@ class EvidenceProvenance(BaseModel):
             raise ValueError("ONS_PUBLICO requires source_key and source SHA-256")
         if self.source_sha256 is not None and hashes and self.source_sha256 not in hashes:
             raise ValueError("source_sha256 must be included in source_sha256s")
+        if self.source_artifacts:
+            artifact_hashes = tuple(
+                sorted({artifact.source_sha256 for artifact in self.source_artifacts})
+            )
+            if artifact_hashes != hashes:
+                raise ValueError("source_artifacts must account for every source_sha256s digest")
+            representative = self.source_artifacts[0]
+            if (
+                self.source_key != representative.source_key
+                or self.source_sha256 != representative.source_sha256
+            ):
+                raise ValueError(
+                    "source_key and source_sha256 must identify the first source_artifact"
+                )
         return self
 
 

@@ -3,8 +3,8 @@ from typing import Any, Literal
 
 from fastapi import HTTPException
 
-from .canonical import canonical_digest
-from .schemas import DataOrigin, EvidenceProvenance
+from .canonical import canonical_digest, canonical_json
+from .schemas import DataOrigin, EvidenceProvenance, SourceArtifact
 
 _SERVER_PROVENANCE_CONTRACTS: dict[
     tuple[str, str], tuple[DataOrigin, Literal["medido", "calculado"]]
@@ -78,6 +78,7 @@ def field_provenance(
     limitations: list[str],
     source_hashes: list[str] | tuple[str, ...] = (),
     source_item: dict[str, Any] | None = None,
+    source_items: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
     source_uri: str | None = None,
     source_key: str | None = None,
     use_source_period: bool = True,
@@ -90,6 +91,21 @@ def field_provenance(
     from .provenance import build_evidence_id, build_public_evidence_id
 
     hashes = tuple(sorted(set(source_hashes)))
+    artifact_items = source_items or ((source_item,) if source_item else ())
+    artifact_identities = {
+        (item["source_key"], item["source_sha256"])
+        for item in artifact_items
+        if item.get("source_key") and item.get("source_sha256") in hashes
+    }
+    if source_key and len(hashes) == 1:
+        artifact_identities.add((source_key, hashes[0]))
+    artifacts = tuple(
+        SourceArtifact(source_key=key, source_sha256=sha256)
+        for key, sha256 in sorted(artifact_identities)
+    )
+    if {artifact.source_sha256 for artifact in artifacts} != set(hashes):
+        artifacts = ()
+    representative = artifacts[0] if artifacts else None
     identities = list(hashes) or [source_uri or "curtailess://unspecified"]
     id_builder = build_public_evidence_id if origin is DataOrigin.ONS_PUBLICO else build_evidence_id
     evidence_id = id_builder(identities, field_name, method_version, context)
@@ -111,9 +127,22 @@ def field_provenance(
         field_name=field_name,
         origin=origin,
         source_uri=source_uri,
-        source_key=source_key or (source_item.get("source_key") if source_item else None),
-        source_sha256=hashes[0] if hashes else None,
+        source_key=(
+            representative.source_key
+            if representative
+            else (source_key or (source_item.get("source_key") if source_item else None))
+            if len(hashes) <= 1
+            else None
+        ),
+        source_sha256=(
+            representative.source_sha256
+            if representative
+            else hashes[0]
+            if len(hashes) == 1
+            else None
+        ),
         source_sha256s=hashes,
+        source_artifacts=artifacts,
         parent_evidence_ids=tuple(sorted(set(parent_evidence_ids))),
         observed_at=observed_at,
         effective_at=effective_at
@@ -137,11 +166,12 @@ def persist_operation(
     provenance_map = {
         provenance.evidence_id: provenance.model_dump(mode="json") for provenance in provenances
     }
+    canonical_sources = {canonical_json(source): source for source in source_records}
     return issued_repository.put_operation(
         operation=operation,
         request_digest=canonical_digest(request_value),
         provenances=provenance_map,
-        source_records=source_records,
+        source_records=[canonical_sources[key] for key in sorted(canonical_sources)],
     )
 
 
@@ -165,6 +195,19 @@ def resolve_server_evidence(
     contract = _SERVER_PROVENANCE_CONTRACTS.get((candidate.field_name, candidate.method_version))
     if contract is None or candidate.evidence_id != evidence_id or not source_records:
         raise HTTPException(status_code=404, detail="Registro de proveniência inconsistente.")
+    persisted_artifacts = {
+        pair
+        for source in source_records
+        for pair in (
+            (source.get("source_key"), source.get("source_sha256")),
+            (source.get("capacity_source_key"), source.get("capacity_source_sha256")),
+        )
+    }
+    if any(
+        (artifact.source_key, artifact.source_sha256) not in persisted_artifacts
+        for artifact in candidate.source_artifacts
+    ):
+        raise HTTPException(status_code=404, detail="Artefato de proveniência não resolvível.")
     origin, classification = contract
     if candidate.origin is not origin:
         raise HTTPException(status_code=404, detail="Origem de proveniência inconsistente.")

@@ -152,6 +152,8 @@ class IssuedProvenanceRepository:
                     "method",
                     "capacity_data_version",
                     "capacity_method",
+                    "capacity_source_key",
+                    "capacity_source_sha256",
                 )
                 if key in source
             }

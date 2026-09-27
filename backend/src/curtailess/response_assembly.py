@@ -142,6 +142,7 @@ def build_exposure_response(
         limitations=[limitation],
         source_hashes=exposure["source_sha256s"],
         source_item=first_item,
+        source_items=exposure["items"],
         source_uri=f"curtailess://assets/{asset_id}/exposure",
         observed_at=max(aware(item["period_end"]) for item in exposure["items"]),
         valid_from=datetime.combine(start, datetime.min.time(), tzinfo=UTC),

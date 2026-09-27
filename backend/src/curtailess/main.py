@@ -223,7 +223,7 @@ def get_provenance(provenance_id: str) -> ProvenanceResponse:
         source=f"ONS/{dataset}",
         source_bucket=item.get("source_bucket", "ons-aws-prod-opendata"),
         source_key=source_key,
-        source_sha256=source_hashes[0],
+        source_sha256=provenance.source_sha256 or source_hashes[0],
         source_sha256s=source_hashes,
         data_version=(
             item.get("capacity_data_version", "snapshot")
