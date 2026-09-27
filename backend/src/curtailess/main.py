@@ -16,6 +16,13 @@ from .canonical import canonical_json as _canonical_json
 from .config import get_settings
 from .data_access import create_exposure_repository
 from .decision_operations import build_rank_maintenance, build_screen_bess
+from .exposure_narrative import _evidence_payload, validate_exposure_narrative
+from .exposure_narrative_repository import create_exposure_narrative_repository
+from .exposure_view import (
+    UnknownExposureAssetError,
+    build_exposure_view,
+    list_exposure_assets,
+)
 from .maintenance_decisions import (
     DecisionPersistenceUnavailable,
     IdempotencyConflict,
@@ -50,7 +57,10 @@ from .schemas import (
     CurtailmentScenario,
     DataOrigin,
     DataQualityResponse,
+    ExposureAssetCatalog,
+    ExposureNarrative,
     ExposureResponse,
+    ExposureViewResponse,
     HealthResponse,
     HistoricalWindowsResponse,
     MaintenanceDecisionRequest,
@@ -81,6 +91,9 @@ plant_state_repository = create_plant_state_repository(
 )
 maintenance_decision_repository = create_maintenance_decision_repository(
     settings.scenarios_table, settings.aws_region
+)
+exposure_narrative_repository = create_exposure_narrative_repository(
+    settings.exposure_narratives_table, settings.aws_region
 )
 
 
@@ -184,6 +197,42 @@ def list_assets() -> AssetList:
         _persist_asset(item, asset)
         assets.append(asset)
     return AssetList(items=assets)
+
+
+@app.get(
+    "/v1/exposure/assets",
+    response_model=ExposureAssetCatalog,
+    tags=["exposure"],
+)
+def get_exposure_assets() -> ExposureAssetCatalog:
+    return list_exposure_assets(repository)
+
+
+@app.get(
+    "/v1/assets/{asset_id}/exposure-view",
+    response_model=ExposureViewResponse,
+    response_model_by_alias=True,
+    tags=["exposure"],
+)
+def get_exposure_view(asset_id: str) -> ExposureViewResponse:
+    try:
+        deterministic_view = build_exposure_view(asset_id, repository)
+    except UnknownExposureAssetError as exc:
+        raise HTTPException(status_code=404, detail="Ativo de Exposição não encontrado.") from exc
+    narrative = exposure_narrative_repository.get_exact(asset_id, deterministic_view.input_digest)
+    if narrative is None:
+        current = exposure_narrative_repository.get_current_record(asset_id)
+        if current and current.get("validation_status") == "validated":
+            try:
+                narrative = validate_exposure_narrative(
+                    ExposureNarrative.model_validate(current["narrative"]).model_dump(
+                        mode="json", by_alias=True
+                    ),
+                    _evidence_payload(deterministic_view),
+                )
+            except (KeyError, TypeError, ValueError):
+                narrative = None
+    return build_exposure_view(asset_id, repository, narrative)
 
 
 @app.get("/v1/assets/{asset_id}", response_model=Asset, tags=["assets"])

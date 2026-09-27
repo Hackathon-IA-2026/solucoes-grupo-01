@@ -1,0 +1,2309 @@
+{
+  "schema": "curtailless.exposure_forecast.v1",
+  "source_artifact_schema": "curtailless.five_asset_demo.v1",
+  "source_sha256": "506d5edded7592019e0920c631c08b506deffc31ffa6b313e3d729a81394e0e1",
+  "cutoff": "2026-09-25 23:30:00",
+  "status": "SIMULADO",
+  "limitations": [
+    "Esta é uma demonstração histórica, sem telemetria em tempo real, instrução de despacho ou previsão oficial do Operador Nacional do Sistema Elétrico (ONS).",
+    "Não há snapshots históricos do momento de emissão. O artefato controla a ordem das datas, mas não prova que cada valor histórico estava disponível ex ante naquele momento passado.",
+    "O cache da fonte ONS é uma cópia local congelada dos objetos atuais de reanálise para regeneração determinística. O cache não é uma previsão ONS arquivada e não prova a finalidade dos dados.",
+    "As lacunas diárias permanecem ausentes. Defasagens de calendário sem valor usam taxas ou médias calculadas somente no treino, em vez de tratar silenciosamente dias ausentes como zero.",
+    "Os intervalos marginais por horizonte e os intervalos acumulados de 60 dias por ativo usam poucos caminhos independentes de calibração. A cobertura empírica pode ficar muito abaixo de 90%, então os intervalos expressam incerteza e não uma garantia operacional validada.",
+    "O teste recursivo contém somente as origens não sobrepostas listadas por ativo. Lacunas no calendário reduzem a quantidade de caminhos completos de 60 dias utilizáveis.",
+    "A calibração Platt usa origens anteriores dedicadas e pode piorar o Brier sob deriva temporal. O JSON preserva os Brier bruto e calibrado no teste para manter esse resultado negativo visível.",
+    "O modelo empírico simples foi escolhido por auditabilidade e valor demonstrativo, sem alegação de superioridade operacional."
+  ],
+  "assets": [
+    {
+      "asset_id": "CJU_RNRDV",
+      "name": "Conj. Rio do Vento",
+      "technology": "wind",
+      "connection_point": "RNCMM-500-A",
+      "state": "RN",
+      "latitude": -5.6733,
+      "longitude": -35.4514,
+      "connected_asset_count": 1,
+      "current_state": {
+        "cutoff": "2026-09-25 23:30:00",
+        "interpretation": "historical demonstration snapshot, not live telemetry or an ONS operational forecast",
+        "latest_curtailed_mwh": 1932.4075,
+        "latest_observed_date": "2026-09-25",
+        "latest_potential_proxy_mwh": 6415.1205,
+        "latest_residual_sellable_mwh": 4482.713,
+        "simulation_method": "SIMULADO_FROM_ONS_HISTORY",
+        "staleness_days_at_cutoff": 0,
+        "status": "SIMULADO",
+        "trailing_30_calendar_days_mean_curtailed_mwh": 2652.2957,
+        "trailing_7_observed_days_mean_curtailed_mwh": 3118.603643
+      },
+      "history": {
+        "daily_rows": 893,
+        "first_observed_date": "2024-04-01",
+        "last_observed_date": "2026-09-25",
+        "missing_calendar_days": 15
+      },
+      "forecast_60d_total_interval_mwh": {
+        "expected": 155302.398752,
+        "lower": 0.0,
+        "nominal_coverage": 0.9,
+        "scope": "asset-level accumulated 60-day split-conformal interval",
+        "upper": 330237.413072
+      },
+      "forecasts": [
+        {
+          "forecast_date": "2026-09-26",
+          "expected_curtailed_mwh": 2360.014633,
+          "lower_mwh": 1976.785823,
+          "upper_mwh": 2743.243443,
+          "curtailment_probability": 1.0
+        },
+        {
+          "forecast_date": "2026-09-27",
+          "expected_curtailed_mwh": 2370.944059,
+          "lower_mwh": 2038.168659,
+          "upper_mwh": 2703.71946,
+          "curtailment_probability": 1.0
+        },
+        {
+          "forecast_date": "2026-09-28",
+          "expected_curtailed_mwh": 2383.711397,
+          "lower_mwh": 2177.382985,
+          "upper_mwh": 2590.039809,
+          "curtailment_probability": 1.0
+        },
+        {
+          "forecast_date": "2026-09-29",
+          "expected_curtailed_mwh": 2386.552719,
+          "lower_mwh": 2336.470705,
+          "upper_mwh": 2436.634732,
+          "curtailment_probability": 1.0
+        },
+        {
+          "forecast_date": "2026-09-30",
+          "expected_curtailed_mwh": 2378.253007,
+          "lower_mwh": 0.0,
+          "upper_mwh": 6585.924373,
+          "curtailment_probability": 1.0
+        },
+        {
+          "forecast_date": "2026-10-01",
+          "expected_curtailed_mwh": 3043.945277,
+          "lower_mwh": 194.341092,
+          "upper_mwh": 5893.549461,
+          "curtailment_probability": 0.998644
+        },
+        {
+          "forecast_date": "2026-10-02",
+          "expected_curtailed_mwh": 3060.853656,
+          "lower_mwh": 709.228813,
+          "upper_mwh": 5412.478499,
+          "curtailment_probability": 0.998636
+        },
+        {
+          "forecast_date": "2026-10-03",
+          "expected_curtailed_mwh": 3079.823843,
+          "lower_mwh": 1640.062366,
+          "upper_mwh": 4519.585321,
+          "curtailment_probability": 0.998634
+        },
+        {
+          "forecast_date": "2026-10-04",
+          "expected_curtailed_mwh": 3085.698406,
+          "lower_mwh": 204.068276,
+          "upper_mwh": 5967.328536,
+          "curtailment_probability": 0.998632
+        },
+        {
+          "forecast_date": "2026-10-05",
+          "expected_curtailed_mwh": 3092.119688,
+          "lower_mwh": 1026.832433,
+          "upper_mwh": 5157.406942,
+          "curtailment_probability": 0.99863
+        },
+        {
+          "forecast_date": "2026-10-06",
+          "expected_curtailed_mwh": 3093.262147,
+          "lower_mwh": 2522.164589,
+          "upper_mwh": 3664.359706,
+          "curtailment_probability": 0.998628
+        },
+        {
+          "forecast_date": "2026-10-07",
+          "expected_curtailed_mwh": 3106.08278,
+          "lower_mwh": 1742.526226,
+          "upper_mwh": 4469.639334,
+          "curtailment_probability": 0.998626
+        },
+        {
+          "forecast_date": "2026-10-08",
+          "expected_curtailed_mwh": 3100.01457,
+          "lower_mwh": 2746.94397,
+          "upper_mwh": 3453.08517,
+          "curtailment_probability": 0.998624
+        },
+        {
+          "forecast_date": "2026-10-09",
+          "expected_curtailed_mwh": 3084.243133,
+          "lower_mwh": 2191.406499,
+          "upper_mwh": 3977.079768,
+          "curtailment_probability": 0.998623
+        },
+        {
+          "forecast_date": "2026-10-10",
+          "expected_curtailed_mwh": 3088.193004,
+          "lower_mwh": 1689.399044,
+          "upper_mwh": 4486.986963,
+          "curtailment_probability": 0.998623
+        },
+        {
+          "forecast_date": "2026-10-11",
+          "expected_curtailed_mwh": 3098.655176,
+          "lower_mwh": 883.345832,
+          "upper_mwh": 5313.96452,
+          "curtailment_probability": 0.998622
+        },
+        {
+          "forecast_date": "2026-10-12",
+          "expected_curtailed_mwh": 3109.506137,
+          "lower_mwh": 0.0,
+          "upper_mwh": 6449.911267,
+          "curtailment_probability": 0.998622
+        },
+        {
+          "forecast_date": "2026-10-13",
+          "expected_curtailed_mwh": 3111.982968,
+          "lower_mwh": 0.0,
+          "upper_mwh": 9432.775385,
+          "curtailment_probability": 0.998621
+        },
+        {
+          "forecast_date": "2026-10-14",
+          "expected_curtailed_mwh": 3100.320352,
+          "lower_mwh": 0.0,
+          "upper_mwh": 10080.311772,
+          "curtailment_probability": 0.998621
+        },
+        {
+          "forecast_date": "2026-10-15",
+          "expected_curtailed_mwh": 3097.201466,
+          "lower_mwh": 0.0,
+          "upper_mwh": 7337.486651,
+          "curtailment_probability": 0.99862
+        },
+        {
+          "forecast_date": "2026-10-16",
+          "expected_curtailed_mwh": 3104.228624,
+          "lower_mwh": 0.0,
+          "upper_mwh": 8761.769637,
+          "curtailment_probability": 0.99862
+        },
+        {
+          "forecast_date": "2026-10-17",
+          "expected_curtailed_mwh": 3106.614191,
+          "lower_mwh": 0.0,
+          "upper_mwh": 7889.557767,
+          "curtailment_probability": 0.998619
+        },
+        {
+          "forecast_date": "2026-10-18",
+          "expected_curtailed_mwh": 3091.072233,
+          "lower_mwh": 0.0,
+          "upper_mwh": 10290.674223,
+          "curtailment_probability": 0.998619
+        },
+        {
+          "forecast_date": "2026-10-19",
+          "expected_curtailed_mwh": 3082.906522,
+          "lower_mwh": 0.0,
+          "upper_mwh": 9910.952541,
+          "curtailment_probability": 0.998618
+        },
+        {
+          "forecast_date": "2026-10-20",
+          "expected_curtailed_mwh": 3073.22945,
+          "lower_mwh": 0.0,
+          "upper_mwh": 8970.831579,
+          "curtailment_probability": 0.998618
+        },
+        {
+          "forecast_date": "2026-10-21",
+          "expected_curtailed_mwh": 3040.408356,
+          "lower_mwh": 0.0,
+          "upper_mwh": 8279.045503,
+          "curtailment_probability": 0.998617
+        },
+        {
+          "forecast_date": "2026-10-22",
+          "expected_curtailed_mwh": 3031.672457,
+          "lower_mwh": 0.0,
+          "upper_mwh": 6186.140975,
+          "curtailment_probability": 0.998617
+        },
+        {
+          "forecast_date": "2026-10-23",
+          "expected_curtailed_mwh": 3038.554792,
+          "lower_mwh": 1585.737881,
+          "upper_mwh": 4491.371702,
+          "curtailment_probability": 0.998616
+        },
+        {
+          "forecast_date": "2026-10-24",
+          "expected_curtailed_mwh": 3057.833124,
+          "lower_mwh": 1325.837979,
+          "upper_mwh": 4789.82827,
+          "curtailment_probability": 0.998616
+        },
+        {
+          "forecast_date": "2026-10-25",
+          "expected_curtailed_mwh": 3072.423929,
+          "lower_mwh": 0.0,
+          "upper_mwh": 7095.595942,
+          "curtailment_probability": 0.998615
+        },
+        {
+          "forecast_date": "2026-10-26",
+          "expected_curtailed_mwh": 3080.012008,
+          "lower_mwh": 0.0,
+          "upper_mwh": 8404.032522,
+          "curtailment_probability": 0.998615
+        },
+        {
+          "forecast_date": "2026-10-27",
+          "expected_curtailed_mwh": 3084.803833,
+          "lower_mwh": 0.0,
+          "upper_mwh": 7083.383894,
+          "curtailment_probability": 0.998614
+        },
+        {
+          "forecast_date": "2026-10-28",
+          "expected_curtailed_mwh": 3089.554791,
+          "lower_mwh": 0.0,
+          "upper_mwh": 8483.802742,
+          "curtailment_probability": 0.998614
+        },
+        {
+          "forecast_date": "2026-10-29",
+          "expected_curtailed_mwh": 3094.252375,
+          "lower_mwh": 355.624773,
+          "upper_mwh": 5832.879976,
+          "curtailment_probability": 0.998613
+        },
+        {
+          "forecast_date": "2026-10-30",
+          "expected_curtailed_mwh": 3098.962311,
+          "lower_mwh": 610.574248,
+          "upper_mwh": 5587.350374,
+          "curtailment_probability": 0.998613
+        },
+        {
+          "forecast_date": "2026-10-31",
+          "expected_curtailed_mwh": 3103.758853,
+          "lower_mwh": 0.0,
+          "upper_mwh": 7667.698681,
+          "curtailment_probability": 0.998612
+        },
+        {
+          "forecast_date": "2026-11-01",
+          "expected_curtailed_mwh": 2074.165475,
+          "lower_mwh": 0.0,
+          "upper_mwh": 6202.168529,
+          "curtailment_probability": 0.997291
+        },
+        {
+          "forecast_date": "2026-11-02",
+          "expected_curtailed_mwh": 2067.580122,
+          "lower_mwh": 0.0,
+          "upper_mwh": 4716.244787,
+          "curtailment_probability": 0.997279
+        },
+        {
+          "forecast_date": "2026-11-03",
+          "expected_curtailed_mwh": 2060.843139,
+          "lower_mwh": 2047.651856,
+          "upper_mwh": 2074.034423,
+          "curtailment_probability": 0.997275
+        },
+        {
+          "forecast_date": "2026-11-04",
+          "expected_curtailed_mwh": 2054.022457,
+          "lower_mwh": 0.0,
+          "upper_mwh": 5018.441009,
+          "curtailment_probability": 0.997272
+        },
+        {
+          "forecast_date": "2026-11-05",
+          "expected_curtailed_mwh": 2047.113763,
+          "lower_mwh": 1881.339608,
+          "upper_mwh": 2212.887918,
+          "curtailment_probability": 0.997269
+        },
+        {
+          "forecast_date": "2026-11-06",
+          "expected_curtailed_mwh": 2040.15157,
+          "lower_mwh": 0.0,
+          "upper_mwh": 5548.648531,
+          "curtailment_probability": 0.997265
+        },
+        {
+          "forecast_date": "2026-11-07",
+          "expected_curtailed_mwh": 2033.05788,
+          "lower_mwh": 0.0,
+          "upper_mwh": 6928.350699,
+          "curtailment_probability": 0.997262
+        },
+        {
+          "forecast_date": "2026-11-08",
+          "expected_curtailed_mwh": 2025.957402,
+          "lower_mwh": 0.0,
+          "upper_mwh": 7740.180745,
+          "curtailment_probability": 0.997259
+        },
+        {
+          "forecast_date": "2026-11-09",
+          "expected_curtailed_mwh": 2018.919773,
+          "lower_mwh": 0.0,
+          "upper_mwh": 8754.595001,
+          "curtailment_probability": 0.997258
+        },
+        {
+          "forecast_date": "2026-11-10",
+          "expected_curtailed_mwh": 2011.809186,
+          "lower_mwh": 0.0,
+          "upper_mwh": 9352.598696,
+          "curtailment_probability": 0.997257
+        },
+        {
+          "forecast_date": "2026-11-11",
+          "expected_curtailed_mwh": 2004.58179,
+          "lower_mwh": 0.0,
+          "upper_mwh": 8389.770382,
+          "curtailment_probability": 0.997256
+        },
+        {
+          "forecast_date": "2026-11-12",
+          "expected_curtailed_mwh": 1997.234223,
+          "lower_mwh": 0.0,
+          "upper_mwh": 7326.854234,
+          "curtailment_probability": 0.997255
+        },
+        {
+          "forecast_date": "2026-11-13",
+          "expected_curtailed_mwh": 1989.821361,
+          "lower_mwh": 0.0,
+          "upper_mwh": 6855.501322,
+          "curtailment_probability": 0.997254
+        },
+        {
+          "forecast_date": "2026-11-14",
+          "expected_curtailed_mwh": 1982.436774,
+          "lower_mwh": 0.0,
+          "upper_mwh": 5760.921303,
+          "curtailment_probability": 0.997254
+        },
+        {
+          "forecast_date": "2026-11-15",
+          "expected_curtailed_mwh": 1975.023849,
+          "lower_mwh": 636.070129,
+          "upper_mwh": 3313.977569,
+          "curtailment_probability": 0.997253
+        },
+        {
+          "forecast_date": "2026-11-16",
+          "expected_curtailed_mwh": 1967.514942,
+          "lower_mwh": 1838.166362,
+          "upper_mwh": 2096.863521,
+          "curtailment_probability": 0.997252
+        },
+        {
+          "forecast_date": "2026-11-17",
+          "expected_curtailed_mwh": 1959.940265,
+          "lower_mwh": 569.071703,
+          "upper_mwh": 3350.808826,
+          "curtailment_probability": 0.997251
+        },
+        {
+          "forecast_date": "2026-11-18",
+          "expected_curtailed_mwh": 1952.418568,
+          "lower_mwh": 1121.814334,
+          "upper_mwh": 2783.022802,
+          "curtailment_probability": 0.99725
+        },
+        {
+          "forecast_date": "2026-11-19",
+          "expected_curtailed_mwh": 1944.901164,
+          "lower_mwh": 1284.374242,
+          "upper_mwh": 2605.428087,
+          "curtailment_probability": 0.99725
+        },
+        {
+          "forecast_date": "2026-11-20",
+          "expected_curtailed_mwh": 1937.39813,
+          "lower_mwh": 1371.416301,
+          "upper_mwh": 2503.37996,
+          "curtailment_probability": 0.997249
+        },
+        {
+          "forecast_date": "2026-11-21",
+          "expected_curtailed_mwh": 1930.06343,
+          "lower_mwh": 847.935836,
+          "upper_mwh": 3012.191024,
+          "curtailment_probability": 0.997248
+        },
+        {
+          "forecast_date": "2026-11-22",
+          "expected_curtailed_mwh": 1922.738056,
+          "lower_mwh": 1380.785021,
+          "upper_mwh": 2464.691091,
+          "curtailment_probability": 0.997247
+        },
+        {
+          "forecast_date": "2026-11-23",
+          "expected_curtailed_mwh": 1915.318236,
+          "lower_mwh": 797.801429,
+          "upper_mwh": 3032.835044,
+          "curtailment_probability": 0.997247
+        },
+        {
+          "forecast_date": "2026-11-24",
+          "expected_curtailed_mwh": 1907.72093,
+          "lower_mwh": 1905.19899,
+          "upper_mwh": 1910.24287,
+          "curtailment_probability": 0.997246
+        }
+      ]
+    },
+    {
+      "asset_id": "CJU_BALRA",
+      "name": "Conj. Laranjeiras",
+      "technology": "wind",
+      "connection_point": "BAGOR-230-A",
+      "state": "BA",
+      "latitude": -11.28,
+      "longitude": -42.6674,
+      "connected_asset_count": 2,
+      "current_state": {
+        "cutoff": "2026-09-25 23:30:00",
+        "interpretation": "historical demonstration snapshot, not live telemetry or an ONS operational forecast",
+        "latest_curtailed_mwh": 728.1775,
+        "latest_observed_date": "2026-09-25",
+        "latest_potential_proxy_mwh": 8262.6665,
+        "latest_residual_sellable_mwh": 7534.489,
+        "simulation_method": "SIMULADO_FROM_ONS_HISTORY",
+        "staleness_days_at_cutoff": 0,
+        "status": "SIMULADO",
+        "trailing_30_calendar_days_mean_curtailed_mwh": 965.74365,
+        "trailing_7_observed_days_mean_curtailed_mwh": 1100.352143
+      },
+      "history": {
+        "daily_rows": 906,
+        "first_observed_date": "2024-04-01",
+        "last_observed_date": "2026-09-25",
+        "missing_calendar_days": 2
+      },
+      "forecast_60d_total_interval_mwh": {
+        "expected": 76105.822568,
+        "lower": 36656.180892,
+        "nominal_coverage": 0.9,
+        "scope": "asset-level accumulated 60-day split-conformal interval",
+        "upper": 115555.464244
+      },
+      "forecasts": [
+        {
+          "forecast_date": "2026-09-26",
+          "expected_curtailed_mwh": 1237.424444,
+          "lower_mwh": 567.960246,
+          "upper_mwh": 1906.888642,
+          "curtailment_probability": 0.998313
+        },
+        {
+          "forecast_date": "2026-09-27",
+          "expected_curtailed_mwh": 1236.250303,
+          "lower_mwh": 40.853165,
+          "upper_mwh": 2431.64744,
+          "curtailment_probability": 0.998291
+        },
+        {
+          "forecast_date": "2026-09-28",
+          "expected_curtailed_mwh": 1243.516853,
+          "lower_mwh": 501.885685,
+          "upper_mwh": 1985.148022,
+          "curtailment_probability": 0.998285
+        },
+        {
+          "forecast_date": "2026-09-29",
+          "expected_curtailed_mwh": 1234.717328,
+          "lower_mwh": 905.088554,
+          "upper_mwh": 1564.346103,
+          "curtailment_probability": 0.998279
+        },
+        {
+          "forecast_date": "2026-09-30",
+          "expected_curtailed_mwh": 1221.261307,
+          "lower_mwh": 544.079111,
+          "upper_mwh": 1898.443502,
+          "curtailment_probability": 0.998273
+        },
+        {
+          "forecast_date": "2026-10-01",
+          "expected_curtailed_mwh": 1351.880649,
+          "lower_mwh": 648.320463,
+          "upper_mwh": 2055.440834,
+          "curtailment_probability": 0.989597
+        },
+        {
+          "forecast_date": "2026-10-02",
+          "expected_curtailed_mwh": 1360.175964,
+          "lower_mwh": 123.91265,
+          "upper_mwh": 2596.439279,
+          "curtailment_probability": 0.989422
+        },
+        {
+          "forecast_date": "2026-10-03",
+          "expected_curtailed_mwh": 1367.992288,
+          "lower_mwh": 0.0,
+          "upper_mwh": 4613.531659,
+          "curtailment_probability": 0.989365
+        },
+        {
+          "forecast_date": "2026-10-04",
+          "expected_curtailed_mwh": 1370.135956,
+          "lower_mwh": 0.0,
+          "upper_mwh": 4361.646651,
+          "curtailment_probability": 0.989316
+        },
+        {
+          "forecast_date": "2026-10-05",
+          "expected_curtailed_mwh": 1373.710312,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3583.983477,
+          "curtailment_probability": 0.989267
+        },
+        {
+          "forecast_date": "2026-10-06",
+          "expected_curtailed_mwh": 1382.52821,
+          "lower_mwh": 746.056184,
+          "upper_mwh": 2019.000235,
+          "curtailment_probability": 0.989218
+        },
+        {
+          "forecast_date": "2026-10-07",
+          "expected_curtailed_mwh": 1391.319344,
+          "lower_mwh": 983.511957,
+          "upper_mwh": 1799.126731,
+          "curtailment_probability": 0.989168
+        },
+        {
+          "forecast_date": "2026-10-08",
+          "expected_curtailed_mwh": 1394.584036,
+          "lower_mwh": 30.356148,
+          "upper_mwh": 2758.811923,
+          "curtailment_probability": 0.989118
+        },
+        {
+          "forecast_date": "2026-10-09",
+          "expected_curtailed_mwh": 1392.661127,
+          "lower_mwh": 1020.835085,
+          "upper_mwh": 1764.487169,
+          "curtailment_probability": 0.989103
+        },
+        {
+          "forecast_date": "2026-10-10",
+          "expected_curtailed_mwh": 1399.646933,
+          "lower_mwh": 710.864044,
+          "upper_mwh": 2088.429823,
+          "curtailment_probability": 0.989088
+        },
+        {
+          "forecast_date": "2026-10-11",
+          "expected_curtailed_mwh": 1407.828934,
+          "lower_mwh": 114.771875,
+          "upper_mwh": 2700.885993,
+          "curtailment_probability": 0.989074
+        },
+        {
+          "forecast_date": "2026-10-12",
+          "expected_curtailed_mwh": 1412.784002,
+          "lower_mwh": 294.457809,
+          "upper_mwh": 2531.110195,
+          "curtailment_probability": 0.98906
+        },
+        {
+          "forecast_date": "2026-10-13",
+          "expected_curtailed_mwh": 1420.731064,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3623.182982,
+          "curtailment_probability": 0.989046
+        },
+        {
+          "forecast_date": "2026-10-14",
+          "expected_curtailed_mwh": 1425.057512,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3085.966912,
+          "curtailment_probability": 0.989033
+        },
+        {
+          "forecast_date": "2026-10-15",
+          "expected_curtailed_mwh": 1427.250437,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3607.960769,
+          "curtailment_probability": 0.989019
+        },
+        {
+          "forecast_date": "2026-10-16",
+          "expected_curtailed_mwh": 1430.13316,
+          "lower_mwh": 903.817213,
+          "upper_mwh": 1956.449107,
+          "curtailment_probability": 0.989006
+        },
+        {
+          "forecast_date": "2026-10-17",
+          "expected_curtailed_mwh": 1434.808581,
+          "lower_mwh": 672.323727,
+          "upper_mwh": 2197.293436,
+          "curtailment_probability": 0.988992
+        },
+        {
+          "forecast_date": "2026-10-18",
+          "expected_curtailed_mwh": 1430.364915,
+          "lower_mwh": 930.249785,
+          "upper_mwh": 1930.480046,
+          "curtailment_probability": 0.988978
+        },
+        {
+          "forecast_date": "2026-10-19",
+          "expected_curtailed_mwh": 1426.418941,
+          "lower_mwh": 884.606193,
+          "upper_mwh": 1968.231688,
+          "curtailment_probability": 0.988965
+        },
+        {
+          "forecast_date": "2026-10-20",
+          "expected_curtailed_mwh": 1416.858311,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3135.193237,
+          "curtailment_probability": 0.988951
+        },
+        {
+          "forecast_date": "2026-10-21",
+          "expected_curtailed_mwh": 1407.225972,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3281.918982,
+          "curtailment_probability": 0.988938
+        },
+        {
+          "forecast_date": "2026-10-22",
+          "expected_curtailed_mwh": 1413.172323,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3663.41491,
+          "curtailment_probability": 0.988924
+        },
+        {
+          "forecast_date": "2026-10-23",
+          "expected_curtailed_mwh": 1420.264813,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2855.872272,
+          "curtailment_probability": 0.98891
+        },
+        {
+          "forecast_date": "2026-10-24",
+          "expected_curtailed_mwh": 1429.567411,
+          "lower_mwh": 376.781033,
+          "upper_mwh": 2482.353789,
+          "curtailment_probability": 0.988897
+        },
+        {
+          "forecast_date": "2026-10-25",
+          "expected_curtailed_mwh": 1436.44841,
+          "lower_mwh": 0.0,
+          "upper_mwh": 4295.794248,
+          "curtailment_probability": 0.988883
+        },
+        {
+          "forecast_date": "2026-10-26",
+          "expected_curtailed_mwh": 1441.097757,
+          "lower_mwh": 675.469344,
+          "upper_mwh": 2206.72617,
+          "curtailment_probability": 0.988869
+        },
+        {
+          "forecast_date": "2026-10-27",
+          "expected_curtailed_mwh": 1442.423353,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3151.751887,
+          "curtailment_probability": 0.988858
+        },
+        {
+          "forecast_date": "2026-10-28",
+          "expected_curtailed_mwh": 1443.765461,
+          "lower_mwh": 854.822282,
+          "upper_mwh": 2032.708639,
+          "curtailment_probability": 0.988846
+        },
+        {
+          "forecast_date": "2026-10-29",
+          "expected_curtailed_mwh": 1445.068478,
+          "lower_mwh": 787.976041,
+          "upper_mwh": 2102.160916,
+          "curtailment_probability": 0.988834
+        },
+        {
+          "forecast_date": "2026-10-30",
+          "expected_curtailed_mwh": 1446.438058,
+          "lower_mwh": 759.502179,
+          "upper_mwh": 2133.373937,
+          "curtailment_probability": 0.988823
+        },
+        {
+          "forecast_date": "2026-10-31",
+          "expected_curtailed_mwh": 1447.905333,
+          "lower_mwh": 900.980976,
+          "upper_mwh": 1994.82969,
+          "curtailment_probability": 0.988811
+        },
+        {
+          "forecast_date": "2026-11-01",
+          "expected_curtailed_mwh": 1112.173642,
+          "lower_mwh": 220.953564,
+          "upper_mwh": 2003.393721,
+          "curtailment_probability": 0.981367
+        },
+        {
+          "forecast_date": "2026-11-02",
+          "expected_curtailed_mwh": 1110.356258,
+          "lower_mwh": 129.333256,
+          "upper_mwh": 2091.379259,
+          "curtailment_probability": 0.981194
+        },
+        {
+          "forecast_date": "2026-11-03",
+          "expected_curtailed_mwh": 1108.613121,
+          "lower_mwh": 330.813782,
+          "upper_mwh": 1886.41246,
+          "curtailment_probability": 0.981143
+        },
+        {
+          "forecast_date": "2026-11-04",
+          "expected_curtailed_mwh": 1106.846761,
+          "lower_mwh": 154.422127,
+          "upper_mwh": 2059.271395,
+          "curtailment_probability": 0.981094
+        },
+        {
+          "forecast_date": "2026-11-05",
+          "expected_curtailed_mwh": 1105.045419,
+          "lower_mwh": 217.041433,
+          "upper_mwh": 1993.049404,
+          "curtailment_probability": 0.981044
+        },
+        {
+          "forecast_date": "2026-11-06",
+          "expected_curtailed_mwh": 1103.17454,
+          "lower_mwh": 273.784878,
+          "upper_mwh": 1932.564203,
+          "curtailment_probability": 0.980994
+        },
+        {
+          "forecast_date": "2026-11-07",
+          "expected_curtailed_mwh": 1101.233856,
+          "lower_mwh": 414.488657,
+          "upper_mwh": 1787.979054,
+          "curtailment_probability": 0.980944
+        },
+        {
+          "forecast_date": "2026-11-08",
+          "expected_curtailed_mwh": 1099.259057,
+          "lower_mwh": 498.014523,
+          "upper_mwh": 1700.503591,
+          "curtailment_probability": 0.980894
+        },
+        {
+          "forecast_date": "2026-11-09",
+          "expected_curtailed_mwh": 1097.323973,
+          "lower_mwh": 281.180432,
+          "upper_mwh": 1913.467515,
+          "curtailment_probability": 0.980879
+        },
+        {
+          "forecast_date": "2026-11-10",
+          "expected_curtailed_mwh": 1095.332129,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3030.021033,
+          "curtailment_probability": 0.980866
+        },
+        {
+          "forecast_date": "2026-11-11",
+          "expected_curtailed_mwh": 1093.274039,
+          "lower_mwh": 0.0,
+          "upper_mwh": 4951.639478,
+          "curtailment_probability": 0.980853
+        },
+        {
+          "forecast_date": "2026-11-12",
+          "expected_curtailed_mwh": 1091.170342,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2584.111711,
+          "curtailment_probability": 0.98084
+        },
+        {
+          "forecast_date": "2026-11-13",
+          "expected_curtailed_mwh": 1089.001178,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3419.966374,
+          "curtailment_probability": 0.980827
+        },
+        {
+          "forecast_date": "2026-11-14",
+          "expected_curtailed_mwh": 1086.789797,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2973.568837,
+          "curtailment_probability": 0.980814
+        },
+        {
+          "forecast_date": "2026-11-15",
+          "expected_curtailed_mwh": 1084.549876,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3864.849013,
+          "curtailment_probability": 0.980802
+        },
+        {
+          "forecast_date": "2026-11-16",
+          "expected_curtailed_mwh": 1082.27672,
+          "lower_mwh": 0.0,
+          "upper_mwh": 6035.927968,
+          "curtailment_probability": 0.98079
+        },
+        {
+          "forecast_date": "2026-11-17",
+          "expected_curtailed_mwh": 1079.958203,
+          "lower_mwh": 0.0,
+          "upper_mwh": 4957.128155,
+          "curtailment_probability": 0.980777
+        },
+        {
+          "forecast_date": "2026-11-18",
+          "expected_curtailed_mwh": 1077.653644,
+          "lower_mwh": 139.578712,
+          "upper_mwh": 2015.728576,
+          "curtailment_probability": 0.980765
+        },
+        {
+          "forecast_date": "2026-11-19",
+          "expected_curtailed_mwh": 1075.359878,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2180.38264,
+          "curtailment_probability": 0.980753
+        },
+        {
+          "forecast_date": "2026-11-20",
+          "expected_curtailed_mwh": 1073.113684,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2179.969244,
+          "curtailment_probability": 0.980741
+        },
+        {
+          "forecast_date": "2026-11-21",
+          "expected_curtailed_mwh": 1070.915841,
+          "lower_mwh": 548.901525,
+          "upper_mwh": 1592.930156,
+          "curtailment_probability": 0.980729
+        },
+        {
+          "forecast_date": "2026-11-22",
+          "expected_curtailed_mwh": 1068.664805,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3133.81416,
+          "curtailment_probability": 0.980716
+        },
+        {
+          "forecast_date": "2026-11-23",
+          "expected_curtailed_mwh": 1066.352736,
+          "lower_mwh": 0.0,
+          "upper_mwh": 6319.266061,
+          "curtailment_probability": 0.980704
+        },
+        {
+          "forecast_date": "2026-11-24",
+          "expected_curtailed_mwh": 1063.964789,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2219.180467,
+          "curtailment_probability": 0.980692
+        }
+      ]
+    },
+    {
+      "asset_id": "CJU_BASDB",
+      "name": "Conj. Serra da Babilônia",
+      "technology": "wind",
+      "connection_point": "BAMPD-230-A",
+      "state": "BA",
+      "latitude": -11.7139,
+      "longitude": -41.3968,
+      "connected_asset_count": 8,
+      "current_state": {
+        "cutoff": "2026-09-25 23:30:00",
+        "interpretation": "historical demonstration snapshot, not live telemetry or an ONS operational forecast",
+        "latest_curtailed_mwh": 518.813,
+        "latest_observed_date": "2026-09-25",
+        "latest_potential_proxy_mwh": 5554.1915,
+        "latest_residual_sellable_mwh": 5035.3785,
+        "simulation_method": "SIMULADO_FROM_ONS_HISTORY",
+        "staleness_days_at_cutoff": 0,
+        "status": "SIMULADO",
+        "trailing_30_calendar_days_mean_curtailed_mwh": 679.509617,
+        "trailing_7_observed_days_mean_curtailed_mwh": 798.796429
+      },
+      "history": {
+        "daily_rows": 904,
+        "first_observed_date": "2024-04-01",
+        "last_observed_date": "2026-09-25",
+        "missing_calendar_days": 4
+      },
+      "forecast_60d_total_interval_mwh": {
+        "expected": 49615.135967,
+        "lower": 0.0,
+        "nominal_coverage": 0.9,
+        "scope": "asset-level accumulated 60-day split-conformal interval",
+        "upper": 115040.887832
+      },
+      "forecasts": [
+        {
+          "forecast_date": "2026-09-26",
+          "expected_curtailed_mwh": 880.569072,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1963.690741,
+          "curtailment_probability": 0.990709
+        },
+        {
+          "forecast_date": "2026-09-27",
+          "expected_curtailed_mwh": 885.747243,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2078.417828,
+          "curtailment_probability": 0.990378
+        },
+        {
+          "forecast_date": "2026-09-28",
+          "expected_curtailed_mwh": 890.779303,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1953.700118,
+          "curtailment_probability": 0.990288
+        },
+        {
+          "forecast_date": "2026-09-29",
+          "expected_curtailed_mwh": 893.12592,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2577.989035,
+          "curtailment_probability": 0.990206
+        },
+        {
+          "forecast_date": "2026-09-30",
+          "expected_curtailed_mwh": 890.835762,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2614.893859,
+          "curtailment_probability": 0.990127
+        },
+        {
+          "forecast_date": "2026-10-01",
+          "expected_curtailed_mwh": 910.267121,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2794.063972,
+          "curtailment_probability": 0.985125
+        },
+        {
+          "forecast_date": "2026-10-02",
+          "expected_curtailed_mwh": 915.269267,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2819.413905,
+          "curtailment_probability": 0.985094
+        },
+        {
+          "forecast_date": "2026-10-03",
+          "expected_curtailed_mwh": 920.618272,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2835.594301,
+          "curtailment_probability": 0.985078
+        },
+        {
+          "forecast_date": "2026-10-04",
+          "expected_curtailed_mwh": 922.392106,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2847.828651,
+          "curtailment_probability": 0.98507
+        },
+        {
+          "forecast_date": "2026-10-05",
+          "expected_curtailed_mwh": 924.948028,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2751.982631,
+          "curtailment_probability": 0.985062
+        },
+        {
+          "forecast_date": "2026-10-06",
+          "expected_curtailed_mwh": 927.245807,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2789.363332,
+          "curtailment_probability": 0.985054
+        },
+        {
+          "forecast_date": "2026-10-07",
+          "expected_curtailed_mwh": 932.343223,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2887.103362,
+          "curtailment_probability": 0.985047
+        },
+        {
+          "forecast_date": "2026-10-08",
+          "expected_curtailed_mwh": 932.418499,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2787.261583,
+          "curtailment_probability": 0.985039
+        },
+        {
+          "forecast_date": "2026-10-09",
+          "expected_curtailed_mwh": 931.087695,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2890.996934,
+          "curtailment_probability": 0.985035
+        },
+        {
+          "forecast_date": "2026-10-10",
+          "expected_curtailed_mwh": 935.471609,
+          "lower_mwh": 36.704993,
+          "upper_mwh": 1834.238225,
+          "curtailment_probability": 0.985032
+        },
+        {
+          "forecast_date": "2026-10-11",
+          "expected_curtailed_mwh": 940.844822,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2137.447571,
+          "curtailment_probability": 0.985028
+        },
+        {
+          "forecast_date": "2026-10-12",
+          "expected_curtailed_mwh": 941.750279,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2152.397227,
+          "curtailment_probability": 0.985024
+        },
+        {
+          "forecast_date": "2026-10-13",
+          "expected_curtailed_mwh": 945.397503,
+          "lower_mwh": 64.95529,
+          "upper_mwh": 1825.839716,
+          "curtailment_probability": 0.985021
+        },
+        {
+          "forecast_date": "2026-10-14",
+          "expected_curtailed_mwh": 945.418801,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2049.553261,
+          "curtailment_probability": 0.985017
+        },
+        {
+          "forecast_date": "2026-10-15",
+          "expected_curtailed_mwh": 945.89204,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2263.243888,
+          "curtailment_probability": 0.985014
+        },
+        {
+          "forecast_date": "2026-10-16",
+          "expected_curtailed_mwh": 946.384636,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2690.789534,
+          "curtailment_probability": 0.98501
+        },
+        {
+          "forecast_date": "2026-10-17",
+          "expected_curtailed_mwh": 946.117157,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2869.156339,
+          "curtailment_probability": 0.985006
+        },
+        {
+          "forecast_date": "2026-10-18",
+          "expected_curtailed_mwh": 942.60269,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2879.539889,
+          "curtailment_probability": 0.985003
+        },
+        {
+          "forecast_date": "2026-10-19",
+          "expected_curtailed_mwh": 937.530363,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2885.151445,
+          "curtailment_probability": 0.984999
+        },
+        {
+          "forecast_date": "2026-10-20",
+          "expected_curtailed_mwh": 927.936532,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2789.914329,
+          "curtailment_probability": 0.984996
+        },
+        {
+          "forecast_date": "2026-10-21",
+          "expected_curtailed_mwh": 920.935911,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2859.621303,
+          "curtailment_probability": 0.984992
+        },
+        {
+          "forecast_date": "2026-10-22",
+          "expected_curtailed_mwh": 925.02084,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2863.530001,
+          "curtailment_probability": 0.984989
+        },
+        {
+          "forecast_date": "2026-10-23",
+          "expected_curtailed_mwh": 930.759858,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2869.456126,
+          "curtailment_probability": 0.984985
+        },
+        {
+          "forecast_date": "2026-10-24",
+          "expected_curtailed_mwh": 936.756504,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2866.099089,
+          "curtailment_probability": 0.984982
+        },
+        {
+          "forecast_date": "2026-10-25",
+          "expected_curtailed_mwh": 940.833914,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2874.902719,
+          "curtailment_probability": 0.984978
+        },
+        {
+          "forecast_date": "2026-10-26",
+          "expected_curtailed_mwh": 943.60173,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2883.976444,
+          "curtailment_probability": 0.984974
+        },
+        {
+          "forecast_date": "2026-10-27",
+          "expected_curtailed_mwh": 944.014321,
+          "lower_mwh": 574.499558,
+          "upper_mwh": 1313.529084,
+          "curtailment_probability": 0.984973
+        },
+        {
+          "forecast_date": "2026-10-28",
+          "expected_curtailed_mwh": 944.3957,
+          "lower_mwh": 53.216673,
+          "upper_mwh": 1835.574726,
+          "curtailment_probability": 0.984972
+        },
+        {
+          "forecast_date": "2026-10-29",
+          "expected_curtailed_mwh": 944.746561,
+          "lower_mwh": 104.934222,
+          "upper_mwh": 1784.5589,
+          "curtailment_probability": 0.984971
+        },
+        {
+          "forecast_date": "2026-10-30",
+          "expected_curtailed_mwh": 945.084337,
+          "lower_mwh": 87.084484,
+          "upper_mwh": 1803.08419,
+          "curtailment_probability": 0.984969
+        },
+        {
+          "forecast_date": "2026-10-31",
+          "expected_curtailed_mwh": 945.439388,
+          "lower_mwh": 190.209945,
+          "upper_mwh": 1700.66883,
+          "curtailment_probability": 0.984968
+        },
+        {
+          "forecast_date": "2026-11-01",
+          "expected_curtailed_mwh": 693.090508,
+          "lower_mwh": 271.621274,
+          "upper_mwh": 1114.559741,
+          "curtailment_probability": 0.983974
+        },
+        {
+          "forecast_date": "2026-11-02",
+          "expected_curtailed_mwh": 691.630937,
+          "lower_mwh": 343.641489,
+          "upper_mwh": 1039.620385,
+          "curtailment_probability": 0.983971
+        },
+        {
+          "forecast_date": "2026-11-03",
+          "expected_curtailed_mwh": 690.128237,
+          "lower_mwh": 273.497481,
+          "upper_mwh": 1106.758994,
+          "curtailment_probability": 0.98397
+        },
+        {
+          "forecast_date": "2026-11-04",
+          "expected_curtailed_mwh": 688.604052,
+          "lower_mwh": 48.075424,
+          "upper_mwh": 1329.13268,
+          "curtailment_probability": 0.983969
+        },
+        {
+          "forecast_date": "2026-11-05",
+          "expected_curtailed_mwh": 687.053106,
+          "lower_mwh": 228.50508,
+          "upper_mwh": 1145.601131,
+          "curtailment_probability": 0.983968
+        },
+        {
+          "forecast_date": "2026-11-06",
+          "expected_curtailed_mwh": 685.476917,
+          "lower_mwh": 37.667308,
+          "upper_mwh": 1333.286525,
+          "curtailment_probability": 0.983967
+        },
+        {
+          "forecast_date": "2026-11-07",
+          "expected_curtailed_mwh": 683.856954,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1802.085608,
+          "curtailment_probability": 0.983967
+        },
+        {
+          "forecast_date": "2026-11-08",
+          "expected_curtailed_mwh": 682.225874,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1635.568451,
+          "curtailment_probability": 0.983966
+        },
+        {
+          "forecast_date": "2026-11-09",
+          "expected_curtailed_mwh": 680.593258,
+          "lower_mwh": 0.0,
+          "upper_mwh": 6321.902077,
+          "curtailment_probability": 0.983966
+        },
+        {
+          "forecast_date": "2026-11-10",
+          "expected_curtailed_mwh": 678.921178,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3500.647507,
+          "curtailment_probability": 0.983965
+        },
+        {
+          "forecast_date": "2026-11-11",
+          "expected_curtailed_mwh": 677.202884,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2676.047018,
+          "curtailment_probability": 0.983965
+        },
+        {
+          "forecast_date": "2026-11-12",
+          "expected_curtailed_mwh": 675.46738,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2586.691338,
+          "curtailment_probability": 0.983965
+        },
+        {
+          "forecast_date": "2026-11-13",
+          "expected_curtailed_mwh": 673.696568,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3555.958256,
+          "curtailment_probability": 0.983965
+        },
+        {
+          "forecast_date": "2026-11-14",
+          "expected_curtailed_mwh": 671.914002,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1467.980671,
+          "curtailment_probability": 0.983965
+        },
+        {
+          "forecast_date": "2026-11-15",
+          "expected_curtailed_mwh": 670.116639,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1366.588476,
+          "curtailment_probability": 0.983964
+        },
+        {
+          "forecast_date": "2026-11-16",
+          "expected_curtailed_mwh": 668.304256,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1366.774218,
+          "curtailment_probability": 0.983964
+        },
+        {
+          "forecast_date": "2026-11-17",
+          "expected_curtailed_mwh": 666.48174,
+          "lower_mwh": 244.227908,
+          "upper_mwh": 1088.735573,
+          "curtailment_probability": 0.983964
+        },
+        {
+          "forecast_date": "2026-11-18",
+          "expected_curtailed_mwh": 664.670325,
+          "lower_mwh": 0.0,
+          "upper_mwh": 2110.616109,
+          "curtailment_probability": 0.983964
+        },
+        {
+          "forecast_date": "2026-11-19",
+          "expected_curtailed_mwh": 662.880301,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3056.72641,
+          "curtailment_probability": 0.983964
+        },
+        {
+          "forecast_date": "2026-11-20",
+          "expected_curtailed_mwh": 661.141469,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1918.324931,
+          "curtailment_probability": 0.983963
+        },
+        {
+          "forecast_date": "2026-11-21",
+          "expected_curtailed_mwh": 659.437154,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1859.214489,
+          "curtailment_probability": 0.983963
+        },
+        {
+          "forecast_date": "2026-11-22",
+          "expected_curtailed_mwh": 657.694864,
+          "lower_mwh": 0.0,
+          "upper_mwh": 3303.745472,
+          "curtailment_probability": 0.983963
+        },
+        {
+          "forecast_date": "2026-11-23",
+          "expected_curtailed_mwh": 655.9035,
+          "lower_mwh": 158.852583,
+          "upper_mwh": 1152.954418,
+          "curtailment_probability": 0.983963
+        },
+        {
+          "forecast_date": "2026-11-24",
+          "expected_curtailed_mwh": 654.06105,
+          "lower_mwh": 503.392526,
+          "upper_mwh": 804.729574,
+          "curtailment_probability": 0.983963
+        }
+      ]
+    },
+    {
+      "asset_id": "CJU_RNMVS",
+      "name": "Conj. Monte Verde Solar",
+      "technology": "solar",
+      "connection_point": "RNMTV-500-A",
+      "state": "RN",
+      "latitude": -5.4464,
+      "longitude": -36.2155,
+      "connected_asset_count": 3,
+      "current_state": {
+        "cutoff": "2026-09-25 23:30:00",
+        "interpretation": "historical demonstration snapshot, not live telemetry or an ONS operational forecast",
+        "latest_curtailed_mwh": 342.157,
+        "latest_observed_date": "2026-09-25",
+        "latest_potential_proxy_mwh": 1489.546,
+        "latest_residual_sellable_mwh": 1147.389,
+        "simulation_method": "SIMULADO_FROM_ONS_HISTORY",
+        "staleness_days_at_cutoff": 0,
+        "status": "SIMULADO",
+        "trailing_30_calendar_days_mean_curtailed_mwh": 750.882367,
+        "trailing_7_observed_days_mean_curtailed_mwh": 780.948786
+      },
+      "history": {
+        "daily_rows": 908,
+        "first_observed_date": "2024-04-01",
+        "last_observed_date": "2026-09-25",
+        "missing_calendar_days": 0
+      },
+      "forecast_60d_total_interval_mwh": {
+        "expected": 26344.937869,
+        "lower": 2951.012072,
+        "nominal_coverage": 0.9,
+        "scope": "asset-level accumulated 60-day split-conformal interval",
+        "upper": 49738.863666
+      },
+      "forecasts": [
+        {
+          "forecast_date": "2026-09-26",
+          "expected_curtailed_mwh": 532.229816,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1226.119428,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-09-27",
+          "expected_curtailed_mwh": 531.139293,
+          "lower_mwh": 160.686712,
+          "upper_mwh": 901.591875,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-09-28",
+          "expected_curtailed_mwh": 533.057429,
+          "lower_mwh": 372.435606,
+          "upper_mwh": 693.679252,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-09-29",
+          "expected_curtailed_mwh": 532.003617,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1319.250375,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-09-30",
+          "expected_curtailed_mwh": 531.589285,
+          "lower_mwh": 28.992118,
+          "upper_mwh": 1034.186452,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-01",
+          "expected_curtailed_mwh": 489.688912,
+          "lower_mwh": 413.285145,
+          "upper_mwh": 566.092679,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-02",
+          "expected_curtailed_mwh": 489.439521,
+          "lower_mwh": 389.506132,
+          "upper_mwh": 589.37291,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-03",
+          "expected_curtailed_mwh": 488.914861,
+          "lower_mwh": 237.725545,
+          "upper_mwh": 740.104178,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-04",
+          "expected_curtailed_mwh": 488.152161,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1411.397377,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-05",
+          "expected_curtailed_mwh": 489.025968,
+          "lower_mwh": 37.084465,
+          "upper_mwh": 940.96747,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-06",
+          "expected_curtailed_mwh": 487.316592,
+          "lower_mwh": 60.233292,
+          "upper_mwh": 914.399891,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-07",
+          "expected_curtailed_mwh": 487.475324,
+          "lower_mwh": 78.311815,
+          "upper_mwh": 896.638833,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-08",
+          "expected_curtailed_mwh": 486.458327,
+          "lower_mwh": 372.871173,
+          "upper_mwh": 600.045481,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-09",
+          "expected_curtailed_mwh": 484.892678,
+          "lower_mwh": 79.907596,
+          "upper_mwh": 889.877761,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-10",
+          "expected_curtailed_mwh": 482.178328,
+          "lower_mwh": 195.303088,
+          "upper_mwh": 769.053568,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-11",
+          "expected_curtailed_mwh": 477.990306,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1552.961716,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-12",
+          "expected_curtailed_mwh": 475.431409,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1264.458001,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-13",
+          "expected_curtailed_mwh": 473.159146,
+          "lower_mwh": 26.663288,
+          "upper_mwh": 919.655003,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-14",
+          "expected_curtailed_mwh": 470.022063,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1398.393033,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-15",
+          "expected_curtailed_mwh": 468.317074,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1210.95231,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-16",
+          "expected_curtailed_mwh": 467.304425,
+          "lower_mwh": 236.771768,
+          "upper_mwh": 697.837082,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-17",
+          "expected_curtailed_mwh": 464.822685,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1190.005095,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-18",
+          "expected_curtailed_mwh": 461.94292,
+          "lower_mwh": 26.295664,
+          "upper_mwh": 897.590175,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-19",
+          "expected_curtailed_mwh": 459.15432,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1163.21707,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-20",
+          "expected_curtailed_mwh": 454.438033,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1099.864551,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-21",
+          "expected_curtailed_mwh": 452.222937,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1153.942287,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-22",
+          "expected_curtailed_mwh": 448.656857,
+          "lower_mwh": 10.310389,
+          "upper_mwh": 887.003325,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-23",
+          "expected_curtailed_mwh": 445.456348,
+          "lower_mwh": 124.157455,
+          "upper_mwh": 766.755242,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-24",
+          "expected_curtailed_mwh": 445.426769,
+          "lower_mwh": 175.000023,
+          "upper_mwh": 715.853515,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-25",
+          "expected_curtailed_mwh": 446.337871,
+          "lower_mwh": 0.0,
+          "upper_mwh": 944.655643,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-26",
+          "expected_curtailed_mwh": 446.889817,
+          "lower_mwh": 242.693068,
+          "upper_mwh": 651.086566,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-27",
+          "expected_curtailed_mwh": 446.437689,
+          "lower_mwh": 150.25974,
+          "upper_mwh": 742.615638,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-28",
+          "expected_curtailed_mwh": 445.988943,
+          "lower_mwh": 184.509446,
+          "upper_mwh": 707.468441,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-29",
+          "expected_curtailed_mwh": 445.527658,
+          "lower_mwh": 146.016817,
+          "upper_mwh": 745.038499,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-30",
+          "expected_curtailed_mwh": 445.069512,
+          "lower_mwh": 309.60359,
+          "upper_mwh": 580.535434,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-10-31",
+          "expected_curtailed_mwh": 444.611134,
+          "lower_mwh": 178.044068,
+          "upper_mwh": 711.178199,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-01",
+          "expected_curtailed_mwh": 390.11495,
+          "lower_mwh": 124.593813,
+          "upper_mwh": 655.636088,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-02",
+          "expected_curtailed_mwh": 389.588733,
+          "lower_mwh": 0.0,
+          "upper_mwh": 831.039089,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-03",
+          "expected_curtailed_mwh": 389.062507,
+          "lower_mwh": 90.796146,
+          "upper_mwh": 687.328868,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-04",
+          "expected_curtailed_mwh": 388.537534,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1194.284349,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-05",
+          "expected_curtailed_mwh": 388.00515,
+          "lower_mwh": 141.392089,
+          "upper_mwh": 634.618212,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-06",
+          "expected_curtailed_mwh": 387.479002,
+          "lower_mwh": 0.0,
+          "upper_mwh": 983.369551,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-07",
+          "expected_curtailed_mwh": 386.949226,
+          "lower_mwh": 72.713579,
+          "upper_mwh": 701.184873,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-08",
+          "expected_curtailed_mwh": 386.422031,
+          "lower_mwh": 0.0,
+          "upper_mwh": 850.117668,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-09",
+          "expected_curtailed_mwh": 385.900337,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1111.223434,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-10",
+          "expected_curtailed_mwh": 385.39026,
+          "lower_mwh": 9.160327,
+          "upper_mwh": 761.620194,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-11",
+          "expected_curtailed_mwh": 384.899669,
+          "lower_mwh": 0.0,
+          "upper_mwh": 875.241768,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-12",
+          "expected_curtailed_mwh": 384.420035,
+          "lower_mwh": 0.0,
+          "upper_mwh": 833.652411,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-13",
+          "expected_curtailed_mwh": 383.949899,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1006.739315,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-14",
+          "expected_curtailed_mwh": 383.493892,
+          "lower_mwh": 0.0,
+          "upper_mwh": 912.880867,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-15",
+          "expected_curtailed_mwh": 383.044503,
+          "lower_mwh": 0.0,
+          "upper_mwh": 952.575831,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-16",
+          "expected_curtailed_mwh": 382.598097,
+          "lower_mwh": 81.452041,
+          "upper_mwh": 683.744153,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-17",
+          "expected_curtailed_mwh": 382.162474,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1082.218926,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-18",
+          "expected_curtailed_mwh": 381.739801,
+          "lower_mwh": 0.0,
+          "upper_mwh": 927.179951,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-19",
+          "expected_curtailed_mwh": 381.329662,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1327.421579,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-20",
+          "expected_curtailed_mwh": 380.942337,
+          "lower_mwh": 3.628322,
+          "upper_mwh": 758.256351,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-21",
+          "expected_curtailed_mwh": 380.564695,
+          "lower_mwh": 0.0,
+          "upper_mwh": 1036.929842,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-22",
+          "expected_curtailed_mwh": 380.203945,
+          "lower_mwh": 0.0,
+          "upper_mwh": 982.209902,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-23",
+          "expected_curtailed_mwh": 379.858241,
+          "lower_mwh": 132.792026,
+          "upper_mwh": 626.924456,
+          "curtailment_probability": 0.794694
+        },
+        {
+          "forecast_date": "2026-11-24",
+          "expected_curtailed_mwh": 379.510861,
+          "lower_mwh": 0.0,
+          "upper_mwh": 775.686687,
+          "curtailment_probability": 0.794694
+        }
+      ]
+    },
+    {
+      "asset_id": "CJU_PBLZA",
+      "name": "Conj. Luzia",
+      "technology": "solar",
+      "connection_point": "RNSTL-500-A",
+      "state": "PB",
+      "latitude": -6.9117,
+      "longitude": -36.9836,
+      "connected_asset_count": 7,
+      "current_state": {
+        "cutoff": "2026-09-25 23:30:00",
+        "interpretation": "historical demonstration snapshot, not live telemetry or an ONS operational forecast",
+        "latest_curtailed_mwh": 303.2105,
+        "latest_observed_date": "2026-09-25",
+        "latest_potential_proxy_mwh": 889.604,
+        "latest_residual_sellable_mwh": 586.3935,
+        "simulation_method": "SIMULADO_FROM_ONS_HISTORY",
+        "staleness_days_at_cutoff": 0,
+        "status": "SIMULADO",
+        "trailing_30_calendar_days_mean_curtailed_mwh": 236.449883,
+        "trailing_7_observed_days_mean_curtailed_mwh": 224.7045
+      },
+      "history": {
+        "daily_rows": 908,
+        "first_observed_date": "2024-04-01",
+        "last_observed_date": "2026-09-25",
+        "missing_calendar_days": 0
+      },
+      "forecast_60d_total_interval_mwh": {
+        "expected": 4731.788387,
+        "lower": 0.0,
+        "nominal_coverage": 0.9,
+        "scope": "asset-level accumulated 60-day split-conformal interval",
+        "upper": 12532.137861
+      },
+      "forecasts": [
+        {
+          "forecast_date": "2026-09-26",
+          "expected_curtailed_mwh": 89.496038,
+          "lower_mwh": 0.0,
+          "upper_mwh": 293.517689,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-09-27",
+          "expected_curtailed_mwh": 89.285064,
+          "lower_mwh": 0.0,
+          "upper_mwh": 520.408532,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-09-28",
+          "expected_curtailed_mwh": 89.368032,
+          "lower_mwh": 0.0,
+          "upper_mwh": 405.752943,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-09-29",
+          "expected_curtailed_mwh": 89.314379,
+          "lower_mwh": 0.0,
+          "upper_mwh": 292.025507,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-09-30",
+          "expected_curtailed_mwh": 89.161596,
+          "lower_mwh": 0.0,
+          "upper_mwh": 551.745157,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-01",
+          "expected_curtailed_mwh": 92.944036,
+          "lower_mwh": 0.0,
+          "upper_mwh": 229.822399,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-02",
+          "expected_curtailed_mwh": 93.114833,
+          "lower_mwh": 0.0,
+          "upper_mwh": 232.917767,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-03",
+          "expected_curtailed_mwh": 93.212984,
+          "lower_mwh": 0.0,
+          "upper_mwh": 291.91842,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-04",
+          "expected_curtailed_mwh": 92.402206,
+          "lower_mwh": 0.0,
+          "upper_mwh": 531.427253,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-05",
+          "expected_curtailed_mwh": 91.569257,
+          "lower_mwh": 0.0,
+          "upper_mwh": 279.468631,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-06",
+          "expected_curtailed_mwh": 90.676932,
+          "lower_mwh": 0.0,
+          "upper_mwh": 341.138968,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-07",
+          "expected_curtailed_mwh": 89.169058,
+          "lower_mwh": 0.0,
+          "upper_mwh": 567.677195,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-08",
+          "expected_curtailed_mwh": 87.179184,
+          "lower_mwh": 0.0,
+          "upper_mwh": 214.728212,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-09",
+          "expected_curtailed_mwh": 87.241039,
+          "lower_mwh": 0.0,
+          "upper_mwh": 193.129432,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-10",
+          "expected_curtailed_mwh": 87.315001,
+          "lower_mwh": 0.0,
+          "upper_mwh": 409.081821,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-11",
+          "expected_curtailed_mwh": 87.579866,
+          "lower_mwh": 0.0,
+          "upper_mwh": 610.249151,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-12",
+          "expected_curtailed_mwh": 87.74509,
+          "lower_mwh": 0.0,
+          "upper_mwh": 332.032946,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-13",
+          "expected_curtailed_mwh": 87.447934,
+          "lower_mwh": 0.0,
+          "upper_mwh": 327.562687,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-14",
+          "expected_curtailed_mwh": 86.333734,
+          "lower_mwh": 0.0,
+          "upper_mwh": 390.838828,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-15",
+          "expected_curtailed_mwh": 86.269036,
+          "lower_mwh": 0.0,
+          "upper_mwh": 344.32753,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-16",
+          "expected_curtailed_mwh": 86.213538,
+          "lower_mwh": 0.0,
+          "upper_mwh": 205.036926,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-17",
+          "expected_curtailed_mwh": 85.6242,
+          "lower_mwh": 0.0,
+          "upper_mwh": 443.588669,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-18",
+          "expected_curtailed_mwh": 83.912298,
+          "lower_mwh": 0.0,
+          "upper_mwh": 369.348413,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-19",
+          "expected_curtailed_mwh": 82.60254,
+          "lower_mwh": 0.0,
+          "upper_mwh": 511.803091,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-20",
+          "expected_curtailed_mwh": 81.31185,
+          "lower_mwh": 0.0,
+          "upper_mwh": 418.907672,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-21",
+          "expected_curtailed_mwh": 79.860267,
+          "lower_mwh": 0.0,
+          "upper_mwh": 458.824557,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-22",
+          "expected_curtailed_mwh": 79.911069,
+          "lower_mwh": 0.0,
+          "upper_mwh": 266.093674,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-23",
+          "expected_curtailed_mwh": 80.106464,
+          "lower_mwh": 0.0,
+          "upper_mwh": 166.905304,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-24",
+          "expected_curtailed_mwh": 80.319852,
+          "lower_mwh": 0.0,
+          "upper_mwh": 207.26199,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-25",
+          "expected_curtailed_mwh": 80.219438,
+          "lower_mwh": 0.0,
+          "upper_mwh": 324.772266,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-26",
+          "expected_curtailed_mwh": 79.543007,
+          "lower_mwh": 27.527984,
+          "upper_mwh": 131.558029,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-27",
+          "expected_curtailed_mwh": 79.512815,
+          "lower_mwh": 0.0,
+          "upper_mwh": 280.870535,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-28",
+          "expected_curtailed_mwh": 79.483171,
+          "lower_mwh": 0.0,
+          "upper_mwh": 712.165957,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-29",
+          "expected_curtailed_mwh": 79.453186,
+          "lower_mwh": 16.221619,
+          "upper_mwh": 142.684753,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-30",
+          "expected_curtailed_mwh": 79.423273,
+          "lower_mwh": 2.391234,
+          "upper_mwh": 156.455311,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-10-31",
+          "expected_curtailed_mwh": 79.393732,
+          "lower_mwh": 0.0,
+          "upper_mwh": 258.007044,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-01",
+          "expected_curtailed_mwh": 69.357723,
+          "lower_mwh": 0.0,
+          "upper_mwh": 232.656034,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-02",
+          "expected_curtailed_mwh": 69.285657,
+          "lower_mwh": 12.541721,
+          "upper_mwh": 126.029593,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-03",
+          "expected_curtailed_mwh": 69.213075,
+          "lower_mwh": 12.261071,
+          "upper_mwh": 126.165079,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-04",
+          "expected_curtailed_mwh": 69.142732,
+          "lower_mwh": 0.0,
+          "upper_mwh": 629.460448,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-05",
+          "expected_curtailed_mwh": 69.074702,
+          "lower_mwh": 30.060779,
+          "upper_mwh": 108.088625,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-06",
+          "expected_curtailed_mwh": 69.009173,
+          "lower_mwh": 0.0,
+          "upper_mwh": 204.16276,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-07",
+          "expected_curtailed_mwh": 68.948019,
+          "lower_mwh": 0.0,
+          "upper_mwh": 402.634306,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-08",
+          "expected_curtailed_mwh": 68.892716,
+          "lower_mwh": 0.0,
+          "upper_mwh": 231.919795,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-09",
+          "expected_curtailed_mwh": 68.837057,
+          "lower_mwh": 0.0,
+          "upper_mwh": 159.704142,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-10",
+          "expected_curtailed_mwh": 68.781005,
+          "lower_mwh": 0.0,
+          "upper_mwh": 396.255836,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-11",
+          "expected_curtailed_mwh": 68.72398,
+          "lower_mwh": 0.0,
+          "upper_mwh": 415.068148,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-12",
+          "expected_curtailed_mwh": 68.66628,
+          "lower_mwh": 0.0,
+          "upper_mwh": 429.048382,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-13",
+          "expected_curtailed_mwh": 68.609307,
+          "lower_mwh": 17.533686,
+          "upper_mwh": 119.684928,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-14",
+          "expected_curtailed_mwh": 68.555541,
+          "lower_mwh": 40.467802,
+          "upper_mwh": 96.64328,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-15",
+          "expected_curtailed_mwh": 68.501808,
+          "lower_mwh": 0.0,
+          "upper_mwh": 316.717763,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-16",
+          "expected_curtailed_mwh": 68.448081,
+          "lower_mwh": 0.0,
+          "upper_mwh": 195.348343,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-17",
+          "expected_curtailed_mwh": 68.395978,
+          "lower_mwh": 51.674403,
+          "upper_mwh": 85.117552,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-18",
+          "expected_curtailed_mwh": 68.34891,
+          "lower_mwh": 12.921287,
+          "upper_mwh": 123.776533,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-19",
+          "expected_curtailed_mwh": 68.305672,
+          "lower_mwh": 13.126449,
+          "upper_mwh": 123.484895,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-20",
+          "expected_curtailed_mwh": 68.266219,
+          "lower_mwh": 0.0,
+          "upper_mwh": 176.857022,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-21",
+          "expected_curtailed_mwh": 68.231049,
+          "lower_mwh": 0.0,
+          "upper_mwh": 381.074366,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-22",
+          "expected_curtailed_mwh": 68.195618,
+          "lower_mwh": 0.0,
+          "upper_mwh": 392.527638,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-23",
+          "expected_curtailed_mwh": 68.159487,
+          "lower_mwh": 0.0,
+          "upper_mwh": 230.182669,
+          "curtailment_probability": 0.455017
+        },
+        {
+          "forecast_date": "2026-11-24",
+          "expected_curtailed_mwh": 68.122599,
+          "lower_mwh": 0.0,
+          "upper_mwh": 311.556735,
+          "curtailment_probability": 0.455017
+        }
+      ]
+    }
+  ]
+}

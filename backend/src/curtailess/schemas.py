@@ -982,3 +982,173 @@ class ReportFileResponse(BaseModel):
     report_id: str
     url: str
     expires_in_seconds: Literal[300]
+
+
+ExposureSectionId = Literal[
+    "secao-ativo",
+    "secao-resumo",
+    "secao-previsao",
+    "secao-razao-origem",
+    "secao-recorrencia",
+    "secao-qualidade",
+]
+
+
+class ExposureDisplayAsset(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    asset_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    name: BoundedText
+    technology: Literal["wind", "solar"]
+    state: Annotated[str, StringConstraints(min_length=2, max_length=2)]
+    connection_point: BoundedText
+    capacity_mw: FiniteFloat | None = None
+    connected_asset_count: int = Field(ge=0, le=64)
+    operational_data_status: Literal["simulated", "client_connected"] = "simulated"
+
+
+class ExposureDisplayMetric(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    value: FiniteFloat | None
+    unit: Annotated[str, StringConstraints(min_length=1, max_length=32)]
+
+
+class ExposureDistributionPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    label: BoundedText
+    value: FiniteFloat
+
+
+class ExposureForecastPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    forecast_date: date
+    expected_curtailed_mwh: FiniteFloat = Field(ge=0)
+    lower_mwh: FiniteFloat = Field(ge=0)
+    upper_mwh: FiniteFloat = Field(ge=0)
+    curtailment_probability: FiniteFloat = Field(ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> Self:
+        if not self.lower_mwh <= self.expected_curtailed_mwh <= self.upper_mwh:
+            raise ValueError("forecast interval must contain the expected value")
+        return self
+
+
+class ExposureForecastWindow(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    start: date
+    end: date
+    expected_curtailed_mwh: FiniteFloat = Field(ge=0)
+    mean_probability: FiniteFloat = Field(ge=0, le=1)
+
+
+class ExposureForecast60d(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: Literal["demonstrative_simulation", "unavailable"]
+    start: date | None = None
+    end: date | None = None
+    points: tuple[ExposureForecastPoint, ...] = Field(default=(), max_length=60)
+    total_expected_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    total_lower_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    total_upper_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    top_windows: tuple[ExposureForecastWindow, ...] = Field(default=(), max_length=3)
+
+    @model_validator(mode="after")
+    def validate_horizon(self) -> Self:
+        if self.status == "unavailable":
+            if self.points or self.start is not None or self.end is not None:
+                raise ValueError("unavailable forecast cannot contain a horizon")
+            return self
+        if len(self.points) != 60 or self.start is None or self.end is None:
+            raise ValueError("demonstrative forecast requires exactly 60 dated points")
+        dates = tuple(point.forecast_date for point in self.points)
+        if dates != tuple(sorted(set(dates))):
+            raise ValueError("forecast dates must be sorted and unique")
+        if dates[0] != self.start or dates[-1] != self.end:
+            raise ValueError("forecast bounds must match the first and last points")
+        lower = self.total_lower_mwh
+        expected = self.total_expected_mwh
+        upper = self.total_upper_mwh
+        if lower is None or expected is None or upper is None:
+            raise ValueError("demonstrative forecast requires accumulated interval values")
+        if not lower <= expected <= upper:
+            raise ValueError("accumulated interval must contain the expected value")
+        return self
+
+
+class ExposureObservedImpact(BaseModel):
+    total_curtailed_energy: ExposureDisplayMetric
+    characterized_share: ExposureDisplayMetric
+    simultaneous_share: ExposureDisplayMetric
+    exclusive_share: ExposureDisplayMetric
+    period_start: date
+    period_end: date
+
+
+class ExposureAssociatedConditions(BaseModel):
+    reasons: tuple[ExposureDistributionPoint, ...] = ()
+    origins: tuple[ExposureDistributionPoint, ...] = ()
+    modalities: tuple[ExposureDistributionPoint, ...] = ()
+
+
+class ExposureRecurrence(BaseModel):
+    timezone: Literal["America/Sao_Paulo"] = "America/Sao_Paulo"
+    weekdays: tuple[ExposureDistributionPoint, ...] = ()
+    hours: tuple[ExposureDistributionPoint, ...] = ()
+
+
+class ExposureQuality(BaseModel):
+    coverage: ExposureDisplayMetric
+    update_delay: ExposureDisplayMetric
+    missing_rate: ExposureDisplayMetric
+    duplicate_count: ExposureDisplayMetric
+
+
+class ExposureNarrative(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    secao_ativo: tuple[BoundedText, ...] = Field(alias="secao-ativo", min_length=1, max_length=4)
+    secao_resumo: tuple[BoundedText, ...] = Field(alias="secao-resumo", min_length=1, max_length=4)
+    secao_previsao: tuple[BoundedText, ...] = Field(
+        alias="secao-previsao", min_length=1, max_length=4
+    )
+    secao_razao_origem: tuple[BoundedText, ...] = Field(
+        alias="secao-razao-origem", min_length=1, max_length=4
+    )
+    secao_recorrencia: tuple[BoundedText, ...] = Field(
+        alias="secao-recorrencia", min_length=1, max_length=4
+    )
+    secao_qualidade: tuple[BoundedText, ...] = Field(
+        alias="secao-qualidade", min_length=1, max_length=4
+    )
+
+
+class ExposureViewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    asset: ExposureDisplayAsset
+    last_data_update: datetime
+    input_digest: Sha256
+    observed_impact: ExposureObservedImpact
+    forecast_60d: ExposureForecast60d
+    associated_conditions: ExposureAssociatedConditions
+    recurrence: ExposureRecurrence
+    quality: ExposureQuality
+    narrative: ExposureNarrative
+    limitations: tuple[BoundedText, ...] = Field(max_length=16)
+
+    @field_validator("last_data_update")
+    @classmethod
+    def require_update_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("last_data_update requires timezone information")
+        return value
+
+
+class ExposureAssetCatalog(BaseModel):
+    items: tuple[ExposureDisplayAsset, ...] = Field(min_length=1, max_length=5)

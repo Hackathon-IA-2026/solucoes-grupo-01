@@ -80,6 +80,34 @@ def test_api_can_persist_decisions_and_invoke_bedrock_converse() -> None:
     assert "bedrock:InvokeModel" in invoke["Action"]
 
 
+def test_sam_provisions_retained_exposure_narratives_without_a_schedule() -> None:
+    template = load_template()
+    resources = template["Resources"]
+    table = resources["ExposureNarrativesTable"]
+    properties = table["Properties"]
+    api = resources["ApiFunction"]["Properties"]
+
+    assert table["DeletionPolicy"] == "Retain"
+    assert table["UpdateReplacePolicy"] == "Retain"
+    assert properties["BillingMode"] == "PAY_PER_REQUEST"
+    assert properties["KeySchema"] == [
+        {"AttributeName": "asset_id", "KeyType": "HASH"},
+        {"AttributeName": "version", "KeyType": "RANGE"},
+    ]
+    assert properties["PointInTimeRecoverySpecification"]["PointInTimeRecoveryEnabled"] is True
+    assert properties["SSESpecification"]["SSEEnabled"] is True
+    assert api["Environment"]["Variables"]["EXPOSURE_NARRATIVES_TABLE"] == {
+        "Ref": "ExposureNarrativesTable"
+    }
+    assert {"DynamoDBReadPolicy": {"TableName": {"Ref": "ExposureNarrativesTable"}}} in api[
+        "Policies"
+    ]
+    assert template["Outputs"]["ExposureNarrativesTableName"]["Value"] == {
+        "Ref": "ExposureNarrativesTable"
+    }
+    assert not any("Schedule" in resource["Type"] for resource in resources.values())
+
+
 def test_sam_provisions_retained_encrypted_ingestion_ledger() -> None:
     resources = load_template()["Resources"]
     table = resources["IngestionLedgerTable"]

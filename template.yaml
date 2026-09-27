@@ -61,6 +61,7 @@ Resources:
           DATA_BUCKET: !Ref DataBucket
           SCENARIOS_TABLE: !Ref ScenariosTable
           EXPOSURE_TABLE: !Ref ExposureTable
+          EXPOSURE_NARRATIVES_TABLE: !Ref ExposureNarrativesTable
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_FALLBACK_MODEL_ID: !Ref BedrockFallbackModelId
           BEDROCK_EMERGENCY_MODEL_ID: !Ref BedrockEmergencyModelId
@@ -73,6 +74,8 @@ Resources:
             TableName: !Ref ScenariosTable
         - DynamoDBReadPolicy:
             TableName: !Ref ExposureTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ExposureNarrativesTable
         - S3WritePolicy:
             BucketName: !Ref DataBucket
         - Statement:
@@ -380,6 +383,27 @@ Resources:
       SSESpecification:
         SSEEnabled: true
 
+  ExposureNarrativesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: asset_id
+          AttributeType: S
+        - AttributeName: version
+          AttributeType: S
+      KeySchema:
+        - AttributeName: asset_id
+          KeyType: HASH
+        - AttributeName: version
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
 Outputs:
   ApiUrl:
     Description: URL publica da API
@@ -423,3 +447,6 @@ Outputs:
   ExposureTableName:
     Description: Tabela de exposicao mensal por ativo
     Value: !Ref ExposureTable
+  ExposureNarrativesTableName:
+    Description: Tabela de narrativas validadas por ativo e entrada
+    Value: !Ref ExposureNarrativesTable
