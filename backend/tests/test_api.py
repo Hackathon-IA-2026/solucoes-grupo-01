@@ -9,6 +9,50 @@ from curtailess.main import app
 client = TestClient(app)
 
 
+def client_provenance(field_name: str) -> dict:
+    return {
+        "evidence_id": f"client:{field_name}:v1",
+        "field_name": field_name,
+        "origin": "CLIENTE_INFORMADO",
+        "source_uri": f"client://scenario/{field_name}",
+        "source_key": None,
+        "source_sha256": None,
+        "source_sha256s": [],
+        "observed_at": None,
+        "effective_at": "2026-08-01T00:00:00Z",
+        "valid_from": None,
+        "valid_to": None,
+        "method_version": "client_input_v1",
+        "limitations": ["Valor informado pelo cliente para o cenário."],
+    }
+
+
+def energy_price_payload(value: float = 250) -> dict:
+    return {
+        "value": value,
+        "unit": "BRL/MWh",
+        "source": "client_scenario",
+        "value_status": "informado",
+        "origin": "CLIENTE_INFORMADO",
+        "provenance": client_provenance("energy_price"),
+    }
+
+
+def bess_input_provenance() -> dict:
+    return {
+        field_name: client_provenance(field_name)
+        for field_name in (
+            "power_mw",
+            "energy_mwh",
+            "capex_brl",
+            "annualized_cost_brl",
+            "round_trip_efficiency",
+            "cycles_per_year",
+            "energy_price_brl_mwh",
+        )
+    }
+
+
 MATERIALIZED_ITEM = {
     "asset_id": "CJU_BAOUR",
     "period": "2026-08",
@@ -75,6 +119,7 @@ def test_list_assets_returns_materialized_ons_assets(monkeypatch) -> None:
                 "name": "Conj. Ourolândia II",
                 "technology": "wind",
                 "capacity_mw": None,
+                "capacity_provenance": None,
                 "ons_group": "CJU_BAOUR",
                 "connection_point": "BAOUR-500-A",
                 "data_mode": "ons_materialized",
@@ -91,6 +136,29 @@ def test_get_asset_returns_materialized_ons_asset(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["asset_id"] == "CJU_BAOUR"
     assert response.json()["data_mode"] == "ons_materialized"
+
+
+def test_get_asset_capacity_has_public_field_level_provenance(monkeypatch) -> None:
+    capacity_hash = "b" * 64
+    item = {
+        **MATERIALIZED_ITEM,
+        "capacity_mw": 87.5,
+        "capacity_source_key": "dataset/capacidade-geracao/CAPACIDADE_GERACAO.parquet",
+        "capacity_source_sha256": capacity_hash,
+        "capacity_method_version": "ons_capacity_source_v1",
+    }
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: item)
+
+    response = client.get("/v1/assets/CJU_BAOUR")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["capacity_mw"] == 87.5
+    provenance = payload["capacity_provenance"]
+    assert provenance["origin"] == "ONS_PUBLICO"
+    assert provenance["field_name"] == "capacity_mw"
+    assert provenance["source_sha256"] == capacity_hash
+    assert provenance["source_key"].endswith("CAPACIDADE_GERACAO.parquet")
 
 
 def test_get_asset_exposure_returns_materialized_ons_values(monkeypatch) -> None:
@@ -121,8 +189,18 @@ def test_get_asset_exposure_returns_materialized_ons_values(monkeypatch) -> None
     assert payload["total_curtailed_energy"]["value_status"] == "calculado"
     assert payload["total_curtailed_energy"]["origin"] == "PROXY_CALCULADO"
     assert payload["total_curtailed_energy"]["data_version"] == "2026-08"
-    assert payload["total_curtailed_energy"]["source"] == "ONS/restricao_coff_eolica_tm"
-    assert payload["total_curtailed_energy"]["provenance_id"].startswith("sha256:")
+    evidence = payload["total_curtailed_energy"]
+    assert evidence["source"] == "ONS/restricao_coff_eolica_tm"
+    assert evidence["provenance_id"].startswith("ev1.")
+    assert evidence["provenance_id"] == evidence["provenance"]["evidence_id"]
+    assert evidence["provenance"]["field_name"] == "total_curtailed_energy"
+    assert evidence["provenance"]["source_sha256s"] == [MATERIALIZED_ITEM["source_sha256"]]
+    assert evidence["provenance"]["observed_at"] == "2026-08-31T23:30:00Z"
+    assert evidence["provenance"]["effective_at"] == "2026-08-31T23:30:00Z"
+    assert evidence["provenance"]["valid_from"] == "2026-08-01T00:00:00Z"
+    assert evidence["provenance"]["valid_to"] == "2026-08-31T23:59:59.999999Z"
+    assert evidence["provenance"]["method_version"] == "curtailed_energy_sum_v1"
+    assert evidence["provenance"]["limitations"]
     assert "materializado" in " ".join(payload["limitations"]).lower()
 
 
@@ -214,19 +292,30 @@ def test_get_provenance_returns_source_lineage(monkeypatch) -> None:
         lambda source_sha256: MATERIALIZED_ITEM,
     )
 
-    response = client.get(f"/v1/provenances/sha256:{MATERIALIZED_ITEM['source_sha256']}")
+    evidence_id = main.build_evidence_id(
+        MATERIALIZED_ITEM["source_sha256"],
+        "total_curtailed_energy",
+        "curtailed_energy_sum_v1",
+        "CJU_BAOUR:2026-08-01:2026-08-31:all",
+    )
+    response = client.get(f"/v1/provenances/{evidence_id}")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["provenance_id"] == f"sha256:{MATERIALIZED_ITEM['source_sha256']}"
+    assert payload["provenance_id"] == evidence_id
     assert payload["classification"] == "calculado"
     assert payload["source"] == "ONS/restricao_coff_eolica_tm"
     assert payload["source_key"] == MATERIALIZED_ITEM["source_key"]
     assert payload["source_sha256"] == MATERIALIZED_ITEM["source_sha256"]
+    assert payload["source_sha256s"] == [MATERIALIZED_ITEM["source_sha256"]]
     assert payload["method"] == MATERIALIZED_ITEM["method"]
     assert payload["origin"] == "PROXY_CALCULADO"
     assert payload["evidence_id"] == payload["provenance_id"]
-    assert payload["method_version"] == MATERIALIZED_ITEM["method"]
+    assert payload["method_version"] == "curtailed_energy_sum_v1"
+    assert payload["field_name"] == "total_curtailed_energy"
+    assert payload["provenance"]["evidence_id"] == evidence_id
+    assert payload["valid_from"] == "2026-08-01T00:00:00Z"
+    assert payload["valid_to"] == "2026-08-31T23:30:00Z"
     assert payload["asset_ids"] == ["CJU_BAOUR"]
 
 
@@ -258,6 +347,14 @@ def test_get_point_context_returns_materialized_anonymized_aggregates(monkeypatc
     assert payload["simultaneity_rate"]["value"] == 66.666667
     assert payload["simultaneity_rate"]["unit"] == "%"
     assert payload["physical_limit_available"] is False
+    entity_evidence = payload["anonymized_entity_count"]
+    rate_evidence = payload["simultaneity_rate"]
+    assert entity_evidence["provenance_id"] != rate_evidence["provenance_id"]
+    assert entity_evidence["provenance"]["field_name"] == "anonymized_entity_count"
+    assert rate_evidence["provenance"]["field_name"] == "simultaneity_rate"
+    monkeypatch.setattr(main.repository, "get_provenance", lambda source_sha256: MATERIALIZED_ITEM)
+    assert client.get(f"/v1/provenances/{entity_evidence['provenance_id']}").status_code == 200
+    assert client.get(f"/v1/provenances/{rate_evidence['provenance_id']}").status_code == 200
     assert "nomes" in " ".join(payload["limitations"]).lower()
     assert "entities" not in payload
 
@@ -400,12 +497,7 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(monkeypatch) 
                 "weekdays_only": False,
                 "unavailable_periods": [],
             },
-            "energy_price": {
-                "value": 250,
-                "unit": "BRL/MWh",
-                "source": "client_scenario",
-                "value_status": "informado",
-            },
+            "energy_price": energy_price_payload(),
         },
     )
 
@@ -423,9 +515,20 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(monkeypatch) 
     evidence = payload["ranked_windows"][0]["expected_curtailed_energy"]
     assert evidence["value_status"] == "calculado"
     assert evidence["origin"] == "PROXY_CALCULADO"
-    assert payload["ranked_windows"][0]["opportunity_cost"]["origin"] == "PROXY_CALCULADO"
+    window = payload["ranked_windows"][0]
+    assert window["opportunity_cost"]["origin"] == "PROXY_CALCULADO"
     assert evidence["source"] == "ONS/restricao_coff_eolica_tm"
-    assert evidence["provenance_id"].startswith("sha256:")
+    assert evidence["provenance_id"].startswith("ev1.")
+    assert window["difference_from_baseline"]["value"] == 12.0
+    assert window["difference_from_baseline"]["provenance"]["field_name"] == (
+        "difference_from_baseline_mwh"
+    )
+    ids = {
+        evidence["provenance_id"],
+        window["opportunity_cost"]["provenance_id"],
+        window["difference_from_baseline"]["provenance_id"],
+    }
+    assert len(ids) == 3
     assert "não é previsão" in " ".join(payload["limitations"]).lower()
 
 
@@ -442,12 +545,7 @@ def test_rank_maintenance_rejects_baseline_outside_period(monkeypatch) -> None:
             "minimum_notice_hours": 168,
             "baseline_window_start": "2026-11-15T00:00:00Z",
             "constraints": {"weekdays_only": False, "unavailable_periods": []},
-            "energy_price": {
-                "value": 250,
-                "unit": "BRL/MWh",
-                "source": "client_scenario",
-                "value_status": "informado",
-            },
+            "energy_price": energy_price_payload(),
         },
     )
 
@@ -465,12 +563,7 @@ def test_rank_maintenance_rejects_non_positive_price() -> None:
             "minimum_notice_hours": 168,
             "baseline_window_start": "2026-10-15T00:00:00Z",
             "constraints": {"weekdays_only": False, "unavailable_periods": []},
-            "energy_price": {
-                "value": -1,
-                "unit": "BRL/MWh",
-                "source": "client_scenario",
-                "value_status": "informado",
-            },
+            "energy_price": energy_price_payload(-1),
         },
     )
 
@@ -488,12 +581,7 @@ def test_rank_maintenance_rejects_unknown_asset() -> None:
             "minimum_notice_hours": 168,
             "baseline_window_start": "2026-10-15T00:00:00Z",
             "constraints": {"weekdays_only": False, "unavailable_periods": []},
-            "energy_price": {
-                "value": 250,
-                "unit": "BRL/MWh",
-                "source": "client_scenario",
-                "value_status": "informado",
-            },
+            "energy_price": energy_price_payload(),
         },
     )
 
@@ -515,6 +603,7 @@ def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(monkeyp
             "round_trip_efficiency": 0.85,
             "cycles_per_year": 200,
             "energy_price_brl_mwh": 250,
+            "input_provenance": bess_input_provenance(),
         },
     )
 
@@ -528,6 +617,27 @@ def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(monkeyp
     assert payload["annual_benefit_brl"] == 3400000.0
     assert payload["annual_net_benefit_brl"] == 3300000.0
     assert payload["preliminary_viable"] is True
+    assert payload["source_observation"]["origin"] == "ONS_PUBLICO"
+    output_evidence = payload["output_evidence"]
+    assert set(output_evidence) == {
+        "residual_exposure_mwh",
+        "technically_absorbable_mwh",
+        "annual_benefit_brl",
+        "annual_net_benefit_brl",
+        "preliminary_viable",
+    }
+    assert {item["origin"] for item in output_evidence.values()} == {"SIMULADO"}
+    assert len({item["provenance_id"] for item in output_evidence.values()}) == 5
+    assert all(
+        item["provenance"]["method_version"] == "bess_screen_v1"
+        for item in output_evidence.values()
+    )
+    monkeypatch.setattr(main.repository, "get_provenance", lambda source_sha256: MATERIALIZED_ITEM)
+    for field_name, evidence in output_evidence.items():
+        provenance_response = client.get(f"/v1/provenances/{evidence['provenance_id']}")
+        assert provenance_response.status_code == 200
+        assert provenance_response.json()["field_name"] == field_name
+        assert provenance_response.json()["origin"] == "SIMULADO"
     assert "soc_cronológico" in payload["missing_data"]
     assert "não é dimensionamento" in " ".join(payload["limitations"]).lower()
 

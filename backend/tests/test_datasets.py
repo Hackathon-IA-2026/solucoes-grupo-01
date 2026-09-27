@@ -7,6 +7,11 @@ from curtailess.datasets import DATASET_REGISTRY, DatasetPeriod, DatasetSpec, ge
 from curtailess.schemas import (
     DataOrigin,
     EvidenceProvenance,
+    MonetaryEvidence,
+    NumericEvidence,
+    Period,
+    build_evidence_id,
+    parse_evidence_id,
     validate_public_and_simulated_evidence,
 )
 
@@ -148,6 +153,7 @@ def test_dataset_spec_is_strict_and_forbids_unknown_metadata() -> None:
 def public_evidence() -> EvidenceProvenance:
     return EvidenceProvenance(
         evidence_id="ons:restricao:2026-09:abc",
+        field_name="curtailed_mwh",
         origin=DataOrigin.ONS_PUBLICO,
         source_key=("dataset/restricao_coff_eolica_tm/RESTRICAO_COFF_EOLICA_2026_09.parquet"),
         source_sha256="a" * 64,
@@ -175,6 +181,7 @@ def test_evidence_provenance_requires_origin_source_and_method_metadata() -> Non
     with pytest.raises(ValidationError, match="source_uri ou source_key"):
         EvidenceProvenance(
             evidence_id="no-source",
+            field_name="test_field",
             origin=DataOrigin.ONS_PUBLICO,
             method_version="ons_source_v1",
             limitations=[],
@@ -202,6 +209,7 @@ def test_public_observation_and_simulation_require_distinct_ids_and_origins() ->
     public = public_evidence()
     simulated = EvidenceProvenance(
         evidence_id="simulation:plant-state:v1:def",
+        field_name="plant_state",
         origin=DataOrigin.SIMULADO,
         source_uri="curtailess://plant-state/CJU_TESTE/2026-09-01T00:00:00Z",
         source_sha256=None,
@@ -225,3 +233,88 @@ def test_public_observation_and_simulation_require_distinct_ids_and_origins() ->
             public,
             simulated.model_copy(update={"origin": DataOrigin.ONS_PUBLICO}),
         )
+
+
+@pytest.mark.parametrize(
+    ("value_status", "origin"),
+    [
+        ("medido", DataOrigin.ONS_PUBLICO),
+        ("previsto", DataOrigin.ONS_PUBLICO),
+        ("calculado", DataOrigin.PROXY_CALCULADO),
+        ("simulado", DataOrigin.SIMULADO),
+        ("informado", DataOrigin.CLIENTE_INFORMADO),
+    ],
+)
+def test_numeric_evidence_enforces_status_origin_mapping(value_status, origin) -> None:
+    provenance = public_evidence().model_copy(update={"origin": origin})
+    evidence = NumericEvidence(
+        value=1.0,
+        unit="MWh",
+        period=Period(start=date(2026, 9, 1), end=date(2026, 9, 1)),
+        source="test",
+        data_version="v1",
+        method="test_method",
+        value_status=value_status,
+        origin=origin,
+        limitations=[],
+        provenance_id=provenance.evidence_id,
+        provenance=provenance,
+    )
+    assert evidence.origin is origin
+
+
+def test_evidence_models_reject_missing_or_contradictory_origin_and_provenance() -> None:
+    provenance = public_evidence()
+    base = {
+        "value": 1.0,
+        "unit": "MWh",
+        "period": Period(start=date(2026, 9, 1), end=date(2026, 9, 1)),
+        "source": "test",
+        "data_version": "v1",
+        "method": "test_method",
+        "value_status": "medido",
+        "limitations": [],
+        "provenance_id": provenance.evidence_id,
+        "provenance": provenance,
+    }
+    with pytest.raises(ValidationError):
+        NumericEvidence.model_validate(base)
+    with pytest.raises(ValidationError, match="origin"):
+        NumericEvidence.model_validate({**base, "origin": DataOrigin.SIMULADO})
+    with pytest.raises(ValidationError, match="provenance"):
+        NumericEvidence.model_validate(
+            {**base, "origin": DataOrigin.ONS_PUBLICO, "provenance_id": "different"}
+        )
+
+    with pytest.raises(ValidationError, match="origin"):
+        MonetaryEvidence(
+            value=10,
+            unit="BRL",
+            source="test",
+            value_status="simulado",
+            origin=DataOrigin.PROXY_CALCULADO,
+            provenance_id=provenance.evidence_id,
+            provenance=provenance,
+        )
+
+
+def test_field_level_evidence_ids_are_unique_self_describing_and_tamper_evident() -> None:
+    source_hashes = ["a" * 64, "b" * 64]
+    count_id = build_evidence_id(source_hashes, "entity_count", "point_context_v1", "point-1")
+    rate_id = build_evidence_id(
+        source_hashes,
+        "simultaneity_rate",
+        "historical_simultaneity_v1",
+        "point-1",
+    )
+
+    assert count_id != rate_id
+    assert "," not in count_id
+    assert parse_evidence_id(count_id) == {
+        "context": "point-1",
+        "field": "entity_count",
+        "method": "point_context_v1",
+        "sources": source_hashes,
+    }
+    with pytest.raises(ValueError, match="inválido"):
+        parse_evidence_id(count_id[:-1] + "0")

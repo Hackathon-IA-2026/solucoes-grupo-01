@@ -1,6 +1,10 @@
+import base64
+import hashlib
+import json
+import re
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -12,22 +16,87 @@ class DataOrigin(StrEnum):
     CLIENTE_INFORMADO = "CLIENTE_INFORMADO"
 
 
-class EvidenceProvenance(BaseModel):
-    """Auditable source and method metadata for one evidence value."""
+ValueStatus = Literal["medido", "calculado", "previsto", "simulado", "informado"]
+STATUS_ORIGIN: dict[str, DataOrigin] = {
+    "medido": DataOrigin.ONS_PUBLICO,
+    "previsto": DataOrigin.ONS_PUBLICO,
+    "calculado": DataOrigin.PROXY_CALCULADO,
+    "simulado": DataOrigin.SIMULADO,
+    "informado": DataOrigin.CLIENTE_INFORMADO,
+}
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+def build_evidence_id(
+    source_identities: str | list[str] | tuple[str, ...],
+    field_name: str,
+    method_version: str,
+    context: str,
+) -> str:
+    """Build a deterministic, self-describing field-level evidence identifier."""
+
+    sources = (
+        [source_identities] if isinstance(source_identities, str) else sorted(source_identities)
+    )
+    payload = {
+        "context": context,
+        "field": field_name,
+        "method": method_version,
+        "sources": sources,
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    encoded = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    digest = hashlib.sha256(raw).hexdigest()[:24]
+    return f"ev1.{encoded}.{digest}"
+
+
+def parse_evidence_id(evidence_id: str) -> dict[str, Any]:
+    """Decode and authenticate an identifier produced by :func:`build_evidence_id`."""
+
+    try:
+        prefix, encoded, digest = evidence_id.split(".")
+        if prefix != "ev1":
+            raise ValueError
+        raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        if hashlib.sha256(raw).hexdigest()[:24] != digest:
+            raise ValueError
+        payload = json.loads(raw)
+        if set(payload) != {"context", "field", "method", "sources"}:
+            raise ValueError
+        if not payload["field"] or not payload["method"] or not payload["sources"]:
+            raise ValueError
+        return payload
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("evidence_id inválido ou corrompido") from exc
+
+
+class EvidenceProvenance(BaseModel):
+    """Authoritative source, temporal validity, and method metadata for one field."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     evidence_id: str = Field(min_length=1)
+    field_name: str = Field(min_length=1)
     origin: DataOrigin
     source_uri: str | None = Field(default=None, min_length=1)
     source_key: str | None = Field(default=None, min_length=1)
     source_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_sha256s: tuple[str, ...] = ()
     observed_at: datetime | None = None
     effective_at: datetime | None = None
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     method_version: str = Field(min_length=1)
     limitations: list[str]
+
+    @field_validator("source_sha256s")
+    @classmethod
+    def validate_source_hashes(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not _SHA256_PATTERN.fullmatch(value) for value in values):
+            raise ValueError("source_sha256s must contain SHA-256 hex digests")
+        if tuple(sorted(set(values))) != values:
+            raise ValueError("source_sha256s must be sorted and unique")
+        return values
 
     @field_validator("observed_at", "effective_at", "valid_from", "valid_to")
     @classmethod
@@ -40,6 +109,8 @@ class EvidenceProvenance(BaseModel):
     def validate_source_and_interval(self) -> Self:
         if self.source_uri is None and self.source_key is None:
             raise ValueError("source_uri ou source_key é obrigatório")
+        if self.observed_at is None and self.effective_at is None:
+            raise ValueError("observed_at ou effective_at é obrigatório")
         if (self.valid_from is None) != (self.valid_to is None):
             raise ValueError("valid_from e valid_to devem ser informados juntos")
         if (
@@ -48,6 +119,13 @@ class EvidenceProvenance(BaseModel):
             and self.valid_to <= self.valid_from
         ):
             raise ValueError("valid_to deve ser posterior a valid_from")
+        hashes = self.source_sha256s or (
+            () if self.source_sha256 is None else (self.source_sha256,)
+        )
+        if self.origin is DataOrigin.ONS_PUBLICO and (self.source_key is None or not hashes):
+            raise ValueError("ONS_PUBLICO requires source_key and source SHA-256")
+        if self.source_sha256 is not None and hashes and self.source_sha256 not in hashes:
+            raise ValueError("source_sha256 must be included in source_sha256s")
         return self
 
 
@@ -107,9 +185,18 @@ class Asset(BaseModel):
     name: str
     technology: Literal["wind", "solar"]
     capacity_mw: float | None
+    capacity_provenance: EvidenceProvenance | None
     ons_group: str
     connection_point: str
     data_mode: Literal["demo", "ons_materialized"]
+
+    @model_validator(mode="after")
+    def require_capacity_provenance(self) -> Self:
+        if (self.capacity_mw is None) != (self.capacity_provenance is None):
+            raise ValueError("capacity_mw and capacity_provenance must be provided together")
+        if self.capacity_provenance and self.capacity_provenance.field_name != "capacity_mw":
+            raise ValueError("capacity provenance must identify capacity_mw")
+        return self
 
 
 class AssetList(BaseModel):
@@ -128,10 +215,22 @@ class NumericEvidence(BaseModel):
     source: str
     data_version: str
     method: str
-    value_status: Literal["medido", "calculado", "previsto", "simulado", "informado"]
-    origin: DataOrigin = DataOrigin.PROXY_CALCULADO
+    value_status: ValueStatus
+    origin: DataOrigin
     limitations: list[str]
     provenance_id: str
+    provenance: EvidenceProvenance
+
+    @model_validator(mode="after")
+    def validate_semantics(self) -> Self:
+        expected = STATUS_ORIGIN[self.value_status]
+        if self.origin is not expected:
+            raise ValueError(f"origin must be {expected.value} for {self.value_status}")
+        if self.provenance.origin is not self.origin:
+            raise ValueError("provenance origin must match evidence origin")
+        if self.provenance.evidence_id != self.provenance_id:
+            raise ValueError("provenance_id must equal provenance.evidence_id")
+        return self
 
 
 class ExposureResponse(BaseModel):
@@ -162,17 +261,24 @@ class DataQualityResponse(BaseModel):
 class ProvenanceResponse(BaseModel):
     provenance_id: str
     evidence_id: str
-    classification: Literal["calculado"]
+    classification: ValueStatus
     origin: DataOrigin
     source: str
     source_bucket: str | None
     source_key: str
     source_sha256: str
+    source_sha256s: list[str]
     data_version: str
     method: str
     method_version: str
+    field_name: str
+    observed_at: datetime | None
+    effective_at: datetime | None
+    valid_from: datetime | None
+    valid_to: datetime | None
     asset_ids: list[str]
     limitations: list[str]
+    provenance: EvidenceProvenance
 
 
 class PointContextResponse(BaseModel):
@@ -212,7 +318,16 @@ class EnergyPrice(BaseModel):
     unit: Literal["BRL/MWh"]
     source: str = Field(min_length=1)
     value_status: Literal["informado"]
-    origin: DataOrigin = DataOrigin.CLIENTE_INFORMADO
+    origin: Literal[DataOrigin.CLIENTE_INFORMADO]
+    provenance: EvidenceProvenance
+
+    @model_validator(mode="after")
+    def validate_provenance(self) -> Self:
+        if self.provenance.origin is not DataOrigin.CLIENTE_INFORMADO:
+            raise ValueError("energy price provenance must be CLIENTE_INFORMADO")
+        if self.provenance.field_name != "energy_price":
+            raise ValueError("energy price provenance must identify energy_price")
+        return self
 
 
 class MaintenanceRankRequest(BaseModel):
@@ -231,7 +346,20 @@ class MonetaryEvidence(BaseModel):
     unit: Literal["BRL"]
     source: str
     value_status: Literal["calculado", "simulado"]
-    origin: DataOrigin = DataOrigin.PROXY_CALCULADO
+    origin: DataOrigin
+    provenance_id: str
+    provenance: EvidenceProvenance
+
+    @model_validator(mode="after")
+    def validate_semantics(self) -> Self:
+        expected = STATUS_ORIGIN[self.value_status]
+        if self.origin is not expected:
+            raise ValueError(f"origin must be {expected.value} for {self.value_status}")
+        if self.provenance.origin is not self.origin:
+            raise ValueError("provenance origin must match evidence origin")
+        if self.provenance.evidence_id != self.provenance_id:
+            raise ValueError("provenance_id must equal provenance.evidence_id")
+        return self
 
 
 class RankedMaintenanceWindow(BaseModel):
@@ -241,6 +369,7 @@ class RankedMaintenanceWindow(BaseModel):
     expected_curtailed_energy: NumericEvidence
     opportunity_cost: MonetaryEvidence
     difference_from_baseline_mwh: float
+    difference_from_baseline: NumericEvidence
 
 
 class MaintenanceRankResponse(BaseModel):
@@ -262,6 +391,31 @@ class BessScreenRequest(BaseModel):
     round_trip_efficiency: float = Field(gt=0, le=1)
     cycles_per_year: int = Field(gt=0)
     energy_price_brl_mwh: float = Field(ge=0)
+    input_provenance: dict[str, EvidenceProvenance]
+
+    @model_validator(mode="after")
+    def validate_input_provenance(self) -> Self:
+        required = {
+            "power_mw",
+            "energy_mwh",
+            "capex_brl",
+            "annualized_cost_brl",
+            "round_trip_efficiency",
+            "cycles_per_year",
+            "energy_price_brl_mwh",
+        }
+        if set(self.input_provenance) != required:
+            raise ValueError("input_provenance must cover every decision-affecting BESS input")
+        evidence_ids = set()
+        for field_name, provenance in self.input_provenance.items():
+            if provenance.field_name != field_name:
+                raise ValueError("BESS input provenance field_name mismatch")
+            if provenance.origin is not DataOrigin.CLIENTE_INFORMADO:
+                raise ValueError("BESS inputs must use CLIENTE_INFORMADO provenance")
+            evidence_ids.add(provenance.evidence_id)
+        if len(evidence_ids) != len(required):
+            raise ValueError("BESS inputs require unique field-level evidence IDs")
+        return self
 
 
 class BessScreenResponse(BaseModel):
@@ -274,8 +428,27 @@ class BessScreenResponse(BaseModel):
     annual_benefit_brl: float
     annual_net_benefit_brl: float
     preliminary_viable: bool
+    source_observation: EvidenceProvenance
+    output_evidence: dict[str, NumericEvidence | MonetaryEvidence]
     missing_data: list[str]
     limitations: list[str]
+
+    @model_validator(mode="after")
+    def validate_public_simulation_boundary(self) -> Self:
+        required = {
+            "residual_exposure_mwh",
+            "technically_absorbable_mwh",
+            "annual_benefit_brl",
+            "annual_net_benefit_brl",
+            "preliminary_viable",
+        }
+        if set(self.output_evidence) != required:
+            raise ValueError("output_evidence must cover every decision-affecting BESS output")
+        for field_name, evidence in self.output_evidence.items():
+            if evidence.provenance.field_name != field_name:
+                raise ValueError("BESS output provenance field_name mismatch")
+            validate_public_and_simulated_evidence(self.source_observation, evidence.provenance)
+        return self
 
 
 class ModelRunResponse(BaseModel):
