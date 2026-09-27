@@ -444,24 +444,127 @@ def build_group_history(
 def build_point_context(
     *,
     point_id: str,
-    groups: Sequence[GroupHistory],
-    entity_ids: Sequence[str],
+    group_totals_mwh: Mapping[str, float],
+    plant_ids_by_group: Mapping[str, Sequence[str]],
+    selected_asset_ids: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """Aggregate the point by deriving group totals once, without double counting."""
-    group_totals = {group.group_id: round(group.total_public_mwh, 6) for group in groups}
+    """Aggregate one connection point, counting every group exactly once.
+
+    The point context aggregates every active plant linked to the point. The published
+    curtailment total is only available at the group level, so each group of the point is
+    derived from its own plants and summed exactly once. Plants of a different point are
+    never mixed in, and a group is never counted twice.
+    """
+    group_ids = sorted(group_totals_mwh)
+    if len(group_ids) != len(set(group_ids)):
+        raise UnreconciledGroupTotalError(f"conjunto repetido no ponto {point_id}")
+    entities: list[str] = []
+    plant_count_by_group: dict[str, int] = {}
+    duplicate_links: list[str] = []
+    for group_id in group_ids:
+        plants = list(plant_ids_by_group.get(group_id, ()))
+        plant_count_by_group[group_id] = len(plants)
+        for plant_id in plants:
+            if plant_id.startswith("CJU_"):
+                raise UnreconciledGroupTotalError(
+                    f"o ponto {point_id} não pode listar o conjunto {plant_id} como usina"
+                )
+            if plant_id in entities:
+                duplicate_links.append(plant_id)
+                continue
+            entities.append(plant_id)
+    group_public = {group_id: round(float(group_totals_mwh[group_id]), 6) for group_id in group_ids}
+    selected = sorted(asset_id for asset_id in selected_asset_ids if asset_id)
     return {
         "point_id": point_id,
-        "entity_count": len(entity_ids),
-        "entities": sorted(entity_ids),
-        "group_ids": [group.group_id for group in groups],
-        "group_public_mwh": group_totals,
-        "point_public_mwh": round(sum(group_totals.values()), 6),
-        "group_count": len(groups),
+        "entity_level": "plant",
+        "entity_count": len(entities),
+        "entities": sorted(entities),
+        "group_count": len(group_ids),
+        "group_ids": group_ids,
+        "group_public_mwh": group_public,
+        "point_public_mwh": round(sum(group_public.values()), 6),
+        "plant_count_by_group": plant_count_by_group,
+        "selected_asset_ids": selected,
+        "duplicate_plant_links": sorted(set(duplicate_links)),
         "origin": PROXY_ORIGIN,
-        "note": (
-            "Os totais de conjunto são derivados das usinas correspondentes e somados uma "
-            "única vez; nenhum conjunto é somado duas vezes."
+        "derivation": (
+            "Cada total de conjunto é derivado das usinas do próprio conjunto e somado "
+            "uma única vez no ponto; nenhuma usina de outro ponto entra na conta."
         ),
+        "note": (
+            "O contexto do ponto lista usinas individuais ativas, não conjuntos, e não "
+            "atribui a energia das demais entidades à usina selecionada."
+        ),
+    }
+
+
+def build_point_contexts(
+    *,
+    point_group_ids: Mapping[str, Sequence[str]],
+    group_totals_mwh: Mapping[str, float],
+    plant_ids_by_group: Mapping[str, Sequence[str]],
+    selected_by_group: Mapping[str, str],
+) -> dict[str, dict[str, Any]]:
+    """Build one context per connection point and prove that nothing is double counted."""
+    assigned = {group_id for group_ids in point_group_ids.values() for group_id in group_ids}
+    if len(assigned) != sum(len(group_ids) for group_ids in point_group_ids.values()):
+        raise UnreconciledGroupTotalError("um conjunto foi atribuído a mais de um ponto")
+    contexts: dict[str, dict[str, Any]] = {}
+    for point_id, group_ids in point_group_ids.items():
+        selected = [
+            selected_by_group[group_id] for group_id in group_ids if group_id in selected_by_group
+        ]
+        contexts[point_id] = build_point_context(
+            point_id=point_id,
+            group_totals_mwh={
+                group_id: group_totals_mwh.get(group_id, 0.0) for group_id in group_ids
+            },
+            plant_ids_by_group=plant_ids_by_group,
+            selected_asset_ids=selected,
+        )
+    total = round(sum(context["point_public_mwh"] for context in contexts.values()), 6)
+    counted_once = round(
+        sum(float(group_totals_mwh.get(group_id, 0.0)) for group_id in assigned), 6
+    )
+    if abs(total - counted_once) > CONSERVATION_TOLERANCE_MWH:
+        raise UnreconciledGroupTotalError(
+            f"os pontos somam {total:.6f} MWh contra {counted_once:.6f} MWh de conjuntos distintos"
+        )
+    return contexts
+
+
+def load_group_points(paths: Sequence[str]) -> dict[str, str]:
+    """Map every published group to its single connection point.
+
+    A group published at more than one point is ambiguous and fails instead of being
+    silently assigned to one of them.
+    """
+    query = """
+        SELECT trim(id_ons), trim(id_pontoconexao)
+        FROM {source}
+        WHERE trim(id_ons) LIKE 'CJU_%'
+          AND nullif(trim(id_pontoconexao), '') IS NOT NULL
+        GROUP BY 1, 2
+        ORDER BY 1, 2
+    """
+    pairs: dict[str, set[str]] = {}
+    with duckdb.connect() as connection:
+        for path in paths:
+            source = f"read_parquet('{path}', union_by_name=true)"
+            for group_id, point_id in connection.execute(query.format(source=source)).fetchall():
+                pairs.setdefault(group_id, set()).add(point_id)
+    ambiguous = {group_id: sorted(points) for group_id, points in pairs.items() if len(points) > 1}
+    if ambiguous:
+        raise UnreconciledGroupTotalError(f"conjunto com mais de um ponto publicado: {ambiguous}")
+    return {group_id: next(iter(points)) for group_id, points in pairs.items()}
+
+
+def group_public_totals(public_by_group: Mapping[str, Mapping[date, float]]) -> dict[str, float]:
+    """Sum each group's published daily series once, never adding a group twice."""
+    return {
+        group_id: round(sum(float(value) for value in series.values()), 6)
+        for group_id, series in public_by_group.items()
     }
 
 
@@ -646,17 +749,36 @@ def materialize(
     groups = load_group_plants(relationship, group_ids=group_ids)
     capacities = load_plant_capacities(capacity)
 
+    group_points = load_group_points([wind_aggregate, solar_aggregate])
+    selected_points = sorted({plant["connection_point"] for plant in selected.values()})
+    for group_id in group_ids:
+        published = group_points.get(group_id)
+        if published is None:
+            raise UnreconciledGroupTotalError(f"conjunto {group_id} sem ponto de conexão publicado")
+        if published != selected[group_id]["connection_point"]:
+            raise UnreconciledGroupTotalError(
+                f"conjunto {group_id} publicado no ponto {published}, "
+                f"não em {selected[group_id]['connection_point']}"
+            )
+    point_group_ids = {
+        point_id: sorted(
+            group for group, published in group_points.items() if published == point_id
+        )
+        for point_id in selected_points
+    }
+    for point_id, point_groups in point_group_ids.items():
+        if not point_groups:
+            raise UnreconciledGroupTotalError(f"ponto {point_id} sem conjunto publicado")
+    point_groups = sorted(
+        {group for groups_of_point in point_group_ids.values() for group in groups_of_point}
+    )
+    point_plants = load_group_plants(relationship, group_ids=point_groups)
+
     public: dict[str, dict[date, float]] = {}
-    for path, ids in (
-        (wind_aggregate, [gid for gid, plant in selected.items() if plant["technology"] == "wind"]),
-        (
-            solar_aggregate,
-            [gid for gid, plant in selected.items() if plant["technology"] == "solar"],
-        ),
-    ):
+    for path in (wind_aggregate, solar_aggregate):
         public.update(
             load_group_public_daily(
-                path, group_ids=ids, window_start=window_start, window_end=window_end
+                path, group_ids=point_groups, window_start=window_start, window_end=window_end
             )
         )
 
@@ -758,14 +880,21 @@ def materialize(
             }
         )
 
-    point_id = selected[group_ids[0]]["connection_point"]
-    context = build_point_context(
-        point_id=point_id,
-        groups=histories,
-        entity_ids=group_ids,
+    point_contexts = build_point_contexts(
+        point_group_ids=point_group_ids,
+        group_totals_mwh=group_public_totals(public),
+        plant_ids_by_group={group: sorted(point_plants.get(group, {})) for group in point_groups},
+        selected_by_group={group_id: selected[group_id]["asset_id"] for group_id in group_ids},
     )
+    context_by_point = point_contexts
+    for payload in plant_payloads:
+        context = context_by_point[payload["connection_point"]]
+        payload["point_entity_count"] = context["entity_count"]
+        payload["point_group_count"] = context["group_count"]
+        payload["point_public_mwh"] = context["point_public_mwh"]
     total_public = round(sum(history.total_public_mwh for history in histories), 6)
     total_allocated = round(sum(history.total_allocated_mwh for history in histories), 6)
+    point_total = round(sum(context["point_public_mwh"] for context in point_contexts.values()), 6)
     return {
         "schema": SCHEMA,
         "source": ONS_ORIGIN,
@@ -783,7 +912,9 @@ def materialize(
             "Quando os proxies não sustentam pesos, o fallback usa a capacidade apenas "
             "entre as usinas marcadas como restritas.",
             "Sem indicação individual válida, o total do conjunto permanece não alocado.",
-            "O ponto de conexão é o publicado no nível do conjunto.",
+            "Cada ponto de conexão tem contexto próprio; conjuntos de pontos diferentes "
+            "nunca são somados juntos.",
+            "O contexto do ponto lista as usinas ativas vinculadas ao ponto, não conjuntos.",
             "A base detalhada solar omite id_ons_conjuntousina em parte de 2024; o vínculo "
             "foi recuperado pelo nome cadastral do conjunto.",
         ],
@@ -795,7 +926,17 @@ def materialize(
                 (history.max_residual_mwh for history in histories), default=0.0
             ),
         },
-        "point_context": context,
+        "point_coverage": {
+            "point_count": len(point_contexts),
+            "group_count": len(point_groups),
+            "point_public_mwh": point_total,
+            "selected_group_public_mwh": total_public,
+            "derivation": (
+                "Cada ponto soma somente os conjuntos publicados naquele ponto; cada "
+                "conjunto aparece em um único ponto e é contado uma única vez."
+            ),
+        },
+        "point_contexts": point_contexts,
         "groups": [
             {
                 "group_id": history.group_id,

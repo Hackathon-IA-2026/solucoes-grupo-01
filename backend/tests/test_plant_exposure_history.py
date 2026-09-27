@@ -21,6 +21,7 @@ from curtailess.plant_exposure_history import (
     allocate_group_curtailment,
     build_group_history,
     build_point_context,
+    build_point_contexts,
     daily_occurrence,
     energy_usable,
     fit_generation_curve,
@@ -314,55 +315,70 @@ def test_non_restricted_plant_receives_no_energy() -> None:
 
 
 def test_point_context_derives_group_totals_without_double_counting() -> None:
-    plant = PlantSeries(
-        plant_id="A",
-        name="A",
-        group_id="CJU_TEST",
-        capacity_mw=30.0,
-        intervals=tuple(
-            interval(plant_id="A", hour=hour, accepted=2.0, weather=5.0, restricted=True)
-            for hour in range(4)
-        ),
-    )
-    group_one = build_group_history(
-        group_id="CJU_TEST",
-        plants=(plant,),
-        group_public_by_day={date(2024, 4, 1): 12.0},
-    )
-    group_two = build_group_history(
-        group_id="CJU_TEST2",
-        plants=(
-            PlantSeries(
-                plant_id="B",
-                name="B",
-                group_id="CJU_TEST2",
-                capacity_mw=30.0,
-                intervals=tuple(
-                    interval(
-                        plant_id="B",
-                        group_id="CJU_TEST2",
-                        hour=hour,
-                        accepted=2.0,
-                        weather=5.0,
-                        restricted=True,
-                    )
-                    for hour in range(4)
-                ),
-            ),
-        ),
-        group_public_by_day={date(2024, 4, 1): 8.0},
-    )
     context = build_point_context(
         point_id="POINT-1",
-        groups=(group_one, group_two),
-        entity_ids=("CJU_TEST", "CJU_TEST2"),
+        group_totals_mwh={"CJU_TEST": 12.0, "CJU_TEST2": 8.0},
+        plant_ids_by_group={"CJU_TEST": ("A", "B"), "CJU_TEST2": ("C",)},
+        selected_asset_ids=("A",),
     )
 
     assert context["point_public_mwh"] == pytest.approx(20.0)
     assert context["group_public_mwh"] == {"CJU_TEST": 12.0, "CJU_TEST2": 8.0}
     assert context["point_public_mwh"] == pytest.approx(sum(context["group_public_mwh"].values()))
-    assert context["entity_count"] == 2
+    assert context["entity_count"] == 3
+    assert context["entities"] == ["A", "B", "C"]
+    assert context["entity_level"] == "plant"
     assert context["origin"] == "PROXY_CALCULADO"
+    assert context["selected_asset_ids"] == ["A"]
+    assert context["plant_count_by_group"] == {"CJU_TEST": 2, "CJU_TEST2": 1}
+
+
+def test_point_contexts_keep_points_separate_and_count_each_group_once() -> None:
+    contexts = build_point_contexts(
+        point_group_ids={"POINT-1": ("CJU_TEST",), "POINT-2": ("CJU_TEST2",)},
+        group_totals_mwh={"CJU_TEST": 12.0, "CJU_TEST2": 8.0},
+        plant_ids_by_group={"CJU_TEST": ("A",), "CJU_TEST2": ("B",)},
+        selected_by_group={"CJU_TEST": "A", "CJU_TEST2": "B"},
+    )
+
+    # The five selected plants belong to five different points, so no total may be mixed.
+    assert set(contexts) == {"POINT-1", "POINT-2"}
+    assert contexts["POINT-1"]["entities"] == ["A"]
+    assert contexts["POINT-1"]["point_public_mwh"] == pytest.approx(12.0)
+    assert contexts["POINT-2"]["entities"] == ["B"]
+    assert contexts["POINT-2"]["point_public_mwh"] == pytest.approx(8.0)
+    assert contexts["POINT-1"]["group_ids"] == ["CJU_TEST"]
+    assert contexts["POINT-2"]["group_ids"] == ["CJU_TEST2"]
+    assert sum(context["point_public_mwh"] for context in contexts.values()) == pytest.approx(20.0)
+
+
+def test_point_contexts_reject_group_entities_and_repeated_groups() -> None:
+    with pytest.raises(UnreconciledGroupTotalError):
+        build_point_context(
+            point_id="POINT-1",
+            group_totals_mwh={"CJU_TEST": 1.0},
+            plant_ids_by_group={"CJU_TEST": ("CJU_TEST",)},
+        )
+
+    with pytest.raises(UnreconciledGroupTotalError):
+        build_point_contexts(
+            point_group_ids={"POINT-1": ("CJU_TEST",), "POINT-2": ("CJU_TEST",)},
+            group_totals_mwh={"CJU_TEST": 1.0},
+            plant_ids_by_group={"CJU_TEST": ("A",)},
+            selected_by_group={"CJU_TEST": "A"},
+        )
+
+
+def test_point_context_counts_a_shared_plant_link_only_once() -> None:
+    context = build_point_context(
+        point_id="POINT-1",
+        group_totals_mwh={"CJU_TEST": 1.0, "CJU_TEST2": 2.0},
+        plant_ids_by_group={"CJU_TEST": ("A",), "CJU_TEST2": ("A", "B")},
+    )
+
+    assert context["entities"] == ["A", "B"]
+    assert context["entity_count"] == 2
+    assert context["duplicate_plant_links"] == ["A"]
 
 
 @pytest.mark.skipif(not BUNDLED.exists(), reason="plant history not materialized yet")
@@ -382,11 +398,38 @@ def test_bundled_history_has_five_reconciled_plant_series() -> None:
         days = [row["date"] for row in plant["series"]]
         assert days == sorted(set(days))
     assert history["conservation"]["max_residual_mwh"] <= CONSERVATION_TOLERANCE_MWH
-    assert history["point_context"]["point_public_mwh"] == pytest.approx(
-        history["conservation"]["total_group_public_mwh"]
+    contexts = history["point_contexts"]
+    assert len(contexts) == 5
+    assert history["point_coverage"]["point_count"] == 5
+    assert history["point_coverage"]["point_public_mwh"] == pytest.approx(
+        sum(context["point_public_mwh"] for context in contexts.values())
     )
+    # Each selected plant belongs to its own connection point: no two plants share one.
+    assert {plant["connection_point"] for plant in plants} == set(contexts)
+    for plant in plants:
+        context = contexts[plant["connection_point"]]
+        assert plant["asset_id"] in context["entities"]
+        assert plant["asset_id"] in context["selected_asset_ids"]
+        assert context["entity_level"] == "plant"
+        assert context["entity_count"] == len(context["entities"])
+        assert context["group_count"] == len(context["group_ids"])
+        assert all(not entity.startswith("CJU_") for entity in context["entities"])
+        assert context["point_public_mwh"] == pytest.approx(
+            sum(context["group_public_mwh"].values())
+        )
+        assert set(context["group_public_mwh"]) == set(context["group_ids"])
+        assert plant["point_entity_count"] == context["entity_count"]
+        assert plant["point_public_mwh"] == context["point_public_mwh"]
+    # No group is counted in two points and no total is the sum of five mixed groups.
+    all_groups = [group for context in contexts.values() for group in context["group_ids"]]
+    assert len(all_groups) == len(set(all_groups))
+    selected_groups = {plant["ons_group_id"] for plant in plants}
+    assert len(selected_groups) == 5
+    for context in contexts.values():
+        assert len(set(context["group_ids"]) & selected_groups) <= 1
 
     with BUNDLED.open(encoding="utf-8") as stream:
         raw = json.load(stream)
     assert raw["schema"] == "curtailless.individual_plant_history.v1"
     assert raw["calculation"] == "PROXY_CALCULADO"
+    assert "point_context" not in raw

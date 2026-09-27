@@ -13,7 +13,8 @@
     "O rateio conserva o total publicado do conjunto dentro da tolerância numérica.",
     "Quando os proxies não sustentam pesos, o fallback usa a capacidade apenas entre as usinas marcadas como restritas.",
     "Sem indicação individual válida, o total do conjunto permanece não alocado.",
-    "O ponto de conexão é o publicado no nível do conjunto.",
+    "Cada ponto de conexão tem contexto próprio; conjuntos de pontos diferentes nunca são somados juntos.",
+    "O contexto do ponto lista as usinas ativas vinculadas ao ponto, não conjuntos.",
     "A base detalhada solar omite id_ons_conjuntousina em parte de 2024; o vínculo foi recuperado pelo nome cadastral do conjunto."
   ],
   "conservation": {
@@ -22,34 +23,418 @@
     "total_allocated_mwh": 3155888.206,
     "max_residual_mwh": 9.094947017729282e-13
   },
-  "point_context": {
-    "point_id": "RNCMM-500-A",
-    "entity_count": 5,
-    "entities": [
-      "CJU_BALRA",
-      "CJU_BASDB",
-      "CJU_PBLZA",
-      "CJU_RNMVS",
-      "CJU_RNRDV"
-    ],
-    "group_ids": [
-      "CJU_RNRDV",
-      "CJU_BALRA",
-      "CJU_BASDB",
-      "CJU_RNMVS",
-      "CJU_PBLZA"
-    ],
-    "group_public_mwh": {
-      "CJU_RNRDV": 1235868.0235,
-      "CJU_BALRA": 977121.2935,
-      "CJU_BASDB": 599237.878,
-      "CJU_RNMVS": 266906.552,
-      "CJU_PBLZA": 76754.459
+  "point_coverage": {
+    "point_count": 5,
+    "group_count": 24,
+    "point_public_mwh": 11907777.4095,
+    "selected_group_public_mwh": 3155888.206,
+    "derivation": "Cada ponto soma somente os conjuntos publicados naquele ponto; cada conjunto aparece em um único ponto e é contado uma única vez."
+  },
+  "point_contexts": {
+    "BAGOR-230-A": {
+      "point_id": "BAGOR-230-A",
+      "entity_level": "plant",
+      "entity_count": 52,
+      "entities": [
+        "BAEA41",
+        "BAEA42",
+        "BAEA43",
+        "BAEA44",
+        "BAEA45",
+        "BAEA46",
+        "BAEA51",
+        "BAEA52",
+        "BAEA53",
+        "BAEA54",
+        "BAEA55",
+        "BAEA56",
+        "BAELA3",
+        "BAELA9",
+        "BASA01",
+        "BASA02",
+        "BASA03",
+        "BASA04",
+        "BASA05",
+        "BASA06",
+        "BASA07",
+        "BASA08",
+        "BASA09",
+        "BASA10",
+        "BASA11",
+        "BASA12",
+        "BASA13",
+        "BASA14",
+        "BASA15",
+        "BASA16",
+        "BASA17",
+        "BASA18",
+        "BASA19",
+        "BASA20",
+        "BASA21",
+        "BASA22",
+        "BASA23",
+        "BASA24",
+        "BASV01",
+        "BASV02",
+        "BASV03",
+        "BASV04",
+        "BASV05",
+        "BASV06",
+        "BASV07",
+        "BASV08",
+        "BASV09",
+        "BASV10",
+        "BASV11",
+        "BASV12",
+        "BASV13",
+        "BASV14"
+      ],
+      "group_count": 3,
+      "group_ids": [
+        "CJU_BALRA",
+        "CJU_BASAR",
+        "CJU_BASVT"
+      ],
+      "group_public_mwh": {
+        "CJU_BALRA": 977121.2935,
+        "CJU_BASAR": 948687.6295,
+        "CJU_BASVT": 618478.983
+      },
+      "point_public_mwh": 2544287.906,
+      "plant_count_by_group": {
+        "CJU_BALRA": 14,
+        "CJU_BASAR": 24,
+        "CJU_BASVT": 14
+      },
+      "selected_asset_ids": [
+        "BAEA52"
+      ],
+      "duplicate_plant_links": [],
+      "origin": "PROXY_CALCULADO",
+      "derivation": "Cada total de conjunto é derivado das usinas do próprio conjunto e somado uma única vez no ponto; nenhuma usina de outro ponto entra na conta.",
+      "note": "O contexto do ponto lista usinas individuais ativas, não conjuntos, e não atribui a energia das demais entidades à usina selecionada."
     },
-    "point_public_mwh": 3155888.206,
-    "group_count": 5,
-    "origin": "PROXY_CALCULADO",
-    "note": "Os totais de conjunto são derivados das usinas correspondentes e somados uma única vez; nenhum conjunto é somado duas vezes."
+    "BAMPD-230-A": {
+      "point_id": "BAMPD-230-A",
+      "entity_level": "plant",
+      "entity_count": 44,
+      "entities": [
+        "BAEB01",
+        "BAEB02",
+        "BAEB03",
+        "BAEB06",
+        "BAEB07",
+        "BAEB08",
+        "BAEB09",
+        "BAEB0A",
+        "BAEB0B",
+        "BAEB0C",
+        "BAEB0D",
+        "BAEB0E",
+        "BAEB0F",
+        "BAEB10",
+        "BAEB11",
+        "BAEB12",
+        "BAEB13",
+        "BAEB14",
+        "BAEB18",
+        "BAEB23",
+        "BAEB27",
+        "BAEB9",
+        "BAEBVT",
+        "BAESAC",
+        "BAESAU",
+        "BAESBE",
+        "BAESEM",
+        "BAESGA",
+        "BAESJU",
+        "BAESMR",
+        "BAESPL",
+        "BAESTA",
+        "BAESTD",
+        "BAESTE",
+        "BASB01",
+        "BASB02",
+        "BASB03",
+        "BASB04",
+        "BAUECR",
+        "BAUEDA",
+        "BAUEDR",
+        "BAUEEP",
+        "BAUEMN",
+        "BAUEPR"
+      ],
+      "group_count": 7,
+      "group_ids": [
+        "CJU_BABAB",
+        "CJU_BACRI",
+        "CJU_BAMCS",
+        "CJU_BASAZ",
+        "CJU_BASDB",
+        "CJU_BASSDB",
+        "CJU_BAVBA"
+      ],
+      "group_public_mwh": {
+        "CJU_BABAB": 212693.1435,
+        "CJU_BACRI": 130840.5675,
+        "CJU_BAMCS": 261476.566,
+        "CJU_BASAZ": 215999.8965,
+        "CJU_BASDB": 599237.878,
+        "CJU_BASSDB": 65807.423,
+        "CJU_BAVBA": 364591.0735
+      },
+      "point_public_mwh": 1850646.548,
+      "plant_count_by_group": {
+        "CJU_BABAB": 5,
+        "CJU_BACRI": 3,
+        "CJU_BAMCS": 6,
+        "CJU_BASAZ": 4,
+        "CJU_BASDB": 14,
+        "CJU_BASSDB": 4,
+        "CJU_BAVBA": 8
+      },
+      "selected_asset_ids": [
+        "BAEB0B"
+      ],
+      "duplicate_plant_links": [],
+      "origin": "PROXY_CALCULADO",
+      "derivation": "Cada total de conjunto é derivado das usinas do próprio conjunto e somado uma única vez no ponto; nenhuma usina de outro ponto entra na conta.",
+      "note": "O contexto do ponto lista usinas individuais ativas, não conjuntos, e não atribui a energia das demais entidades à usina selecionada."
+    },
+    "RNCMM-500-A": {
+      "point_id": "RNCMM-500-A",
+      "entity_level": "plant",
+      "entity_count": 16,
+      "entities": [
+        "RNEJ23",
+        "RNEM01",
+        "RNEM09",
+        "RNEM10",
+        "RNEM11",
+        "RNEM12",
+        "RNEM13",
+        "RNEM14",
+        "RNLE01",
+        "RNLE02",
+        "RNLE03",
+        "RNLE04",
+        "RNLE05",
+        "RNLE12",
+        "RNLE13",
+        "RNLE14"
+      ],
+      "group_count": 2,
+      "group_ids": [
+        "CJU_RNRDV",
+        "CJU_RNRVE"
+      ],
+      "group_public_mwh": {
+        "CJU_RNRDV": 1235868.0235,
+        "CJU_RNRVE": 1083406.8645
+      },
+      "point_public_mwh": 2319274.888,
+      "plant_count_by_group": {
+        "CJU_RNRDV": 8,
+        "CJU_RNRVE": 8
+      },
+      "selected_asset_ids": [
+        "RNEM13"
+      ],
+      "duplicate_plant_links": [],
+      "origin": "PROXY_CALCULADO",
+      "derivation": "Cada total de conjunto é derivado das usinas do próprio conjunto e somado uma única vez no ponto; nenhuma usina de outro ponto entra na conta.",
+      "note": "O contexto do ponto lista usinas individuais ativas, não conjuntos, e não atribui a energia das demais entidades à usina selecionada."
+    },
+    "RNMTV-500-A": {
+      "point_id": "RNMTV-500-A",
+      "entity_level": "plant",
+      "entity_count": 43,
+      "entities": [
+        "RNEBQ1",
+        "RNEBQ2",
+        "RNECT1",
+        "RNECT2",
+        "RNEJR1",
+        "RNEJR2",
+        "RNEJR3",
+        "RNEJR4",
+        "RNEJR5",
+        "RNEJR6",
+        "RNEMV1",
+        "RNEMV2",
+        "RNEMV3",
+        "RNEMV4",
+        "RNEMV5",
+        "RNEMV6",
+        "RNES01",
+        "RNES02",
+        "RNES03",
+        "RNES04",
+        "RNES05",
+        "RNES06",
+        "RNES13",
+        "RNES14",
+        "RNES17",
+        "RNES18",
+        "RNES21",
+        "RNES25",
+        "RNES26",
+        "RNES27",
+        "RNITA1",
+        "RNITA2",
+        "RNITA3",
+        "RNMVS2",
+        "RNMVS3",
+        "RNMVS4",
+        "RNMVS5",
+        "RNMVS7",
+        "RNSDO1",
+        "RNSDO2",
+        "RNSDO3",
+        "RNSDO4",
+        "RNSDO5"
+      ],
+      "group_count": 4,
+      "group_ids": [
+        "CJU_RNEMVD",
+        "CJU_RNJER",
+        "CJU_RNMVS",
+        "CJU_RNSAG"
+      ],
+      "group_public_mwh": {
+        "CJU_RNEMVD": 1182573.401,
+        "CJU_RNJER": 912369.4735,
+        "CJU_RNMVS": 266906.552,
+        "CJU_RNSAG": 1198198.504
+      },
+      "point_public_mwh": 3560047.9305,
+      "plant_count_by_group": {
+        "CJU_RNEMVD": 16,
+        "CJU_RNJER": 8,
+        "CJU_RNMVS": 5,
+        "CJU_RNSAG": 14
+      },
+      "selected_asset_ids": [
+        "RNMVS2"
+      ],
+      "duplicate_plant_links": [],
+      "origin": "PROXY_CALCULADO",
+      "derivation": "Cada total de conjunto é derivado das usinas do próprio conjunto e somado uma única vez no ponto; nenhuma usina de outro ponto entra na conta.",
+      "note": "O contexto do ponto lista usinas individuais ativas, não conjuntos, e não atribui a energia das demais entidades à usina selecionada."
+    },
+    "RNSTL-500-A": {
+      "point_id": "RNSTL-500-A",
+      "entity_level": "plant",
+      "entity_count": 67,
+      "entities": [
+        "PBCH1",
+        "PBCH2",
+        "PBCH3",
+        "PBCH4",
+        "PBCH5",
+        "PBCH6",
+        "PBCH7",
+        "PBCN2",
+        "PBCN3",
+        "PBCN4",
+        "PBLG3",
+        "PBLG4",
+        "PBLZ2",
+        "PBLZ3",
+        "PBSL01",
+        "PBSL02",
+        "PBSL03",
+        "PBSL04",
+        "PBSL05",
+        "PBSL06",
+        "PBSL07",
+        "PBSL08",
+        "PBSL09",
+        "PBSL15",
+        "PBSL16",
+        "PBSL17",
+        "PBSL18",
+        "PBSL19",
+        "PBSL20",
+        "PBSL21",
+        "PBSS02",
+        "PBSS03",
+        "PBSS04",
+        "PBSS06",
+        "PBSS07",
+        "PBSS09",
+        "PBSS10",
+        "PBSS11",
+        "PBSS12",
+        "PBSS14",
+        "PBSS16",
+        "PBSS17",
+        "PBVA1",
+        "PBVA2",
+        "PBVA3",
+        "RNLZ17",
+        "RNOS01",
+        "RNOS02",
+        "RNOS03",
+        "RNOS04",
+        "RNOS05",
+        "RNOS06",
+        "RNOS09",
+        "RNOS10",
+        "RNOS11",
+        "RNOS12",
+        "RNRAF1",
+        "RNRAF2",
+        "RNRAF3",
+        "RNRAF4",
+        "RNRAF5",
+        "RNRAF6",
+        "RNRAF7",
+        "RNRAF8",
+        "RNRAF9",
+        "RNRF10",
+        "RNRF11"
+      ],
+      "group_count": 8,
+      "group_ids": [
+        "CJU_PBCHN",
+        "CJU_PBCHS",
+        "CJU_PBCHSD",
+        "CJU_PBCSDS",
+        "CJU_PBLZA",
+        "CJU_PBSLDF5",
+        "CJU_RN5ETGS",
+        "CJU_RNCSER"
+      ],
+      "group_public_mwh": {
+        "CJU_PBCHN": 174740.3785,
+        "CJU_PBCHS": 149436.3065,
+        "CJU_PBCHSD": 218871.2795,
+        "CJU_PBCSDS": 398005.7295,
+        "CJU_PBLZA": 76754.459,
+        "CJU_PBSLDF5": 135162.012,
+        "CJU_RN5ETGS": 222006.0665,
+        "CJU_RNCSER": 258543.9055
+      },
+      "point_public_mwh": 1633520.137,
+      "plant_count_by_group": {
+        "CJU_PBCHN": 5,
+        "CJU_PBCHS": 5,
+        "CJU_PBCHSD": 5,
+        "CJU_PBCSDS": 12,
+        "CJU_PBLZA": 2,
+        "CJU_PBSLDF5": 16,
+        "CJU_RN5ETGS": 12,
+        "CJU_RNCSER": 10
+      },
+      "selected_asset_ids": [
+        "PBLZ3"
+      ],
+      "duplicate_plant_links": [],
+      "origin": "PROXY_CALCULADO",
+      "derivation": "Cada total de conjunto é derivado das usinas do próprio conjunto e somado uma única vez no ponto; nenhuma usina de outro ponto entra na conta.",
+      "note": "O contexto do ponto lista usinas individuais ativas, não conjuntos, e não atribui a energia das demais entidades à usina selecionada."
+    }
   },
   "groups": [
     {
@@ -5639,7 +6024,10 @@
           "restricted_day": true,
           "allocation_method": "potential_loss_proxy"
         }
-      ]
+      ],
+      "point_entity_count": 16,
+      "point_group_count": 2,
+      "point_public_mwh": 2319274.888
     },
     {
       "asset_id": "BAEA52",
@@ -11112,7 +11500,10 @@
           "restricted_day": true,
           "allocation_method": "potential_loss_proxy"
         }
-      ]
+      ],
+      "point_entity_count": 52,
+      "point_group_count": 3,
+      "point_public_mwh": 2544287.906
     },
     {
       "asset_id": "BAEB0B",
@@ -16585,7 +16976,10 @@
           "restricted_day": true,
           "allocation_method": "potential_loss_proxy"
         }
-      ]
+      ],
+      "point_entity_count": 44,
+      "point_group_count": 7,
+      "point_public_mwh": 1850646.548
     },
     {
       "asset_id": "RNMVS2",
@@ -22058,7 +22452,10 @@
           "restricted_day": true,
           "allocation_method": "potential_loss_proxy"
         }
-      ]
+      ],
+      "point_entity_count": 43,
+      "point_group_count": 4,
+      "point_public_mwh": 3560047.9305
     },
     {
       "asset_id": "PBLZ3",
@@ -27531,7 +27928,10 @@
           "restricted_day": true,
           "allocation_method": "potential_loss_proxy"
         }
-      ]
+      ],
+      "point_entity_count": 67,
+      "point_group_count": 8,
+      "point_public_mwh": 1633520.137
     }
   ],
   "interval_quality": {
