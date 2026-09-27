@@ -1,5 +1,6 @@
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import type { ChartDataset, ChartPoint } from "~/domain/types";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import type { ChartDataset, ChartPoint, EvidenceMetadata, ExposureForecastPoint } from "~/domain/types";
+import { numberFormatter } from "~/lib/format";
 import { ChartBody, ChartFrame, ChartSlot, DataTable } from "./chart-frame";
 
 const colors = {
@@ -158,11 +159,126 @@ export function SimpleHistoricalBarSlot({ title, description, data, showHeader =
   </ChartSlot>;
 }
 
-export function Forecast60dSlot({ data, description }: { data: ChartDataset; description: string }) {
+/**
+ * One plotted day of the 60-day forecast. `bandBase`/`bandSpan` split the
+ * published uncertainty interval so it can be drawn as one shaded band around
+ * the expected line without changing any value.
+ */
+export type ForecastSeriesPoint = {
+  label: string;
+  date: string;
+  expected: number;
+  lower: number;
+  upper: number;
+  bandBase: number;
+  bandSpan: number;
+  riskPercent: number;
+};
+
+const forecastDateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** Full date of a forecast day, used by the tooltip and the equivalent table. */
+function formatForecastDate(date: string) {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? date : forecastDateFormatter.format(parsed);
+}
+
+/**
+ * Maps the published 60 points to the plotted series. Every value is a direct
+ * source value: only the uncertainty interval is split into a base and a span so
+ * recharts can stack it as a band.
+ */
+function buildForecastSeries(points: ExposureForecastPoint[]): ForecastSeriesPoint[] {
+  return points.map((point) => ({
+    label: point.displayLabel,
+    date: point.forecastDate,
+    expected: point.expectedCurtailedMwh,
+    lower: point.lowerMwh,
+    upper: point.upperMwh,
+    bandBase: point.lowerMwh,
+    bandSpan: Math.max(0, point.upperMwh - point.lowerMwh),
+    riskPercent: point.curtailmentProbability * 100,
+  }));
+}
+
+/** Tooltip of one day: full date, expected MWh and the daily curtailment risk. */
+export function ForecastPointTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: ForecastSeriesPoint }> }) {
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
+  return (
+    <div data-forecast-tooltip className="rounded-lg border border-line bg-white px-3 py-2 text-xs leading-5 shadow-sm">
+      <p className="font-semibold text-ink">{formatForecastDate(point.date)}</p>
+      <p className="text-ink-soft">Energia restringida esperada: <span className="num font-semibold text-ink">{numberFormatter.format(point.expected)} MWh</span></p>
+      <p className="text-ink-soft">Risco de curtailment no dia: <span className="num font-semibold text-ink">{numberFormatter.format(point.riskPercent)}%</span></p>
+    </div>
+  );
+}
+
+/** Visible marker of a single forecast day. */
+function ForecastMarker({ cx, cy, payload }: { cx?: number; cy?: number; payload?: ForecastSeriesPoint }) {
+  const plotted = typeof cx === "number" && typeof cy === "number";
+  return <circle cx={plotted ? cx : 0} cy={plotted ? cy : 0} r={plotted ? 2.5 : 0} fill={colors.primary} data-forecast-marker data-forecast-date={payload?.date ?? ""} />;
+}
+
+/**
+ * Daily line of expected restricted energy with its uncertainty band. All 60
+ * days keep a marker and a DD/MM label; on narrow screens the plot keeps its
+ * width inside a controlled horizontal scroll so no label is dropped and the
+ * page never overflows.
+ */
+function forecastGraph(points: ExposureForecastPoint[]) {
+  const data = buildForecastSeries(points);
+  return (
+    <div data-chart-kind="line" className="h-full">
+      <div data-chart-scroll className="h-full overflow-x-auto overscroll-x-contain">
+        <div data-forecast-point-count={data.length} className="h-full w-[960px] min-w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={data} margin={{ top: 16, right: 12, bottom: 0, left: -18 }}>
+              <CartesianGrid stroke="#d7ddd8" vertical={false} />
+              <XAxis dataKey="label" axisLine={false} tickLine={false} fontSize={10} interval={0} angle={-90} textAnchor="end" height={56} />
+              <YAxis axisLine={false} tickLine={false} fontSize={11} tickCount={4} width={46} />
+              <Tooltip content={<ForecastPointTooltip />} />
+              <Area dataKey="bandBase" stackId="uncertainty" stroke="none" fill="transparent" isAnimationActive={false} />
+              <Area dataKey="bandSpan" stackId="uncertainty" stroke="none" fill="#d8eeea" fillOpacity={0.9} isAnimationActive={false} />
+              <Line dataKey="expected" name="MWh/dia" stroke={colors.primary} strokeWidth={2.5} isAnimationActive={false} dot={<ForecastMarker />} activeDot={{ r: 5 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Daily line chart of the 60-day forecast. Replaces the former bar chart: the
+ * uncertainty band is shaded around the line and every day keeps its marker and
+ * DD/MM label.
+ */
+export function Forecast60dSlot({ points, description, evidence }: { points: ExposureForecastPoint[]; description: string; evidence: EvidenceMetadata }) {
   const title = "Energia restringida estimada para 60 dias";
+  const rows = points.map((point) => [
+    formatForecastDate(point.forecastDate),
+    numberFormatter.format(point.expectedCurtailedMwh),
+    numberFormatter.format(point.lowerMwh),
+    numberFormatter.format(point.upperMwh),
+    `${numberFormatter.format(point.curtailmentProbability * 100)}%`,
+  ]);
   return <div data-exposure-forecast="60d">
-    <ChartSlot title={title} description={description} evidence={data.evidence} showHeader={false}>
-      <ChartBody evidence={data.evidence} table={simpleTable(title, data, false, true)} showProvenance={false} switchView chartClassName="h-72">{columnGraph(data, 3, true, 44)}</ChartBody>
+    <ChartSlot title={title} description={description} evidence={evidence} showHeader={false}>
+      <ChartBody
+        evidence={evidence}
+        table={<DataTable caption="Energia restringida estimada por dia e risco de curtailment" headers={["Data", "MWh esperados", "Limite inferior (MWh)", "Limite superior (MWh)", "Risco diário"]} rows={rows} fitContainer />}
+        showProvenance={false}
+        switchView
+        chartClassName="h-80"
+      >
+        {forecastGraph(points)}
+      </ChartBody>
     </ChartSlot>
   </div>;
 }

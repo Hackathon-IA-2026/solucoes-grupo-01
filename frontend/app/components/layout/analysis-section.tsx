@@ -1,5 +1,14 @@
 import type { ReactNode } from "react";
 
+/**
+ * The one visible title every interpretation column shares.
+ *
+ * The interface must never distinguish Bedrock, cache and deterministic
+ * fallback, so the title is a constant instead of a per-section or per-source
+ * label.
+ */
+export const ANALYSIS_COLUMN_TITLE = "Análise dos dados";
+
 export type AnalysisSectionProps = {
   id: string;
   title: string;
@@ -12,6 +21,9 @@ export type AnalysisSectionProps = {
  * One viewport-sized unit of the exposure page: an asset illustration on the
  * left, the AI reading in the middle and one data card on the right. All three
  * columns have the same width.
+ *
+ * The middle column carries the constant `Análise dos dados` title; the section
+ * title stays as the accessible heading used by the navigation anchors.
  */
 export function AnalysisSection({ id, title, illustration, analysis, children }: AnalysisSectionProps) {
   return (
@@ -19,7 +31,8 @@ export function AnalysisSection({ id, title, illustration, analysis, children }:
       <div data-analysis-grid className="relative isolate grid items-start gap-6 xl:grid-cols-3">
         <div data-reserved-column className="relative z-0 hidden min-w-0 xl:block">{illustration}</div>
         <div data-ai-analysis className="relative z-10 min-w-0 rounded-xl border border-accent/30 bg-accent-soft p-6">
-          <h2 id={`${id}-title`} className="text-2xl font-semibold leading-8 text-pretty">{title}</h2>
+          <p data-analysis-title={ANALYSIS_COLUMN_TITLE} className="text-xs font-semibold uppercase tracking-wide text-accent">{ANALYSIS_COLUMN_TITLE}</p>
+          <h2 id={`${id}-title`} className="mt-2 text-2xl font-semibold leading-8 text-pretty">{title}</h2>
           <div className="mt-5 space-y-4 text-base leading-7 text-ink">{analysis}</div>
         </div>
         <div data-section-data-column className="relative z-10 min-w-0">{children}</div>

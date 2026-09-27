@@ -303,16 +303,25 @@ const forecastSchema = z
 /**
  * Narrative schema, isolated from plant/forecast/window validation.
  *
- * The shape still matches the current API response. Task 5 replaces it with
- * per-section objects; that change is confined to this schema and the
- * `ExposureNarrative` type.
+ * The API serves one section object per column with `paragraphs` plus the
+ * internal `generation_mode`. The mode is validated here and then dropped by
+ * `mapNarrative`, so Bedrock, cache and deterministic fallback share the same
+ * title and are never labelled on screen.
  */
 const sectionIds = ["secao-ativo", "secao-resumo", "secao-previsao", "secao-razao-origem", "secao-recorrencia", "secao-qualidade"] as const;
+
+export const exposureNarrativeSectionSchema = z
+  .object({
+    paragraphs: z.array(z.string().min(1)).min(1).max(4),
+    generation_mode: z.enum(["bedrock", "cached_bedrock", "deterministic_fallback"]),
+  })
+  .strict();
+
 export const exposureNarrativeSchema = z
   .object(
     Object.fromEntries(
-      sectionIds.map((id) => [id, z.array(z.string().min(1)).min(1).max(4)]),
-    ) as Record<(typeof sectionIds)[number], z.ZodArray<z.ZodString>>,
+      sectionIds.map((id) => [id, exposureNarrativeSectionSchema]),
+    ) as Record<(typeof sectionIds)[number], typeof exposureNarrativeSectionSchema>,
   )
   .strict();
 
@@ -499,6 +508,22 @@ function mapSimulatedTelemetry(raw: z.infer<typeof simulatedTelemetrySchema>): E
   };
 }
 
+/**
+ * Keeps only the validated paragraphs of each section. The wire
+ * `generation_mode` is intentionally discarded so the interface cannot
+ * distinguish Bedrock, cache and deterministic fallback.
+ */
+function mapNarrative(raw: z.infer<typeof exposureNarrativeSchema>): ExposureNarrative {
+  return {
+    "secao-ativo": [...raw["secao-ativo"].paragraphs],
+    "secao-resumo": [...raw["secao-resumo"].paragraphs],
+    "secao-previsao": [...raw["secao-previsao"].paragraphs],
+    "secao-razao-origem": [...raw["secao-razao-origem"].paragraphs],
+    "secao-recorrencia": [...raw["secao-recorrencia"].paragraphs],
+    "secao-qualidade": [...raw["secao-qualidade"].paragraphs],
+  };
+}
+
 export async function fetchExposureAssets(signal?: AbortSignal): Promise<ExposureAsset[]> {
   const raw = exposureCatalogSchema.parse(await getJson("/v1/exposure/assets", signal));
   return raw.items.map(mapAsset);
@@ -548,7 +573,7 @@ export async function fetchExposureView(assetId: string, signal?: AbortSignal): 
     },
     pointContext: raw.point_context ? mapPointContext(raw.point_context) : null,
     simulatedTelemetry: raw.simulated_telemetry ? mapSimulatedTelemetry(raw.simulated_telemetry) : null,
-    narrative: raw.narrative as ExposureNarrative,
+    narrative: mapNarrative(raw.narrative),
     limitations: raw.limitations,
   };
 }

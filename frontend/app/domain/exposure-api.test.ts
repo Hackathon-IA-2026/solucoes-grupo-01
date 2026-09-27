@@ -82,10 +82,9 @@ const plants = [
 
 const asset = plants[0];
 const metric = (value: number | null, unit: string) => ({ value, unit });
+const narrativeSections = ["secao-ativo", "secao-resumo", "secao-previsao", "secao-razao-origem", "secao-recorrencia", "secao-qualidade"] as const;
 const narrative = Object.fromEntries(
-  ["secao-ativo", "secao-resumo", "secao-previsao", "secao-razao-origem", "secao-recorrencia", "secao-qualidade"].map(
-    (key) => [key, ["Interpretação validada."]],
-  ),
+  narrativeSections.map((key) => [key, { paragraphs: ["Interpretação validada."], generation_mode: "bedrock" }]),
 );
 
 const FIRST_FORECAST_DAY = Date.UTC(2026, 8, 26);
@@ -369,10 +368,66 @@ describe("cliente da API de Exposição", () => {
     expect(serialized).not.toContain("SIMULADO");
     expect(serialized).not.toContain("simulation_method");
     expect(serialized).not.toContain("generation_mode");
+    expect(serialized).not.toContain("bedrock");
+    expect(serialized).not.toContain("cached_bedrock");
+    expect(serialized).not.toContain("deterministic_fallback");
     expect(result.simulatedTelemetry).not.toHaveProperty("origin");
     expect(result.pointContext).not.toHaveProperty("origin");
     expect(result.forecast60d).not.toHaveProperty("simulationMethod");
     expect(result.forecast60d).not.toHaveProperty("probabilitySource");
+  });
+
+  it("consome o objeto de seção e mantém somente os parágrafos validados", async () => {
+    respond(view);
+
+    const result = await fetchExposureView("RNEM13");
+
+    expect(result.narrative["secao-ativo"]).toEqual(["Interpretação validada."]);
+    expect(Object.keys(result.narrative)).toEqual([...narrativeSections]);
+    for (const section of narrativeSections) {
+      expect(result.narrative[section]).toBeInstanceOf(Array);
+    }
+    expect(JSON.stringify(result.narrative)).not.toContain("generation_mode");
+  });
+
+  it("aceita cache e fallback determinístico sem distinguir a seção na tela", async () => {
+    respond({
+      ...view,
+      narrative: {
+        ...narrative,
+        "secao-resumo": { paragraphs: ["Resumo do cache."], generation_mode: "cached_bedrock" },
+        "secao-qualidade": { paragraphs: ["Qualidade do fallback."], generation_mode: "deterministic_fallback" },
+      },
+    });
+
+    const result = await fetchExposureView("RNEM13");
+
+    expect(result.narrative["secao-resumo"]).toEqual(["Resumo do cache."]);
+    expect(result.narrative["secao-qualidade"]).toEqual(["Qualidade do fallback."]);
+  });
+
+  it("recusa seção de narrativa sem o objeto esperado", async () => {
+    respond({ ...view, narrative: { ...narrative, "secao-ativo": ["Interpretação sem seção."] } });
+
+    await expect(fetchExposureView("RNEM13")).rejects.toThrow();
+  });
+
+  it("recusa seção de narrativa sem geração declarada", async () => {
+    respond({ ...view, narrative: { ...narrative, "secao-previsao": { paragraphs: ["Sem modo."] } } });
+
+    await expect(fetchExposureView("RNEM13")).rejects.toThrow();
+  });
+
+  it("recusa modo de geração desconhecido", async () => {
+    respond({ ...view, narrative: { ...narrative, "secao-previsao": { paragraphs: ["Modo inválido."], generation_mode: "manual" } } });
+
+    await expect(fetchExposureView("RNEM13")).rejects.toThrow();
+  });
+
+  it("recusa seção de narrativa vazia", async () => {
+    respond({ ...view, narrative: { ...narrative, "secao-recorrencia": { paragraphs: [], generation_mode: "bedrock" } } });
+
+    await expect(fetchExposureView("RNEM13")).rejects.toThrow();
   });
 
   it("recusa faixa estimada inconsistente", async () => {

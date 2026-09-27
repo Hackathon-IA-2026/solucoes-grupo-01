@@ -258,16 +258,32 @@ export type ExposureForecastProbabilityStatus =
   | "unavailable";
 
 /**
- * Narrative shape currently served by the API.
- *
- * Task 5 replaces it with per-section objects (`paragraphs` + `generation_mode`).
- * Its schema lives in `exposure-api.ts` behind `exposureNarrativeSchema`, so that
- * change never touches plant, forecast or window validation.
+ * Section identifiers shared by the API contract, the narrative schema and the
+ * six rendered interpretation columns.
  */
-export type ExposureNarrative = Record<
-  "secao-ativo" | "secao-resumo" | "secao-previsao" | "secao-razao-origem" | "secao-recorrencia" | "secao-qualidade",
-  string[]
->;
+export type ExposureNarrativeSectionId =
+  | "secao-ativo"
+  | "secao-resumo"
+  | "secao-previsao"
+  | "secao-razao-origem"
+  | "secao-recorrencia"
+  | "secao-qualidade";
+
+/**
+ * Internal generation mode of a section narrative.
+ *
+ * It is validated on the wire so an unexpected value cannot pass silently, but
+ * it is deliberately dropped during mapping: Bedrock, cache and deterministic
+ * fallback must be indistinguishable on screen.
+ */
+export type ExposureNarrativeGenerationMode = "bedrock" | "cached_bedrock" | "deterministic_fallback";
+
+/**
+ * Narrative shape consumed by the screen: one validated paragraph list per
+ * section. `generation_mode` is intentionally absent so no component can render
+ * it, not even by accident.
+ */
+export type ExposureNarrative = Record<ExposureNarrativeSectionId, string[]>;
 
 export type ExposureView = {
   asset: ExposureAsset;
