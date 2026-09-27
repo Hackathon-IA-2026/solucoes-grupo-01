@@ -36,6 +36,10 @@ const view = {
   input_digest: "a".repeat(64),
   observed_impact: {
     total_curtailed_energy: metric(100, "MWh"),
+    event_day_share: metric(80, "%"),
+    latest_daily_curtailed_energy: metric(12, "MWh/dia"),
+    trailing_7_day_mean: metric(10, "MWh/dia"),
+    trailing_30_day_mean: metric(8, "MWh/dia"),
     characterized_share: metric(90, "%"),
     simultaneous_share: metric(25, "%"),
     exclusive_share: metric(75, "%"),

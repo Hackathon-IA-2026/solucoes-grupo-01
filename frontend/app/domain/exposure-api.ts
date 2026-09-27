@@ -34,6 +34,10 @@ const viewSchema = z.object({
   input_digest: z.string().regex(/^[a-f0-9]{64}$/),
   observed_impact: z.object({
     total_curtailed_energy: metricSchema,
+    event_day_share: metricSchema,
+    latest_daily_curtailed_energy: metricSchema,
+    trailing_7_day_mean: metricSchema,
+    trailing_30_day_mean: metricSchema,
     characterized_share: metricSchema,
     simultaneous_share: metricSchema,
     exclusive_share: metricSchema,
@@ -98,6 +102,10 @@ export async function fetchExposureView(assetId: string, signal?: AbortSignal): 
     inputDigest: raw.input_digest,
     observedImpact: {
       totalCurtailedEnergy: raw.observed_impact.total_curtailed_energy,
+      eventDayShare: raw.observed_impact.event_day_share,
+      latestDailyCurtailedEnergy: raw.observed_impact.latest_daily_curtailed_energy,
+      trailing7DayMean: raw.observed_impact.trailing_7_day_mean,
+      trailing30DayMean: raw.observed_impact.trailing_30_day_mean,
       characterizedShare: raw.observed_impact.characterized_share,
       simultaneousShare: raw.observed_impact.simultaneous_share,
       exclusiveShare: raw.observed_impact.exclusive_share,

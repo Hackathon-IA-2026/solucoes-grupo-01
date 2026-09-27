@@ -1083,6 +1083,10 @@ class ExposureForecast60d(BaseModel):
 
 class ExposureObservedImpact(BaseModel):
     total_curtailed_energy: ExposureDisplayMetric
+    event_day_share: ExposureDisplayMetric
+    latest_daily_curtailed_energy: ExposureDisplayMetric
+    trailing_7_day_mean: ExposureDisplayMetric
+    trailing_30_day_mean: ExposureDisplayMetric
     characterized_share: ExposureDisplayMetric
     simultaneous_share: ExposureDisplayMetric
     exclusive_share: ExposureDisplayMetric

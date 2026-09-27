@@ -44,6 +44,10 @@ function exposureView(asset: ExposureAsset): ExposureView {
     inputDigest: "a".repeat(64),
     observedImpact: {
       totalCurtailedEnergy: { value: null, unit: "MWh" },
+      eventDayShare: unavailable,
+      latestDailyCurtailedEnergy: { value: null, unit: "MWh/dia" },
+      trailing7DayMean: { value: null, unit: "MWh/dia" },
+      trailing30DayMean: { value: null, unit: "MWh/dia" },
       characterizedShare: unavailable,
       simultaneousShare: unavailable,
       exclusiveShare: unavailable,

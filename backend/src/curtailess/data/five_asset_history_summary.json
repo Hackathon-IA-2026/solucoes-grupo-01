@@ -1,0 +1,124 @@
+{
+  "schema": "curtailless.exposure_history_summary.v1",
+  "source": "ONS_PUBLICO",
+  "calculation": "PROXY_CALCULADO",
+  "method": "Agregação diária do proxy de energia restringida por ativo, com cobertura, taxa de dias com valor acima de zero e participação da energia estimada por dia da semana.",
+  "source_artifacts": [
+    {
+      "name": "ons_outcomes_daily_7p_2024-04-01_2026-09-25.json.gz",
+      "sha256": "6e20809487d29d0ce9ca74f679dec1c6789e87a6c8015801c6e1848a9bd44b4c"
+    },
+    {
+      "name": "ons-five-asset-source-cache-20260925.json.gz",
+      "sha256": "bbb47b7d1cc148a1abbad05d15cf60bc4240dc054f276142f161f57963abae3e"
+    }
+  ],
+  "cutoff": "2026-09-25",
+  "assets": [
+    {
+      "asset_id": "CJU_RNRDV",
+      "period_start": "2024-04-01",
+      "period_end": "2026-09-25",
+      "daily_rows": 893,
+      "calendar_days": 908,
+      "total_curtailed_mwh": 1210019.258,
+      "event_day_share_pct": 78.39,
+      "coverage_pct": 98.35,
+      "missing_day_rate_pct": 1.65,
+      "duplicate_day_count": 0,
+      "weekday_energy_share_pct": [
+        { "label": "Segunda", "value": 12.05 },
+        { "label": "Terça", "value": 11.55 },
+        { "label": "Quarta", "value": 12.38 },
+        { "label": "Quinta", "value": 14.12 },
+        { "label": "Sexta", "value": 12.8 },
+        { "label": "Sábado", "value": 16.22 },
+        { "label": "Domingo", "value": 20.88 }
+      ]
+    },
+    {
+      "asset_id": "CJU_BALRA",
+      "period_start": "2024-04-01",
+      "period_end": "2026-09-25",
+      "daily_rows": 906,
+      "calendar_days": 908,
+      "total_curtailed_mwh": 975397.617,
+      "event_day_share_pct": 81.24,
+      "coverage_pct": 99.78,
+      "missing_day_rate_pct": 0.22,
+      "duplicate_day_count": 0,
+      "weekday_energy_share_pct": [
+        { "label": "Segunda", "value": 12.5 },
+        { "label": "Terça", "value": 14.79 },
+        { "label": "Quarta", "value": 11.19 },
+        { "label": "Quinta", "value": 14.26 },
+        { "label": "Sexta", "value": 14.17 },
+        { "label": "Sábado", "value": 14.49 },
+        { "label": "Domingo", "value": 18.6 }
+      ]
+    },
+    {
+      "asset_id": "CJU_BASDB",
+      "period_start": "2024-04-01",
+      "period_end": "2026-09-25",
+      "daily_rows": 904,
+      "calendar_days": 908,
+      "total_curtailed_mwh": 590271.4,
+      "event_day_share_pct": 77.77,
+      "coverage_pct": 99.56,
+      "missing_day_rate_pct": 0.44,
+      "duplicate_day_count": 0,
+      "weekday_energy_share_pct": [
+        { "label": "Segunda", "value": 11.08 },
+        { "label": "Terça", "value": 12.74 },
+        { "label": "Quarta", "value": 11.5 },
+        { "label": "Quinta", "value": 12.93 },
+        { "label": "Sexta", "value": 13.01 },
+        { "label": "Sábado", "value": 17.19 },
+        { "label": "Domingo", "value": 21.55 }
+      ]
+    },
+    {
+      "asset_id": "CJU_RNMVS",
+      "period_start": "2024-04-01",
+      "period_end": "2026-09-25",
+      "daily_rows": 908,
+      "calendar_days": 908,
+      "total_curtailed_mwh": 266906.552,
+      "event_day_share_pct": 60.79,
+      "coverage_pct": 100.0,
+      "missing_day_rate_pct": 0.0,
+      "duplicate_day_count": 0,
+      "weekday_energy_share_pct": [
+        { "label": "Segunda", "value": 12.37 },
+        { "label": "Terça", "value": 12.8 },
+        { "label": "Quarta", "value": 12.91 },
+        { "label": "Quinta", "value": 13.23 },
+        { "label": "Sexta", "value": 12.36 },
+        { "label": "Sábado", "value": 15.25 },
+        { "label": "Domingo", "value": 21.08 }
+      ]
+    },
+    {
+      "asset_id": "CJU_PBLZA",
+      "period_start": "2024-04-01",
+      "period_end": "2026-09-25",
+      "daily_rows": 908,
+      "calendar_days": 908,
+      "total_curtailed_mwh": 76754.459,
+      "event_day_share_pct": 53.3,
+      "coverage_pct": 100.0,
+      "missing_day_rate_pct": 0.0,
+      "duplicate_day_count": 0,
+      "weekday_energy_share_pct": [
+        { "label": "Segunda", "value": 10.08 },
+        { "label": "Terça", "value": 9.41 },
+        { "label": "Quarta", "value": 10.28 },
+        { "label": "Quinta", "value": 11.88 },
+        { "label": "Sexta", "value": 9.64 },
+        { "label": "Sábado", "value": 16.66 },
+        { "label": "Domingo", "value": 32.04 }
+      ]
+    }
+  ]
+}

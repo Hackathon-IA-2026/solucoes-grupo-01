@@ -9,6 +9,7 @@ from curtailess.exposure_view import (
     build_exposure_view,
     list_exposure_assets,
     load_forecast_artifact,
+    load_history_summary,
 )
 from curtailess.main import app
 
@@ -54,13 +55,23 @@ def test_forecast_artifact_has_exact_approved_cohort_and_horizon():
     assert all(len(asset["forecasts"]) == 60 for asset in artifact["assets"])
 
 
-def test_local_view_is_complete_and_uses_honest_missing_history():
+def test_local_history_summary_has_exact_approved_cohort():
+    summary = load_history_summary()
+
+    assert {asset["asset_id"] for asset in summary["assets"]} == set(APPROVED_ASSET_IDS)
+
+
+def test_local_view_uses_bundled_public_history_summary():
     view = build_exposure_view("CJU_RNMVS")
 
     assert view.asset.technology == "solar"
     assert len(view.forecast_60d.points) == 60
-    assert view.observed_impact.total_curtailed_energy.value is None
-    assert view.recurrence.weekdays == ()
+    assert view.observed_impact.total_curtailed_energy.value == 266906.552
+    assert view.observed_impact.event_day_share.value == 60.79
+    assert view.observed_impact.latest_daily_curtailed_energy.value == 342.157
+    assert len(view.recurrence.weekdays) == 7
+    assert view.quality.coverage.value == 100
+    assert view.quality.missing_rate.value == 0
     assert "simulação demonstrativa" in view.limitations[0]
     assert view.narrative.secao_previsao
 

@@ -174,9 +174,10 @@ export function ExposureScreen() {
         <AnalysisSection id="secao-resumo" title="O impacto observado na usina" illustration={illustration("secao-resumo")} analysis={analysis("secao-resumo")}>
           <Panel data-section-card aria-label="Destaques do impacto observado na usina">
             <HighlightList variant="metrics" label="Destaques do impacto observado" items={[
-              { label: "Geração potencial que deixou de ser produzida", ...displayMetric(observedImpact.totalCurtailedEnergy), emphasis: "hero" },
-              { label: "Volume com motivo informado", ...displayMetric(observedImpact.characterizedShare), detail: "Parcela interpretável pelas condições registradas.", emphasis: "primary" },
-              { label: "Padrão compartilhado no ponto", ...displayMetric(observedImpact.simultaneousShare), detail: "Participação estimada de outros ativos ligados ao ponto.", emphasis: "primary" },
+              { label: "Estimativa histórica acumulada", ...displayMetric(observedImpact.totalCurtailedEnergy), detail: "Proxy calculado a partir do histórico público da ONS.", emphasis: "hero" },
+              { label: "Estimativa no último dia observado", ...displayMetric(observedImpact.latestDailyCurtailedEnergy), emphasis: "primary" },
+              { label: "Média dos últimos 7 dias observados", ...displayMetric(observedImpact.trailing7DayMean), emphasis: "primary" },
+              { label: "Dias com estimativa de restrição", ...displayMetric(observedImpact.eventDayShare), detail: "Participação dos dias observados com valor estimado acima de zero.", emphasis: "supporting" },
             ]} />
           </Panel>
         </AnalysisSection>
@@ -200,25 +201,27 @@ export function ExposureScreen() {
 
         <AnalysisSection id="secao-razao-origem" title="Quais condições aparecem junto dos cortes" illustration={illustration("secao-razao-origem")} analysis={analysis("secao-razao-origem")}>
           <Panel data-section-card aria-label="Condições associadas aos cortes">
-            {reasons.points.length ? <SimpleHistoricalBarSlot compactHeader showTable={false} slotClassName="pb-6 last:pb-0" variant="horizontal" title="Condição associada ao corte" description="Distribuição histórica por condição informada." data={reasons} /> : unavailable("A distribuição por condição depende da materialização do histórico público.")}
-            {origins.points.length ? <SimpleHistoricalBarSlot compactHeader showTable={false} slotClassName="pb-6 last:pb-0" variant="horizontal" title="Abrangência registrada" description="Origem registrada para os intervalos limitados." data={origins} /> : unavailable("A distribuição por origem ainda não está disponível para esta usina.")}
+            {reasons.points.length ? <SimpleHistoricalBarSlot compactHeader showTable={false} slotClassName="pb-6 last:pb-0" variant="horizontal" title="Condição associada ao corte" description="Distribuição histórica por condição informada." data={reasons} /> : unavailable("O resumo diário usado no teste local não contém a classificação intervalar por motivo.")}
+            {origins.points.length ? <SimpleHistoricalBarSlot compactHeader showTable={false} slotClassName="pb-6 last:pb-0" variant="horizontal" title="Abrangência registrada" description="Origem registrada para os intervalos limitados." data={origins} /> : unavailable("O resumo diário usado no teste local não contém a classificação intervalar por origem.")}
             {modalities.points.length ? <SimpleHistoricalBarSlot compactHeader showTable={false} slotClassName="pb-6 last:pb-0" variant="horizontal" title="Forma de restrição registrada" description="Classificação apresentada separadamente das demais condições." data={modalities} /> : null}
           </Panel>
         </AnalysisSection>
 
         <AnalysisSection id="secao-recorrencia" title="Em quais dias e horários os cortes mais se repetem" illustration={illustration("secao-recorrencia")} analysis={analysis("secao-recorrencia")}>
           <Panel data-section-card aria-label="Dias e horários de maior recorrência">
-            {weekdays.points.length ? <SimpleHistoricalBarSlot compactHeader chartClassName="h-64" emphasizeCount={2} slotClassName="pb-6 last:pb-0" title="Recorrência por dia da semana" description="Frequência histórica de intervalos com restrição em cada dia." data={weekdays} /> : unavailable("A base mensal disponível não sustenta a distribuição por dia da semana.")}
-            {hours.points.length ? <SimpleHistoricalBarSlot compactHeader chartClassName="h-64" slotClassName="pb-6 last:pb-0" variant="line" title="Recorrência ao longo do dia" description="Frequência histórica das restrições por horário." data={hours} /> : unavailable("A base mensal disponível não sustenta a distribuição por horário.")}
+            {weekdays.points.length ? <SimpleHistoricalBarSlot compactHeader chartClassName="h-64" emphasizeCount={2} slotClassName="pb-6 last:pb-0" title="Distribuição por dia da semana" description="Participação da estimativa histórica de energia restringida em cada dia da semana." data={weekdays} /> : unavailable("A série disponível não sustenta a distribuição por dia da semana.")}
+            {hours.points.length ? <SimpleHistoricalBarSlot compactHeader chartClassName="h-64" slotClassName="pb-6 last:pb-0" variant="line" title="Recorrência ao longo do dia" description="Frequência histórica das restrições por horário." data={hours} /> : unavailable("O resumo usado no teste local é diário e não permite calcular uma distribuição por horário.")}
           </Panel>
         </AnalysisSection>
 
         <AnalysisSection id="secao-qualidade" title="Quanto desse padrão vem do ponto e quão completos estão os dados" illustration={illustration("secao-qualidade")} analysis={analysis("secao-qualidade")}>
           <Panel data-section-card aria-label="Abrangência do padrão e confiança nos dados">
-            <MetricComposition label="Abrangência dos registros no ponto de conexão" items={[
-              { label: "Compartilhados no ponto", value: observedImpact.simultaneousShare.value, displayValue: formatEvidence(observedImpact.simultaneousShare.value, observedImpact.simultaneousShare.unit) },
-              { label: "Somente nesta usina", value: observedImpact.exclusiveShare.value, displayValue: formatEvidence(observedImpact.exclusiveShare.value, observedImpact.exclusiveShare.unit) },
-            ]} />
+            {observedImpact.simultaneousShare.value !== null && observedImpact.exclusiveShare.value !== null ? (
+              <MetricComposition label="Abrangência dos registros no ponto de conexão" items={[
+                { label: "Compartilhados no ponto", value: observedImpact.simultaneousShare.value, displayValue: formatEvidence(observedImpact.simultaneousShare.value, observedImpact.simultaneousShare.unit) },
+                { label: "Somente nesta usina", value: observedImpact.exclusiveShare.value, displayValue: formatEvidence(observedImpact.exclusiveShare.value, observedImpact.exclusiveShare.unit) },
+              ]} />
+            ) : unavailable("O resumo diário não mede simultaneidade entre usinas ligadas ao mesmo ponto.")}
             <div className="mt-6 border-t border-line pt-5">
               <HighlightList variant="metrics" label="Confiança e disponibilidade dos dados" items={[
                 { label: "Histórico disponível para análise", ...displayMetric(quality.coverage), emphasis: "supporting" },

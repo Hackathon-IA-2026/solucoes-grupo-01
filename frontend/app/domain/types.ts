@@ -185,6 +185,10 @@ export type ExposureView = {
   inputDigest: string;
   observedImpact: {
     totalCurtailedEnergy: ExposureMetric;
+    eventDayShare: ExposureMetric;
+    latestDailyCurtailedEnergy: ExposureMetric;
+    trailing7DayMean: ExposureMetric;
+    trailing30DayMean: ExposureMetric;
     characterizedShare: ExposureMetric;
     simultaneousShare: ExposureMetric;
     exclusiveShare: ExposureMetric;

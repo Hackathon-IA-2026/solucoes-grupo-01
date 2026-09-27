@@ -76,6 +76,25 @@ def load_forecast_artifact(path: str | None = None) -> dict[str, Any]:
     return payload
 
 
+def load_history_summary(path: str | None = None) -> dict[str, Any]:
+    summary_path = (
+        path
+        if path is not None
+        else str(files("curtailess").joinpath("data/five_asset_history_summary.json"))
+    )
+    with open(summary_path, encoding="utf-8") as stream:
+        payload = json.load(stream)
+    if payload.get("schema") != "curtailless.exposure_history_summary.v1":
+        raise ValueError("unsupported exposure history summary schema")
+    assets = payload.get("assets")
+    if not isinstance(assets, list):
+        raise ValueError("history summary assets must be a list")
+    identifiers = tuple(asset.get("asset_id") for asset in assets)
+    if set(identifiers) != set(APPROVED_ASSET_IDS) or len(identifiers) != len(APPROVED_ASSET_IDS):
+        raise ValueError("history summary must contain the five approved assets exactly once")
+    return payload
+
+
 def _asset_payloads(artifact: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {str(asset["asset_id"]): asset for asset in artifact["assets"]}
 
@@ -182,27 +201,56 @@ def _history(
     datetime,
 ]:
     records = repository.get_asset_history(payload["asset_id"]) if repository is not None else []
-    history_start = date.fromisoformat(payload["history"]["first_observed_date"])
-    history_end = date.fromisoformat(payload["history"]["last_observed_date"])
+    current = payload["current_state"]
+    latest_metric = ExposureDisplayMetric(
+        value=float(current["latest_curtailed_mwh"]), unit="MWh/dia"
+    )
+    trailing_7_metric = ExposureDisplayMetric(
+        value=float(current["trailing_7_observed_days_mean_curtailed_mwh"]), unit="MWh/dia"
+    )
+    trailing_30_metric = ExposureDisplayMetric(
+        value=float(current["trailing_30_calendar_days_mean_curtailed_mwh"]), unit="MWh/dia"
+    )
     if not records:
+        summaries = _asset_payloads(load_history_summary())
+        summary = summaries[payload["asset_id"]]
+        summary_end = date.fromisoformat(summary["period_end"])
+        weekdays = tuple(
+            ExposureDistributionPoint.model_validate(point)
+            for point in summary["weekday_energy_share_pct"]
+        )
         return (
             ExposureObservedImpact(
-                total_curtailed_energy=ExposureDisplayMetric(value=None, unit="MWh"),
+                total_curtailed_energy=ExposureDisplayMetric(
+                    value=float(summary["total_curtailed_mwh"]), unit="MWh"
+                ),
+                event_day_share=ExposureDisplayMetric(
+                    value=float(summary["event_day_share_pct"]), unit="%"
+                ),
+                latest_daily_curtailed_energy=latest_metric,
+                trailing_7_day_mean=trailing_7_metric,
+                trailing_30_day_mean=trailing_30_metric,
                 characterized_share=ExposureDisplayMetric(value=None, unit="%"),
                 simultaneous_share=ExposureDisplayMetric(value=None, unit="%"),
                 exclusive_share=ExposureDisplayMetric(value=None, unit="%"),
-                period_start=history_start,
-                period_end=history_end,
+                period_start=date.fromisoformat(summary["period_start"]),
+                period_end=summary_end,
             ),
             ExposureAssociatedConditions(),
-            ExposureRecurrence(),
+            ExposureRecurrence(weekdays=weekdays),
             ExposureQuality(
-                coverage=ExposureDisplayMetric(value=None, unit="%"),
-                update_delay=ExposureDisplayMetric(value=None, unit="dias"),
-                missing_rate=ExposureDisplayMetric(value=None, unit="%"),
-                duplicate_count=ExposureDisplayMetric(value=None, unit="intervalos"),
+                coverage=ExposureDisplayMetric(value=float(summary["coverage_pct"]), unit="%"),
+                update_delay=ExposureDisplayMetric(
+                    value=max((datetime.now(UTC).date() - summary_end).days, 0), unit="dias"
+                ),
+                missing_rate=ExposureDisplayMetric(
+                    value=float(summary["missing_day_rate_pct"]), unit="%"
+                ),
+                duplicate_count=ExposureDisplayMetric(
+                    value=float(summary["duplicate_day_count"]), unit="dias"
+                ),
             ),
-            datetime.combine(history_end, datetime.min.time(), tzinfo=UTC),
+            datetime.combine(summary_end, datetime.min.time(), tzinfo=UTC),
         )
 
     total = sum((_decimal(record.get("curtailed_mwh")) for record in records), Decimal("0"))
@@ -244,6 +292,10 @@ def _history(
     return (
         ExposureObservedImpact(
             total_curtailed_energy=ExposureDisplayMetric(value=float(total), unit="MWh"),
+            event_day_share=ExposureDisplayMetric(value=None, unit="%"),
+            latest_daily_curtailed_energy=latest_metric,
+            trailing_7_day_mean=trailing_7_metric,
+            trailing_30_day_mean=trailing_30_metric,
             characterized_share=ExposureDisplayMetric(
                 value=_percentage(characterized, total), unit="%"
             ),
@@ -296,9 +348,10 @@ def deterministic_narrative(
         )
     )
     recurrence_text = (
-        "A recorrência temporal usa intervalos históricos convertidos para o horário de Brasília."
-        if recurrence.weekdays or recurrence.hours
-        else "A base mensal disponível não sustenta uma distribuição por dia da semana ou horário."
+        "A distribuição por dia da semana usa a estimativa diária calculada "
+        "a partir do histórico público."
+        if recurrence.weekdays
+        else "A série disponível não sustenta uma distribuição temporal."
     )
     quality_text = (
         f"A cobertura calculada da série materializada é {quality.coverage.value:.1f}%."
@@ -362,6 +415,6 @@ def build_exposure_view(
         limitations=(
             "A previsão de 60 dias é uma simulação demonstrativa baseada em histórico público.",
             "O estado da usina não representa telemetria Supervisory Control and Data Acquisition.",
-            "A base histórica mensal não sustenta recorrência por dia da semana ou horário.",
+            "A série diária sustenta recorrência por dia da semana, mas não por horário.",
         ),
     )
