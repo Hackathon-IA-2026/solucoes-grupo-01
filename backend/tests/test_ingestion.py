@@ -1,3 +1,4 @@
+import base64
 import json
 from datetime import UTC, datetime
 
@@ -59,6 +60,14 @@ def environment(*, cap: int = 100) -> dict[str, str]:
         "INGESTION_QUEUE_URL": "https://sqs.example/ingestion",
         "DISCOVERY_MAX_MESSAGES": str(cap),
     }
+
+
+def continuation_token(payload: object, *, canonical: bool = True) -> str:
+    if canonical:
+        encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    else:
+        encoded = json.dumps(payload).encode()
+    return base64.urlsafe_b64encode(encoded).decode()
 
 
 def legacy_environment(*, cap: int = 100) -> dict[str, str]:
@@ -475,6 +484,204 @@ def test_cap_returns_deterministic_continuation_and_next_invocation_resumes() ->
         "2026-09",
         "2026-10",
     ]
+
+
+def test_resume_boundary_is_stable_when_objects_are_inserted_before_and_after_it() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    original = [
+        f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_{month:02d}.parquet" for month in (7, 8, 10)
+    ]
+    first_sqs = FakeSQS()
+    first = discovery_handler(
+        {"mode": "incremental"},
+        None,
+        s3_client=FakeS3(
+            {spec.s3_prefix: [{"Contents": [source_object(key) for key in original]}]}
+        ),
+        sqs_client=first_sqs,
+        environment=environment(cap=2),
+    )
+
+    inserted_before = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_06.parquet"
+    inserted_after = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_09.parquet"
+    changed = [inserted_after, original[2], inserted_before, original[0], original[1]]
+    resumed_sqs = FakeSQS()
+    resumed = discovery_handler(
+        {"mode": "incremental", "continuation": first["continuation"]},
+        None,
+        s3_client=FakeS3({spec.s3_prefix: [{"Contents": [source_object(key) for key in changed]}]}),
+        sqs_client=resumed_sqs,
+        environment=environment(cap=2),
+    )
+
+    assert [json.loads(call["MessageBody"])["source_period"] for call in first_sqs.messages] == [
+        "2026-07",
+        "2026-08",
+    ]
+    assert [json.loads(call["MessageBody"])["source_period"] for call in resumed_sqs.messages] == [
+        "2026-09",
+        "2026-10",
+    ]
+    assert resumed["has_more"] is False
+
+
+def test_resume_rejects_boundary_that_no_longer_exists() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    keys = [
+        f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_{month:02d}.parquet" for month in (7, 8, 9)
+    ]
+    first = discovery_handler(
+        {"mode": "incremental"},
+        None,
+        s3_client=FakeS3({spec.s3_prefix: [{"Contents": [source_object(key) for key in keys]}]}),
+        sqs_client=FakeSQS(),
+        environment=environment(cap=2),
+    )
+
+    with pytest.raises(ValueError, match="invalid continuation"):
+        discovery_handler(
+            {"mode": "incremental", "continuation": first["continuation"]},
+            None,
+            s3_client=FakeS3(
+                {spec.s3_prefix: [{"Contents": [source_object(keys[0]), source_object(keys[2])]}]}
+            ),
+            sqs_client=FakeSQS(),
+            environment=environment(cap=2),
+        )
+
+
+def test_resume_rejects_forged_high_boundary_instead_of_silently_skipping_work() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    key = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_09.parquet"
+    forged = continuation_token(
+        {
+            "context": {"mode": "incremental"},
+            "cursor": [spec.dataset_id, "9999-12", "forged-key"],
+            "version": 1,
+        }
+    )
+
+    with pytest.raises(ValueError, match="invalid continuation"):
+        discovery_handler(
+            {"mode": "incremental", "continuation": forged},
+            None,
+            s3_client=FakeS3({spec.s3_prefix: [{"Contents": [source_object(key)]}]}),
+            sqs_client=FakeSQS(),
+            environment=environment(),
+        )
+
+
+@pytest.mark.parametrize(
+    "cursor",
+    [-1, True, 1.5, 10**100, ["dataset", "period", False]],
+)
+def test_resume_rejects_wrong_cursor_types(cursor: object) -> None:
+    token = continuation_token({"context": {"mode": "incremental"}, "cursor": cursor, "version": 1})
+    with pytest.raises(ValueError, match="invalid continuation"):
+        discovery_handler(
+            {"mode": "incremental", "continuation": token},
+            None,
+            s3_client=FakeS3({}),
+            sqs_client=FakeSQS(),
+            environment=environment(),
+        )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "context": {"mode": "incremental"},
+            "cursor": ["dataset", "period", "key"],
+            "version": 2,
+        },
+        {
+            "context": {"mode": "incremental"},
+            "cursor": ["dataset", "period", "key"],
+            "version": 1,
+            "unexpected": "field",
+        },
+    ],
+)
+def test_resume_rejects_unknown_version_and_fields(payload: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="invalid continuation"):
+        discovery_handler(
+            {"mode": "incremental", "continuation": continuation_token(payload)},
+            None,
+            s3_client=FakeS3({}),
+            sqs_client=FakeSQS(),
+            environment=environment(),
+        )
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "not-base64!",
+        base64.urlsafe_b64encode(b"not-json").decode(),
+        "A" * 5_000,
+        continuation_token(
+            {
+                "context": {"mode": "incremental"},
+                "cursor": ["dataset", "period", "key"],
+                "version": 1,
+            }
+        )
+        + "=",
+        continuation_token(
+            {
+                "context": {"mode": "incremental"},
+                "cursor": ["dataset", "period", "key"],
+                "version": 1,
+            },
+            canonical=False,
+        ),
+    ],
+)
+def test_resume_rejects_malformed_oversized_and_noncanonical_tokens(token: str) -> None:
+    with pytest.raises(ValueError, match="invalid continuation"):
+        discovery_handler(
+            {"mode": "incremental", "continuation": token},
+            None,
+            s3_client=FakeS3({}),
+            sqs_client=FakeSQS(),
+            environment=environment(),
+        )
+
+
+def test_resume_rejects_token_from_another_request_scope() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    keys = [
+        f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_{month:02d}.parquet" for month in (7, 8, 9)
+    ]
+    pages = {spec.s3_prefix: [{"Contents": [source_object(key) for key in keys]}]}
+    first = discovery_handler(
+        {
+            "mode": "backfill",
+            "dataset": spec.dataset_id,
+            "start_period": "2026-07",
+            "end_period": "2026-09",
+        },
+        None,
+        s3_client=FakeS3(pages),
+        sqs_client=FakeSQS(),
+        environment=environment(cap=2),
+    )
+
+    with pytest.raises(ValueError, match="invalid continuation"):
+        discovery_handler(
+            {
+                "mode": "backfill",
+                "dataset": spec.dataset_id,
+                "start_period": "2026-08",
+                "end_period": "2026-09",
+                "continuation": first["continuation"],
+            },
+            None,
+            s3_client=FakeS3(pages),
+            sqs_client=FakeSQS(),
+            environment=environment(cap=2),
+        )
 
 
 class StreamingBody:

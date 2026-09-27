@@ -15,6 +15,8 @@ from curtailess.datasets import DATASET_REGISTRY, DatasetPeriod, DatasetSpec, ge
 
 _DEFAULT_DISCOVERY_CAP = 100
 _MAX_DISCOVERY_CAP = 1_000
+_CONTINUATION_VERSION = 1
+_MAX_CONTINUATION_LENGTH = 4_096
 _PERIOD_LABEL = re.compile(r"^(?P<year>\d{4})(?:-(?P<month>\d{2})(?:-(?P<day>\d{2}))?)?$")
 
 
@@ -135,11 +137,17 @@ def _continuation_context(event: dict[str, Any], mode: str) -> dict[str, object]
     }
 
 
+def _canonical_continuation_payload(payload: dict[str, object]) -> bytes:
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+
+
 def _encode_continuation(cursor: tuple[str, str, str], context: dict[str, object]) -> str:
-    payload = json.dumps(
-        {"context": context, "cursor": cursor}, separators=(",", ":"), sort_keys=True
-    )
-    return base64.urlsafe_b64encode(payload.encode()).decode()
+    payload: dict[str, object] = {
+        "context": context,
+        "cursor": cursor,
+        "version": _CONTINUATION_VERSION,
+    }
+    return base64.urlsafe_b64encode(_canonical_continuation_payload(payload)).decode()
 
 
 def _decode_continuation(token: object, context: dict[str, object]) -> tuple[str, str, str] | None:
@@ -148,13 +156,22 @@ def _decode_continuation(token: object, context: dict[str, object]) -> tuple[str
     if not isinstance(token, str):
         raise ValueError("continuation must be a string")
     try:
-        payload = json.loads(base64.urlsafe_b64decode(token.encode()).decode())
+        if not token or len(token) > _MAX_CONTINUATION_LENGTH:
+            raise ValueError
+        decoded = base64.b64decode(token.encode("ascii"), altchars=b"-_", validate=True)
+        payload = json.loads(decoded.decode("utf-8"))
+        if not isinstance(payload, dict) or set(payload) != {"context", "cursor", "version"}:
+            raise ValueError
+        if type(payload["version"]) is not int or payload["version"] != _CONTINUATION_VERSION:
+            raise ValueError
         cursor = payload["cursor"]
         if payload["context"] != context or not (
             isinstance(cursor, list)
             and len(cursor) == 3
-            and all(isinstance(value, str) for value in cursor)
+            and all(isinstance(value, str) and value for value in cursor)
         ):
+            raise ValueError
+        if base64.urlsafe_b64encode(_canonical_continuation_payload(payload)).decode() != token:
             raise ValueError
     except Exception as exc:
         raise ValueError("invalid continuation for this discovery request") from exc
@@ -272,6 +289,9 @@ def discovery_handler(
             and item["parsed_period"].end <= end
         ]
     if cursor is not None:
+        boundaries = {_discovery_sort_key(item) for item in discovered}
+        if cursor not in boundaries:
+            raise ValueError("invalid continuation for this discovery request")
         discovered = [item for item in discovered if _discovery_sort_key(item) > cursor]
 
     selected = discovered[:cap]
