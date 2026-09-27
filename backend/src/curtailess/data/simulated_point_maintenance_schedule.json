@@ -1,0 +1,1444 @@
+{
+  "schema": "curtailless.simulated_point_maintenance_schedule.v1",
+  "origin": "SIMULADO",
+  "cutoff": "2026-09-25 23:30:00",
+  "window": {
+    "start": "2026-09-26",
+    "end": "2026-11-24"
+  },
+  "method": "Agendas simuladas das usinas participantes do ponto, geradas de forma determinística a partir do identificador da usina.",
+  "limitations": [
+    "As agendas são simuladas nesta etapa e não representam coordenação real.",
+    "A aba Manutenção não consome esta agenda."
+  ],
+  "points": {
+    "BAGOR-230-A": {
+      "point_id": "BAGOR-230-A",
+      "plant_count": 52,
+      "windows": [
+        {
+          "plant_id": "BAEA41",
+          "start_date": "2026-10-01",
+          "end_date": "2026-10-05",
+          "start_interval": 240,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA44",
+          "start_date": "2026-10-01",
+          "end_date": "2026-10-05",
+          "start_interval": 240,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA03",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-05",
+          "start_interval": 336,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA18",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-07",
+          "start_interval": 336,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA22",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-06",
+          "start_interval": 336,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV03",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-05",
+          "start_interval": 336,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV07",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-07",
+          "start_interval": 336,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA45",
+          "start_date": "2026-10-07",
+          "end_date": "2026-10-11",
+          "start_interval": 528,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA15",
+          "start_date": "2026-10-08",
+          "end_date": "2026-10-10",
+          "start_interval": 576,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA20",
+          "start_date": "2026-10-09",
+          "end_date": "2026-10-11",
+          "start_interval": 624,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA21",
+          "start_date": "2026-10-11",
+          "end_date": "2026-10-13",
+          "start_interval": 720,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV10",
+          "start_date": "2026-10-11",
+          "end_date": "2026-10-16",
+          "start_interval": 720,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA12",
+          "start_date": "2026-10-12",
+          "end_date": "2026-10-14",
+          "start_interval": 768,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV08",
+          "start_date": "2026-10-13",
+          "end_date": "2026-10-15",
+          "start_interval": 816,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA06",
+          "start_date": "2026-10-18",
+          "end_date": "2026-10-23",
+          "start_interval": 1056,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA08",
+          "start_date": "2026-10-19",
+          "end_date": "2026-10-21",
+          "start_interval": 1104,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA07",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-25",
+          "start_interval": 1152,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA13",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-24",
+          "start_interval": 1152,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV04",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-25",
+          "start_interval": 1200,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV14",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-26",
+          "start_interval": 1200,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAELA9",
+          "start_date": "2026-10-22",
+          "end_date": "2026-10-27",
+          "start_interval": 1248,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA14",
+          "start_date": "2026-10-24",
+          "end_date": "2026-10-27",
+          "start_interval": 1344,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV11",
+          "start_date": "2026-10-25",
+          "end_date": "2026-10-28",
+          "start_interval": 1392,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAELA3",
+          "start_date": "2026-10-28",
+          "end_date": "2026-11-02",
+          "start_interval": 1536,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA46",
+          "start_date": "2026-10-29",
+          "end_date": "2026-11-01",
+          "start_interval": 1584,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA05",
+          "start_date": "2026-10-30",
+          "end_date": "2026-11-02",
+          "start_interval": 1632,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA16",
+          "start_date": "2026-10-31",
+          "end_date": "2026-11-05",
+          "start_interval": 1680,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV09",
+          "start_date": "2026-10-31",
+          "end_date": "2026-11-03",
+          "start_interval": 1680,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA56",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-03",
+          "start_interval": 1728,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV01",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-05",
+          "start_interval": 1728,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV12",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-03",
+          "start_interval": 1728,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA42",
+          "start_date": "2026-11-03",
+          "end_date": "2026-11-08",
+          "start_interval": 1824,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEA51",
+          "start_date": "2026-11-08",
+          "end_date": "2026-11-10",
+          "start_interval": 2064,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA02",
+          "start_date": "2026-11-10",
+          "end_date": "2026-11-12",
+          "start_interval": 2160,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASA10",
+          "start_date": "2026-11-12",
+          "end_date": "2026-11-17",
+          "start_interval": 2256,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASV02",
+          "start_date": "2026-11-13",
+          "end_date": "2026-11-18",
+          "start_interval": 2304,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        }
+      ],
+      "candidate_asset_id": "BAEA52",
+      "candidate_asset_ids": [
+        "BAEA52"
+      ],
+      "origin": "SIMULADO",
+      "method": "agenda simulada das usinas participantes"
+    },
+    "BAMPD-230-A": {
+      "point_id": "BAMPD-230-A",
+      "plant_count": 44,
+      "windows": [
+        {
+          "plant_id": "BAEB18",
+          "start_date": "2026-10-02",
+          "end_date": "2026-10-06",
+          "start_interval": 288,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB09",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-05",
+          "start_interval": 336,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB9",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-05",
+          "start_interval": 336,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB27",
+          "start_date": "2026-10-05",
+          "end_date": "2026-10-09",
+          "start_interval": 432,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASB02",
+          "start_date": "2026-10-06",
+          "end_date": "2026-10-09",
+          "start_interval": 480,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB06",
+          "start_date": "2026-10-07",
+          "end_date": "2026-10-12",
+          "start_interval": 528,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAUEPR",
+          "start_date": "2026-10-07",
+          "end_date": "2026-10-11",
+          "start_interval": 528,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB11",
+          "start_date": "2026-10-09",
+          "end_date": "2026-10-13",
+          "start_interval": 624,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB0E",
+          "start_date": "2026-10-17",
+          "end_date": "2026-10-20",
+          "start_interval": 1008,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESAU",
+          "start_date": "2026-10-17",
+          "end_date": "2026-10-20",
+          "start_interval": 1008,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB02",
+          "start_date": "2026-10-18",
+          "end_date": "2026-10-20",
+          "start_interval": 1056,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB0B",
+          "start_date": "2026-10-18",
+          "end_date": "2026-10-23",
+          "start_interval": 1056,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESBE",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-23",
+          "start_interval": 1152,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB23",
+          "start_date": "2026-10-27",
+          "end_date": "2026-10-31",
+          "start_interval": 1488,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAUEDA",
+          "start_date": "2026-10-27",
+          "end_date": "2026-11-01",
+          "start_interval": 1488,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB13",
+          "start_date": "2026-10-28",
+          "end_date": "2026-11-02",
+          "start_interval": 1536,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BASB04",
+          "start_date": "2026-10-28",
+          "end_date": "2026-10-31",
+          "start_interval": 1536,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAUEDR",
+          "start_date": "2026-10-31",
+          "end_date": "2026-11-02",
+          "start_interval": 1680,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESMR",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-05",
+          "start_interval": 1728,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESAC",
+          "start_date": "2026-11-04",
+          "end_date": "2026-11-07",
+          "start_interval": 1872,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESTA",
+          "start_date": "2026-11-06",
+          "end_date": "2026-11-08",
+          "start_interval": 1968,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESTD",
+          "start_date": "2026-11-08",
+          "end_date": "2026-11-10",
+          "start_interval": 2064,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB0F",
+          "start_date": "2026-11-11",
+          "end_date": "2026-11-13",
+          "start_interval": 2208,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAESTE",
+          "start_date": "2026-11-13",
+          "end_date": "2026-11-17",
+          "start_interval": 2304,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "BAEB0C",
+          "start_date": "2026-11-14",
+          "end_date": "2026-11-18",
+          "start_interval": 2352,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        }
+      ],
+      "candidate_asset_id": "BAEB0B",
+      "candidate_asset_ids": [
+        "BAEB0B"
+      ],
+      "origin": "SIMULADO",
+      "method": "agenda simulada das usinas participantes"
+    },
+    "RNCMM-500-A": {
+      "point_id": "RNCMM-500-A",
+      "plant_count": 16,
+      "windows": [
+        {
+          "plant_id": "RNEM12",
+          "start_date": "2026-09-30",
+          "end_date": "2026-10-03",
+          "start_interval": 192,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEM14",
+          "start_date": "2026-09-30",
+          "end_date": "2026-10-04",
+          "start_interval": 192,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE04",
+          "start_date": "2026-10-10",
+          "end_date": "2026-10-15",
+          "start_interval": 672,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEM10",
+          "start_date": "2026-10-17",
+          "end_date": "2026-10-20",
+          "start_interval": 1008,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE12",
+          "start_date": "2026-10-23",
+          "end_date": "2026-10-26",
+          "start_interval": 1296,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEM11",
+          "start_date": "2026-10-27",
+          "end_date": "2026-11-01",
+          "start_interval": 1488,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEJ23",
+          "start_date": "2026-10-29",
+          "end_date": "2026-11-03",
+          "start_interval": 1584,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE01",
+          "start_date": "2026-10-31",
+          "end_date": "2026-11-02",
+          "start_interval": 1680,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE02",
+          "start_date": "2026-11-09",
+          "end_date": "2026-11-13",
+          "start_interval": 2112,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE05",
+          "start_date": "2026-11-11",
+          "end_date": "2026-11-14",
+          "start_interval": 2208,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNLE13",
+          "start_date": "2026-11-17",
+          "end_date": "2026-11-20",
+          "start_interval": 2496,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        }
+      ],
+      "candidate_asset_id": "RNEM13",
+      "candidate_asset_ids": [
+        "RNEM13"
+      ],
+      "origin": "SIMULADO",
+      "method": "agenda simulada das usinas participantes"
+    },
+    "RNMTV-500-A": {
+      "point_id": "RNMTV-500-A",
+      "plant_count": 43,
+      "windows": [
+        {
+          "plant_id": "RNEMV2",
+          "start_date": "2026-09-27",
+          "end_date": "2026-10-02",
+          "start_interval": 48,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEJR4",
+          "start_date": "2026-09-29",
+          "end_date": "2026-10-03",
+          "start_interval": 144,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEBQ2",
+          "start_date": "2026-10-01",
+          "end_date": "2026-10-05",
+          "start_interval": 240,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES18",
+          "start_date": "2026-10-02",
+          "end_date": "2026-10-05",
+          "start_interval": 288,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNECT1",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-05",
+          "start_interval": 336,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES04",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-06",
+          "start_interval": 336,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES26",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-08",
+          "start_interval": 336,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNSDO4",
+          "start_date": "2026-10-05",
+          "end_date": "2026-10-09",
+          "start_interval": 432,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNITA3",
+          "start_date": "2026-10-07",
+          "end_date": "2026-10-11",
+          "start_interval": 528,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEJR5",
+          "start_date": "2026-10-10",
+          "end_date": "2026-10-12",
+          "start_interval": 672,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNSDO1",
+          "start_date": "2026-10-13",
+          "end_date": "2026-10-17",
+          "start_interval": 816,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEJR2",
+          "start_date": "2026-10-15",
+          "end_date": "2026-10-19",
+          "start_interval": 912,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES17",
+          "start_date": "2026-10-19",
+          "end_date": "2026-10-23",
+          "start_interval": 1104,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES14",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-25",
+          "start_interval": 1152,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNITA1",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-25",
+          "start_interval": 1152,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNITA2",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-23",
+          "start_interval": 1200,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNECT2",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-06",
+          "start_interval": 1728,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES27",
+          "start_date": "2026-11-02",
+          "end_date": "2026-11-07",
+          "start_interval": 1776,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEMV4",
+          "start_date": "2026-11-05",
+          "end_date": "2026-11-09",
+          "start_interval": 1920,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNMVS7",
+          "start_date": "2026-11-05",
+          "end_date": "2026-11-07",
+          "start_interval": 1920,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEMV3",
+          "start_date": "2026-11-06",
+          "end_date": "2026-11-08",
+          "start_interval": 1968,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES02",
+          "start_date": "2026-11-07",
+          "end_date": "2026-11-09",
+          "start_interval": 2016,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES03",
+          "start_date": "2026-11-08",
+          "end_date": "2026-11-10",
+          "start_interval": 2064,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNMVS3",
+          "start_date": "2026-11-08",
+          "end_date": "2026-11-10",
+          "start_interval": 2064,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNMVS4",
+          "start_date": "2026-11-11",
+          "end_date": "2026-11-15",
+          "start_interval": 2208,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEMV1",
+          "start_date": "2026-11-13",
+          "end_date": "2026-11-17",
+          "start_interval": 2304,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES01",
+          "start_date": "2026-11-14",
+          "end_date": "2026-11-19",
+          "start_interval": 2352,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNES05",
+          "start_date": "2026-11-15",
+          "end_date": "2026-11-18",
+          "start_interval": 2400,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEMV5",
+          "start_date": "2026-11-16",
+          "end_date": "2026-11-21",
+          "start_interval": 2448,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEJR3",
+          "start_date": "2026-11-17",
+          "end_date": "2026-11-22",
+          "start_interval": 2496,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNEBQ1",
+          "start_date": "2026-11-18",
+          "end_date": "2026-11-20",
+          "start_interval": 2544,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNSDO2",
+          "start_date": "2026-11-18",
+          "end_date": "2026-11-21",
+          "start_interval": 2544,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNSDO5",
+          "start_date": "2026-11-18",
+          "end_date": "2026-11-22",
+          "start_interval": 2544,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        }
+      ],
+      "candidate_asset_id": "RNMVS2",
+      "candidate_asset_ids": [
+        "RNMVS2"
+      ],
+      "origin": "SIMULADO",
+      "method": "agenda simulada das usinas participantes"
+    },
+    "RNSTL-500-A": {
+      "point_id": "RNSTL-500-A",
+      "plant_count": 67,
+      "windows": [
+        {
+          "plant_id": "RNLZ17",
+          "start_date": "2026-09-26",
+          "end_date": "2026-09-28",
+          "start_interval": 0,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRF10",
+          "start_date": "2026-09-26",
+          "end_date": "2026-09-28",
+          "start_interval": 0,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS17",
+          "start_date": "2026-09-27",
+          "end_date": "2026-10-02",
+          "start_interval": 48,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBVA3",
+          "start_date": "2026-09-27",
+          "end_date": "2026-09-30",
+          "start_interval": 48,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS05",
+          "start_date": "2026-09-28",
+          "end_date": "2026-09-30",
+          "start_interval": 96,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL08",
+          "start_date": "2026-09-29",
+          "end_date": "2026-10-01",
+          "start_interval": 144,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF7",
+          "start_date": "2026-09-30",
+          "end_date": "2026-10-04",
+          "start_interval": 192,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL03",
+          "start_date": "2026-10-01",
+          "end_date": "2026-10-05",
+          "start_interval": 240,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH5",
+          "start_date": "2026-10-02",
+          "end_date": "2026-10-05",
+          "start_interval": 288,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS03",
+          "start_date": "2026-10-03",
+          "end_date": "2026-10-08",
+          "start_interval": 336,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS04",
+          "start_date": "2026-10-04",
+          "end_date": "2026-10-08",
+          "start_interval": 384,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH6",
+          "start_date": "2026-10-05",
+          "end_date": "2026-10-07",
+          "start_interval": 432,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL01",
+          "start_date": "2026-10-05",
+          "end_date": "2026-10-09",
+          "start_interval": 432,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF5",
+          "start_date": "2026-10-06",
+          "end_date": "2026-10-09",
+          "start_interval": 480,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH4",
+          "start_date": "2026-10-10",
+          "end_date": "2026-10-12",
+          "start_interval": 672,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH2",
+          "start_date": "2026-10-17",
+          "end_date": "2026-10-21",
+          "start_interval": 1008,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRF11",
+          "start_date": "2026-10-17",
+          "end_date": "2026-10-20",
+          "start_interval": 1008,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH3",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-22",
+          "start_interval": 1152,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF9",
+          "start_date": "2026-10-20",
+          "end_date": "2026-10-23",
+          "start_interval": 1152,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCN2",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-25",
+          "start_interval": 1200,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL15",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-25",
+          "start_interval": 1200,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS07",
+          "start_date": "2026-10-21",
+          "end_date": "2026-10-24",
+          "start_interval": 1200,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBLG3",
+          "start_date": "2026-10-22",
+          "end_date": "2026-10-26",
+          "start_interval": 1248,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS12",
+          "start_date": "2026-10-23",
+          "end_date": "2026-10-25",
+          "start_interval": 1296,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS02",
+          "start_date": "2026-10-24",
+          "end_date": "2026-10-27",
+          "start_interval": 1344,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBLG4",
+          "start_date": "2026-10-25",
+          "end_date": "2026-10-28",
+          "start_interval": 1392,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF4",
+          "start_date": "2026-10-25",
+          "end_date": "2026-10-28",
+          "start_interval": 1392,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF8",
+          "start_date": "2026-10-26",
+          "end_date": "2026-10-28",
+          "start_interval": 1440,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBLZ3",
+          "start_date": "2026-10-28",
+          "end_date": "2026-10-30",
+          "start_interval": 1536,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS01",
+          "start_date": "2026-10-29",
+          "end_date": "2026-10-31",
+          "start_interval": 1584,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS06",
+          "start_date": "2026-10-29",
+          "end_date": "2026-11-03",
+          "start_interval": 1584,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS11",
+          "start_date": "2026-10-29",
+          "end_date": "2026-11-01",
+          "start_interval": 1584,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL17",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-04",
+          "start_interval": 1728,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL20",
+          "start_date": "2026-11-01",
+          "end_date": "2026-11-03",
+          "start_interval": 1728,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL04",
+          "start_date": "2026-11-02",
+          "end_date": "2026-11-06",
+          "start_interval": 1776,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNRAF3",
+          "start_date": "2026-11-02",
+          "end_date": "2026-11-05",
+          "start_interval": 1776,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS14",
+          "start_date": "2026-11-04",
+          "end_date": "2026-11-09",
+          "start_interval": 1872,
+          "interval_count": 288,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBVA1",
+          "start_date": "2026-11-04",
+          "end_date": "2026-11-07",
+          "start_interval": 1872,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSL05",
+          "start_date": "2026-11-06",
+          "end_date": "2026-11-10",
+          "start_interval": 1968,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS12",
+          "start_date": "2026-11-11",
+          "end_date": "2026-11-13",
+          "start_interval": 2208,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS06",
+          "start_date": "2026-11-12",
+          "end_date": "2026-11-16",
+          "start_interval": 2256,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS04",
+          "start_date": "2026-11-13",
+          "end_date": "2026-11-17",
+          "start_interval": 2304,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS10",
+          "start_date": "2026-11-15",
+          "end_date": "2026-11-19",
+          "start_interval": 2400,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCN3",
+          "start_date": "2026-11-16",
+          "end_date": "2026-11-18",
+          "start_interval": 2448,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBSS02",
+          "start_date": "2026-11-16",
+          "end_date": "2026-11-18",
+          "start_interval": 2448,
+          "interval_count": 144,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "RNOS03",
+          "start_date": "2026-11-16",
+          "end_date": "2026-11-20",
+          "start_interval": 2448,
+          "interval_count": 240,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        },
+        {
+          "plant_id": "PBCH1",
+          "start_date": "2026-11-21",
+          "end_date": "2026-11-24",
+          "start_interval": 2688,
+          "interval_count": 192,
+          "derate": 0.35,
+          "origin": "SIMULADO"
+        }
+      ],
+      "candidate_asset_id": "PBLZ3",
+      "candidate_asset_ids": [
+        "PBLZ3"
+      ],
+      "origin": "SIMULADO",
+      "method": "agenda simulada das usinas participantes"
+    }
+  }
+}
