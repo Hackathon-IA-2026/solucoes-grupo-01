@@ -149,37 +149,126 @@ export type AssetExposure = {
   modality?: ChartDataset;
 };
 
+export type ExposureMetric = { value: number | null; unit: string };
+export type ExposureDistribution = { label: string; value: number };
+
+/**
+ * Wire-only source and status labels accepted from the Exposição API.
+ *
+ * They are validated so an unexpected value cannot pass silently, but they are
+ * deliberately absent from `ExposureAsset`, `ExposureView` and their children:
+ * the screen must never render provenance, simulation labels or generation
+ * modes.
+ */
+export type ExposureWireOrigin = "SIMULADO" | "OBSERVADO";
+export type ExposureWireEntityStatus = "simulated" | "observed";
+
 export type ExposureAsset = {
   assetId: string;
   name: string;
-  entityLevel: "generation_group";
+  entityLevel: "plant";
   technology: "wind" | "solar";
   state: string;
   connectionPoint: string;
   capacityMw: number | null;
   connectedAssetCount: number;
   operationalDataStatus: "simulated" | "client_connected";
+  allocationCoverage: ExposureMetric | null;
+  onsGroupId: string | null;
+  onsGroupName: string | null;
+  ceg: string | null;
 };
 
-export type ExposureMetric = { value: number | null; unit: string };
-export type ExposureDistribution = { label: string; value: number };
 export type ExposureForecastPoint = {
   forecastDate: string;
+  displayLabel: string;
   expectedCurtailedMwh: number;
   lowerMwh: number;
   upperMwh: number;
   curtailmentProbability: number;
+  potentialGenerationMwh: number;
+  acceptedGenerationEnvelopeMwh: number;
+  scheduledMaintenanceReliefMwh: number;
+  avoidedCurtailmentMwh: number;
+  riskReductionPercentagePoints: number;
 };
+
 export type ExposureForecastWindow = {
   start: string;
   end: string;
   expectedCurtailedMwh: number;
   meanProbability: number;
 };
+
+export type ExposureCriticalWindow = ExposureForecastWindow & {
+  rank: number;
+  startsAt: string;
+  endsAt: string;
+  intervalCount: number;
+  windowHours: number;
+  curtailmentProbability: number;
+  scheduledMaintenanceReliefMwh: number;
+  avoidedCurtailmentMwh: number;
+  candidateMaintenanceReliefMwh: number | null;
+};
+
+export type ExposurePointEntity = {
+  plantId: string;
+  name: string;
+  technology: "wind" | "solar";
+  capacityMw: number;
+  meanAvailableGenerationMw: number;
+  meanCurtailedGenerationMw: number;
+  restrictedDayShare: number;
+  scheduledMaintenanceIntervals: number;
+  scheduledMaintenanceDerate: number;
+};
+
+export type ExposurePointContext = {
+  pointId: string;
+  entityCount: number;
+  installedCapacityMw: number;
+  potentialGenerationMw: number;
+  acceptedGenerationEnvelopeMw: number;
+  estimatedExcessMw: number;
+  scheduledMaintenanceReliefMw: number;
+  envelopeInterceptMw: number;
+  envelopeSlope: number;
+  scheduledMaintenanceWindowCount: number;
+  entities: ExposurePointEntity[];
+};
+
+export type ExposureSimulatedTelemetry = {
+  generationMw: number;
+  potentialGenerationMw: number;
+  availabilityMw: number;
+  operationalCapacityMw: number;
+  acceptedGenerationLimitMw: number;
+  potentiallyCurtailedMw: number;
+  restricted: boolean;
+  weatherValue: number;
+  weatherUnit: string;
+};
+
+export type ExposureForecastProbabilityStatus =
+  | "empirical_uncalibrated"
+  | "backtested_calibrated"
+  | "backtested_empirical_uncalibrated"
+  | "baseline_historical_frequency"
+  | "unavailable";
+
+/**
+ * Narrative shape currently served by the API.
+ *
+ * Task 5 replaces it with per-section objects (`paragraphs` + `generation_mode`).
+ * Its schema lives in `exposure-api.ts` behind `exposureNarrativeSchema`, so that
+ * change never touches plant, forecast or window validation.
+ */
 export type ExposureNarrative = Record<
   "secao-ativo" | "secao-resumo" | "secao-previsao" | "secao-razao-origem" | "secao-recorrencia" | "secao-qualidade",
   string[]
 >;
+
 export type ExposureView = {
   asset: ExposureAsset;
   lastDataUpdate: string;
@@ -193,6 +282,8 @@ export type ExposureView = {
     characterizedShare: ExposureMetric;
     simultaneousShare: ExposureMetric;
     exclusiveShare: ExposureMetric;
+    curtailedDayShare: ExposureMetric | null;
+    allocationCoverage: ExposureMetric | null;
     periodStart: string;
     periodEnd: string;
   };
@@ -206,8 +297,9 @@ export type ExposureView = {
     totalUpperMwh: number | null;
     eventThresholdMwh: number | null;
     eventPercentile: number | null;
-    probabilityStatus: "empirical_uncalibrated" | "unavailable";
+    probabilityStatus: ExposureForecastProbabilityStatus;
     topWindows: ExposureForecastWindow[];
+    criticalWindows72h: ExposureCriticalWindow[];
   };
   associatedConditions: {
     reasons: ExposureDistribution[];
@@ -225,6 +317,8 @@ export type ExposureView = {
     missingRate: ExposureMetric;
     duplicateCount: ExposureMetric;
   };
+  pointContext: ExposurePointContext | null;
+  simulatedTelemetry: ExposureSimulatedTelemetry | null;
   narrative: ExposureNarrative;
   limitations: string[];
 };

@@ -3,6 +3,11 @@ import { fetchExposureAssets, fetchExposureView } from "~/domain/exposure-api";
 import type { ExposureAsset, ExposureView } from "~/domain/types";
 import { ExposureContext, type ExposureContextValue } from "~/state/exposure-context-value";
 
+/**
+ * The Exposição selection is intentionally self-contained: it never reads or
+ * writes the `AnalysisProvider` state used by the other screens, so choosing a
+ * plant here cannot change the analysis asset (and vice versa).
+ */
 export function ExposureProvider({ children }: { children: ReactNode }) {
   const [assets, setAssets] = useState<ExposureAsset[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
@@ -22,7 +27,7 @@ export function ExposureProvider({ children }: { children: ReactNode }) {
         setError(null);
       })
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Não foi possível carregar os conjuntos geradores.");
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Não foi possível carregar as usinas.");
       })
       .finally(() => {
         if (!controller.signal.aborted) setCatalogLoading(false);

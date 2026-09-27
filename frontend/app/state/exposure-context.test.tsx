@@ -11,23 +11,34 @@ vi.mock("~/domain/exposure-api", () => ({
 }));
 
 const wind: ExposureAsset = {
-  assetId: "CJU_RNRDV",
-  name: "Rio do Vento",
-  entityLevel: "generation_group",
+  assetId: "RNEM13",
+  name: "Ventos de Santa Martina 13",
+  entityLevel: "plant",
   technology: "wind",
   state: "RN",
   connectionPoint: "RNCMM-500-A",
-  capacityMw: null,
-  connectedAssetCount: 1,
+  capacityMw: 67.2,
+  connectedAssetCount: 7,
   operationalDataStatus: "simulated",
+  allocationCoverage: { value: 96.5, unit: "%" },
+  onsGroupId: "CJU_RNRDV",
+  onsGroupName: "Rio do Vento",
+  ceg: "EOL.CV.RN.038322-8.01",
 };
 const solar: ExposureAsset = {
-  ...wind,
-  assetId: "CJU_RNMVS",
-  name: "Conj. Monte Verde Solar",
+  assetId: "RNMVS2",
+  name: "Monte Verde Solar II",
+  entityLevel: "plant",
   technology: "solar",
+  state: "RN",
   connectionPoint: "RNMTV-500-A",
-  connectedAssetCount: 3,
+  capacityMw: 42.48,
+  connectedAssetCount: 4,
+  operationalDataStatus: "simulated",
+  allocationCoverage: { value: 91.2, unit: "%" },
+  onsGroupId: "CJU_RNMVS",
+  onsGroupName: "Monte Verde Solar",
+  ceg: "UFV.RS.RN.045154-1.01",
 };
 
 function deferred<T>() {
@@ -52,6 +63,8 @@ function exposureView(asset: ExposureAsset): ExposureView {
       characterizedShare: unavailable,
       simultaneousShare: unavailable,
       exclusiveShare: unavailable,
+      curtailedDayShare: null,
+      allocationCoverage: null,
       periodStart: "2024-04-01",
       periodEnd: "2026-09-25",
     },
@@ -67,6 +80,7 @@ function exposureView(asset: ExposureAsset): ExposureView {
       eventPercentile: null,
       probabilityStatus: "unavailable",
       topWindows: [],
+      criticalWindows72h: [],
     },
     associatedConditions: { reasons: [], origins: [], modalities: [] },
     recurrence: { timezone: "America/Sao_Paulo", weekdays: [], hours: [] },
@@ -76,6 +90,8 @@ function exposureView(asset: ExposureAsset): ExposureView {
       missingRate: unavailable,
       duplicateCount: { value: null, unit: "intervalos" },
     },
+    pointContext: null,
+    simulatedTelemetry: null,
     narrative: {
       "secao-ativo": ["Ativo."],
       "secao-resumo": ["Resumo."],
@@ -91,7 +107,7 @@ function exposureView(asset: ExposureAsset): ExposureView {
 beforeEach(() => vi.clearAllMocks());
 
 describe("ExposureProvider", () => {
-  it("cancela a resposta anterior ao trocar de ativo", async () => {
+  it("cancela a resposta anterior ao trocar de usina", async () => {
     const first = deferred<ExposureView>();
     vi.mocked(fetchExposureAssets).mockResolvedValue([wind, solar]);
     vi.mocked(fetchExposureView)
@@ -99,15 +115,15 @@ describe("ExposureProvider", () => {
       .mockResolvedValueOnce(exposureView(solar));
     const { result } = renderHook(() => useExposure(), { wrapper: ExposureProvider });
 
-    await waitFor(() => expect(fetchExposureView).toHaveBeenCalledWith("CJU_RNRDV", expect.any(AbortSignal)));
+    await waitFor(() => expect(fetchExposureView).toHaveBeenCalledWith("RNEM13", expect.any(AbortSignal)));
     const firstSignal = vi.mocked(fetchExposureView).mock.calls[0][1];
-    act(() => result.current.selectAsset("CJU_RNMVS"));
+    act(() => result.current.selectAsset("RNMVS2"));
 
-    await waitFor(() => expect(result.current.view?.asset.assetId).toBe("CJU_RNMVS"));
+    await waitFor(() => expect(result.current.view?.asset.assetId).toBe("RNMVS2"));
     expect(firstSignal?.aborted).toBe(true);
     first.resolve(exposureView(wind));
     await Promise.resolve();
-    expect(result.current.view?.asset.assetId).toBe("CJU_RNMVS");
+    expect(result.current.view?.asset.assetId).toBe("RNMVS2");
   });
 
   it("repete o catálogo após uma falha completa", async () => {
@@ -120,7 +136,39 @@ describe("ExposureProvider", () => {
     await waitFor(() => expect(result.current.error).toBe("falha de rede"));
     act(() => result.current.retry());
 
-    await waitFor(() => expect(result.current.view?.asset.assetId).toBe("CJU_RNRDV"));
+    await waitFor(() => expect(result.current.view?.asset.assetId).toBe("RNEM13"));
     expect(fetchExposureAssets).toHaveBeenCalledTimes(2);
+  });
+
+  it("seleciona somente a usina informada e ignora identificadores desconhecidos", async () => {
+    vi.mocked(fetchExposureAssets).mockResolvedValue([wind, solar]);
+    vi.mocked(fetchExposureView).mockImplementation((assetId: string) =>
+      Promise.resolve(exposureView(assetId === solar.assetId ? solar : wind)),
+    );
+    const { result } = renderHook(() => useExposure(), { wrapper: ExposureProvider });
+
+    await waitFor(() => expect(result.current.view?.asset.assetId).toBe("RNEM13"));
+    act(() => result.current.selectAsset("CJU_RNRDV"));
+    expect(result.current.selectedAssetId).toBe("RNEM13");
+    act(() => result.current.selectAsset("RNMVS2"));
+
+    await waitFor(() => expect(result.current.view?.asset.assetId).toBe("RNMVS2"));
+    expect(fetchExposureView).toHaveBeenCalledWith("RNMVS2", expect.any(AbortSignal));
+    expect(result.current.view?.asset.onsGroupId).toBe("CJU_RNMVS");
+  });
+
+  it("mantém a seleção da Exposição isolada do AnalysisProvider", async () => {
+    vi.mocked(fetchExposureAssets).mockResolvedValue([wind, solar]);
+    vi.mocked(fetchExposureView).mockResolvedValue(exposureView(solar));
+    // The provider must work on its own: no AnalysisProvider is mounted here.
+    const { result } = renderHook(() => useExposure(), { wrapper: ExposureProvider });
+
+    await waitFor(() => expect(result.current.assets).toHaveLength(2));
+    act(() => result.current.selectAsset("RNMVS2"));
+
+    await waitFor(() => expect(result.current.selectedAssetId).toBe("RNMVS2"));
+    expect(Object.keys(result.current).sort()).toEqual(
+      ["assets", "error", "loading", "retry", "selectAsset", "selectedAssetId", "view"].sort(),
+    );
   });
 });
