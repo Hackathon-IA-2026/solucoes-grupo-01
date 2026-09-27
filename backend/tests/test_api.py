@@ -2,6 +2,7 @@ import hashlib
 import json
 
 import pytest
+from botocore.exceptions import ClientError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -15,13 +16,41 @@ client = TestClient(app)
 class FakeScenariosTable:
     def __init__(self) -> None:
         self.items = {}
+        self.consistent_reads = 0
 
-    def put_item(self, *, Item) -> dict:
-        self.items[(Item["plant_id"], Item["scenario_id"])] = Item
+    @staticmethod
+    def _validate_key(key: dict) -> None:
+        if len(key["plant_id"].encode("utf-8")) > 2048:
+            raise ClientError(
+                {"Error": {"Code": "ValidationException", "Message": "partition key too large"}},
+                "FakeDynamoDB",
+            )
+        if len(key["scenario_id"].encode("utf-8")) > 1024:
+            raise ClientError(
+                {"Error": {"Code": "ValidationException", "Message": "sort key too large"}},
+                "FakeDynamoDB",
+            )
+
+    def put_item(self, *, Item, ConditionExpression=None) -> dict:
+        key = {"plant_id": Item["plant_id"], "scenario_id": Item["scenario_id"]}
+        self._validate_key(key)
+        item_key = (key["plant_id"], key["scenario_id"])
+        if ConditionExpression is not None and item_key in self.items:
+            raise ClientError(
+                {
+                    "Error": {
+                        "Code": "ConditionalCheckFailedException",
+                        "Message": "conditional request failed",
+                    }
+                },
+                "PutItem",
+            )
+        self.items[item_key] = Item
         return {}
 
     def get_item(self, *, Key, ConsistentRead=False) -> dict:
-        del ConsistentRead
+        self._validate_key(Key)
+        self.consistent_reads += int(ConsistentRead)
         item = self.items.get((Key["plant_id"], Key["scenario_id"]))
         return {} if item is None else {"Item": item}
 
@@ -35,6 +64,58 @@ def issued_provenance_table(monkeypatch) -> FakeScenariosTable:
         IssuedProvenanceRepository(table),
     )
     return table
+
+
+def test_issued_provenance_repository_supports_ids_larger_than_dynamodb_sort_keys() -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    evidence_id = "legacy:" + ("é" * 1024)
+    record = {"evidence_id": evidence_id, "record_type": "issued_provenance", "value": 1}
+
+    repository.put(record)
+
+    stored = repository.get(evidence_id)
+    assert stored is not None
+    assert stored["evidence_id"] == evidence_id
+    assert len(stored["scenario_id"].encode("utf-8")) < 1024
+    assert table.consistent_reads == 1
+
+
+def test_issued_provenance_repository_duplicate_write_is_idempotent() -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    record = {"evidence_id": "ev1.duplicate", "record_type": "issued_provenance", "value": 1}
+
+    repository.put(record)
+    repository.put(record)
+
+    assert len(table.items) == 1
+    assert table.consistent_reads == 1
+
+
+def test_issued_provenance_repository_rejects_digest_collision_or_record_mismatch(
+    monkeypatch,
+) -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    monkeypatch.setattr(
+        IssuedProvenanceRepository,
+        "_key",
+        staticmethod(
+            lambda evidence_id: {"plant_id": "PROVENANCE", "scenario_id": "evidence#forced"}
+        ),
+    )
+    first = {"evidence_id": "ev1.first", "record_type": "issued_provenance", "value": 1}
+    second = {"evidence_id": "ev1.second", "record_type": "issued_provenance", "value": 2}
+    repository.put(first)
+
+    with pytest.raises(RuntimeError, match="collision or immutable record mismatch"):
+        repository.put(second)
+
+    assert repository.get("ev1.second") is None
+    stored_first = repository.get("ev1.first")
+    assert stored_first is not None
+    assert stored_first["value"] == 1
 
 
 def fresh_api_client() -> TestClient:
@@ -71,6 +152,23 @@ def energy_price_payload(value: float = 250) -> dict:
         "value_status": "informado",
         "origin": "CLIENTE_INFORMADO",
         "provenance": client_provenance("energy_price"),
+    }
+
+
+def maintenance_input_provenance() -> dict:
+    return {
+        field_name: client_provenance(field_name)
+        for field_name in (
+            "asset_id",
+            "start",
+            "end",
+            "duration_hours",
+            "minimum_notice_hours",
+            "baseline_window_start",
+            "weekdays_only",
+            "unavailable_periods",
+            "energy_price",
+        )
     }
 
 
@@ -758,7 +856,9 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(
         payload["input_provenance"]["energy_price"]["evidence_id"],
     }
     assert len(issued_provenance_table.items) == 14
-    stored = issued_provenance_table.items[("PROVENANCE", evidence["provenance_id"])]
+    stored = issued_provenance_table.items[
+        ("PROVENANCE", IssuedProvenanceRepository._key(evidence["provenance_id"])["scenario_id"])
+    ]
     assert json.loads(stored["request_json"])["asset_id"] == "CJU_BAOUR"
     stored_output = json.loads(stored["output_json"])
     assert stored_output["evidence_field"] == "expected_curtailed_energy"
@@ -776,6 +876,75 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(
             assert resolved.json()["parent_evidence_ids"] == provenance["parent_evidence_ids"]
             assert resolved.json()["provenance"] == provenance
     assert "não é previsão" in " ".join(payload["limitations"]).lower()
+
+
+def test_rank_maintenance_changed_values_get_new_immutable_ids(
+    monkeypatch, issued_provenance_table
+) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    monkeypatch.setattr(
+        main.repository,
+        "get_historical_windows",
+        lambda asset_id, start, end, duration_hours: [
+            {
+                "start": main.datetime(2026, 8, 1, tzinfo=main.UTC),
+                "end": main.datetime(2026, 8, 4, tzinfo=main.UTC),
+                "curtailed_mwh": 20.0,
+                "period": "2026-08",
+                "source_sha256": MATERIALIZED_ITEM["source_sha256"],
+                "method": "monthly_observed_rate_prorated_to_window_v1",
+            }
+        ],
+    )
+    request = {
+        "asset_id": "CJU_BAOUR",
+        "start": "2026-08-01",
+        "end": "2026-08-31",
+        "duration_hours": 72,
+        "minimum_notice_hours": 168,
+        "baseline_window_start": "2026-08-01T00:00:00Z",
+        "constraints": {"weekdays_only": False, "unavailable_periods": []},
+        "energy_price": energy_price_payload(250),
+        "input_provenance": maintenance_input_provenance(),
+    }
+
+    first = client.post("/v1/maintenance/rank", json=request)
+    assert first.status_code == 200
+    first_window = first.json()["ranked_windows"][0]
+    first_ids = {
+        provenance["evidence_id"] for provenance in first_window["field_provenance"].values()
+    }
+    first_cost_id = first_window["opportunity_cost"]["provenance_id"]
+
+    changed_request = {**request, "energy_price": energy_price_payload(300)}
+    second = client.post("/v1/maintenance/rank", json=changed_request)
+    assert second.status_code == 200
+    second_window = second.json()["ranked_windows"][0]
+    second_ids = {
+        provenance["evidence_id"] for provenance in second_window["field_provenance"].values()
+    }
+    assert first_ids.isdisjoint(second_ids)
+    assert second_window["opportunity_cost"]["value"] == 6000.0
+    assert len(issued_provenance_table.items) == 14
+
+    prior = client.get(f"/v1/provenances/{first_cost_id}")
+    assert prior.status_code == 200
+    assert prior.json()["evidence_id"] == first_cost_id
+    first_record_key = IssuedProvenanceRepository._key(first_cost_id)["scenario_id"]
+    first_record = issued_provenance_table.items[("PROVENANCE", first_record_key)]
+    assert json.loads(first_record["request_json"])["energy_price"]["value"] == 250
+    assert (
+        json.loads(first_record["output_json"])["ranked_window"]["opportunity_cost"]["value"]
+        == 5000.0
+    )
+
+    duplicate = client.post("/v1/maintenance/rank", json=changed_request)
+    assert duplicate.status_code == 200
+    assert (
+        duplicate.json()["ranked_windows"][0]["field_provenance"]
+        == second_window["field_provenance"]
+    )
+    assert len(issued_provenance_table.items) == 14
 
 
 def test_rank_maintenance_accepts_legacy_payload_and_infers_client_lineage(monkeypatch) -> None:
@@ -935,10 +1104,11 @@ def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(
     )
     assert len(issued_provenance_table.items) == 6
     source_id = payload["source_observation"]["evidence_id"]
-    assert ("PROVENANCE", source_id) in issued_provenance_table.items
-    stored = issued_provenance_table.items[
-        ("PROVENANCE", output_evidence["annual_net_benefit_brl"]["provenance_id"])
-    ]
+    source_key = IssuedProvenanceRepository._key(source_id)["scenario_id"]
+    assert ("PROVENANCE", source_key) in issued_provenance_table.items
+    net_benefit_id = output_evidence["annual_net_benefit_brl"]["provenance_id"]
+    net_benefit_key = IssuedProvenanceRepository._key(net_benefit_id)["scenario_id"]
+    stored = issued_provenance_table.items[("PROVENANCE", net_benefit_key)]
     assert json.loads(stored["request_json"])["energy_mwh"] == 80
     assert (
         json.loads(stored["output_json"])["screening_output"]["annual_net_benefit_brl"] == 3300000.0
@@ -961,6 +1131,55 @@ def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(
         assert provenance_response.json()["provenance"] == evidence["provenance"]
     assert "soc_cronológico" in payload["missing_data"]
     assert "não é dimensionamento" in " ".join(payload["limitations"]).lower()
+
+
+def test_bess_screen_changed_input_values_get_new_immutable_ids(
+    monkeypatch, issued_provenance_table
+) -> None:
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: MATERIALIZED_ITEM)
+    request = {
+        "asset_id": "CJU_BAOUR",
+        "maintenance_result_id": "historical:CJU_BAOUR:2026-08",
+        "power_mw": 20,
+        "energy_mwh": 80,
+        "capex_brl": 1000000,
+        "annualized_cost_brl": 100000,
+        "round_trip_efficiency": 0.85,
+        "cycles_per_year": 200,
+        "energy_price_brl_mwh": 250,
+        "input_provenance": bess_input_provenance(),
+    }
+
+    first = client.post("/v1/bess/screen", json=request)
+    assert first.status_code == 200
+    first_payload = first.json()
+    first_ids = {
+        first_payload["source_observation"]["evidence_id"],
+        *(evidence["provenance_id"] for evidence in first_payload["output_evidence"].values()),
+    }
+    first_net_id = first_payload["output_evidence"]["annual_net_benefit_brl"]["provenance_id"]
+
+    changed_request = {**request, "energy_mwh": 40}
+    second = client.post("/v1/bess/screen", json=changed_request)
+    assert second.status_code == 200
+    second_payload = second.json()
+    second_ids = {
+        second_payload["source_observation"]["evidence_id"],
+        *(evidence["provenance_id"] for evidence in second_payload["output_evidence"].values()),
+    }
+    assert first_ids.isdisjoint(second_ids)
+    assert len(issued_provenance_table.items) == 12
+
+    prior = client.get(f"/v1/provenances/{first_net_id}")
+    assert prior.status_code == 200
+    assert prior.json()["evidence_id"] == first_net_id
+    first_record_key = IssuedProvenanceRepository._key(first_net_id)["scenario_id"]
+    first_record = issued_provenance_table.items[("PROVENANCE", first_record_key)]
+    assert json.loads(first_record["request_json"])["energy_mwh"] == 80
+    assert (
+        json.loads(first_record["output_json"])["screening_output"]["annual_net_benefit_brl"]
+        == 3300000.0
+    )
 
 
 def test_bess_screen_accepts_legacy_payload_and_infers_client_lineage(monkeypatch) -> None:

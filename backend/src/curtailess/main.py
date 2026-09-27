@@ -499,6 +499,10 @@ def _canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _canonical_digest(value: object) -> str:
+    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+
+
 def _issued_record(
     *,
     operation: str,
@@ -507,9 +511,11 @@ def _issued_record(
     provenance: EvidenceProvenance,
     source_item: dict,
 ) -> dict[str, object]:
+    evidence_digest = hashlib.sha256(provenance.evidence_id.encode("utf-8")).hexdigest()
     return {
         "plant_id": "PROVENANCE",
-        "scenario_id": provenance.evidence_id,
+        "scenario_id": f"evidence#{evidence_digest}",
+        "evidence_id": provenance.evidence_id,
         "record_type": "issued_provenance",
         "operation": operation,
         "request_json": _canonical_json(request.model_dump(mode="json")),
@@ -1166,6 +1172,22 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
     input_evidence_ids = {
         field_name: provenance.evidence_id for field_name, provenance in input_provenance.items()
     }
+    decision_input_sha256 = _canonical_digest(
+        {
+            "request": request.model_dump(mode="json"),
+            "candidates": [
+                {
+                    "start": candidate["start"].isoformat(),
+                    "end": candidate["end"].isoformat(),
+                    "curtailed_mwh": candidate["curtailed_mwh"],
+                    "period": candidate["period"],
+                    "source_sha256": candidate["source_sha256"],
+                    "method": candidate["method"],
+                }
+                for candidate in candidates
+            ],
+        }
+    )
 
     def candidate_context(candidate: dict) -> str:
         return _json_context(
@@ -1177,6 +1199,7 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
             request_start=request.start.isoformat(),
             request_end=request.end.isoformat(),
             input_evidence_ids=input_evidence_ids,
+            decision_input_sha256=decision_input_sha256,
         )
 
     def candidate_energy_provenance(candidate: dict) -> EvidenceProvenance:
@@ -1378,10 +1401,30 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
         "Triagem determinística sobre exposição histórica: não é dimensionamento, previsão "
         "de despacho ou garantia de corte evitado."
     )
+    decision_input_sha256 = _canonical_digest(
+        {
+            "request": request.model_dump(mode="json"),
+            "materialized_source": {
+                "asset_id": item["asset_id"],
+                "period": item["period"],
+                "period_start": item["period_start"],
+                "period_end": item["period_end"],
+                "curtailed_mwh": residual_exposure,
+                "source_key": item["source_key"],
+                "source_sha256": item["source_sha256"],
+                "method": item["method"],
+            },
+        }
+    )
     source_observation = _field_provenance(
         field_name="residual_exposure_source",
         method_version="curtailed_energy_sum_v1",
-        context=f"{request.asset_id}:{item['period']}",
+        context=_json_context(
+            "bess_screen_source",
+            asset_id=request.asset_id,
+            period=item["period"],
+            decision_input_sha256=decision_input_sha256,
+        ),
         origin=DataOrigin.PROXY_CALCULADO,
         limitations=["Agregado mensal curado e calculado a partir de observações públicas."],
         source_hashes=[item["source_sha256"]],
@@ -1399,6 +1442,7 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
         asset_id=request.asset_id,
         maintenance_result_id=request.maintenance_result_id,
         parent_evidence_ids=output_parent_ids,
+        decision_input_sha256=decision_input_sha256,
         inputs={
             field_name: getattr(request, field_name)
             for field_name in (
