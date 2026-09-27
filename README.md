@@ -1,46 +1,47 @@
-# Nome do Projeto
+# CurtaiLess
 
-> Descrição curta (1-2 frases): o que o projeto faz e qual problema ele resolve.
+O CurtaiLess é uma plataforma B2B que ajuda usinas eólicas e solares a reduzir perdas por curtailment. O produto combina dados públicos do ONS, cenários demonstrativos e análises assistidas por IA para identificar a exposição de cada usina, sugerir janelas de manutenção e avaliar o uso de baterias.
 
-## Demo
+Ao deslocar manutenções para períodos com maior risco de corte, a usina pode preservar mais dias produtivos e aumentar a energia disponível para comercialização.
 
-- **Link da demo:** (se houver, ex: Vercel, Netlify, etc.)
+## Demonstração
 
-## Tecnologias utilizadas
+- [Acessar o CurtaiLess](http://curtailess-dev-frontendbucket-vohqs0b1wbic.s3-website-us-west-2.amazonaws.com)
 
-- Linguagem: (ex: Python, JavaScript, Go...)
-- Framework(s): (ex: React, Flask, Node...)
-- Banco de dados: 
-- APIs / Serviços externos: (se houver)
+## Funcionalidades
 
-## Como rodar o projeto
+- análise histórica de curtailment e qualidade dos dados por usina;
+- cenário demonstrativo de exposição para os próximos 60 dias;
+- ranking e agendamento demonstrativo de janelas de manutenção;
+- estimativa técnica e econômica de sistemas de armazenamento por bateria;
+- explicações geradas com Amazon Bedrock a partir de métricas calculadas pelo backend.
+
+## Tecnologias
+
+O frontend usa React, React Router e TypeScript. O backend usa Python 3.12, FastAPI e DuckDB. A infraestrutura serverless é definida com AWS SAM e inclui Lambda, API Gateway, S3, SQS, DynamoDB, EventBridge e Amazon Bedrock.
+
+## Execução local
+
+Pré-requisitos: Python 3.12, `uv`, Node.js 22 e npm.
 
 ```bash
-# Clone o repositório
-git clone https://github.com/usuario/repo.git
-cd repo
+# Backend
+cd backend
+uv sync --dev --locked
+uv run uvicorn curtailess.main:app --app-dir src --reload
 
-# Instale as dependências
-# (ex: npm install / pip install -r requirements.txt)
-
-# Rode o projeto
-# (ex: npm run dev / python app.py)
+# Frontend, em outro terminal
+cd frontend
+npm ci
+npm run dev
 ```
 
-## Pré-requisitos
+As instruções de implantação estão em [`docs/aws-deployment.md`](./docs/aws-deployment.md). Pull requests executam testes, análise estática e builds do backend, frontend e template AWS SAM. O deploy permanece manual.
 
-Liste aqui o que precisa estar instalado antes de rodar o projeto (ex: Node 18+, Python 3.10+, Docker, etc.)
+## Limitações da demonstração
 
-## Integração contínua
-
-Pull requests executam o workflow `.github/workflows/ci.yml`, com verificações independentes para:
-
-- backend: dependências com `uv`, testes, Ruff e formatação;
-- infraestrutura: validação e build do template AWS SAM;
-- frontend: instalação reproduzível, tipos, lint, testes e build.
-
-O workflow concede apenas permissão de leitura ao conteúdo e não recebe credenciais AWS. Deploy automático não faz parte deste CI. A adoção de CD deve ser avaliada separadamente, porque a conta do workshop usa credenciais temporárias e políticas IAM limitadas.
+Os dados históricos vêm do ONS. As previsões, sugestões de manutenção e estimativas de bateria são demonstrativas e não usam telemetria privada em tempo real. O CurtaiLess não substitui a aprovação operacional do ONS.
 
 ## Licença
 
-Este projeto está sob a licença MIT — veja o arquivo [LICENSE](./LICENSE) para mais detalhes.
+Este projeto está sob a licença MIT. Consulte o arquivo [LICENSE](./LICENSE).
