@@ -6,6 +6,7 @@ const distributionSchema = z.object({ label: z.string().min(1), value: z.number(
 const assetSchema = z.object({
   asset_id: z.string().min(1),
   name: z.string().min(1),
+  entity_level: z.literal("generation_group"),
   technology: z.enum(["wind", "solar"]),
   state: z.string().length(2),
   connection_point: z.string().min(1),
@@ -52,6 +53,9 @@ const viewSchema = z.object({
     total_expected_mwh: z.number().finite().nonnegative().nullable(),
     total_lower_mwh: z.number().finite().nonnegative().nullable(),
     total_upper_mwh: z.number().finite().nonnegative().nullable(),
+    event_threshold_mwh: z.number().finite().nonnegative().nullable(),
+    event_percentile: z.number().finite().min(0).max(1).nullable(),
+    probability_status: z.enum(["empirical_uncalibrated", "unavailable"]),
     top_windows: z.array(forecastWindowSchema).max(3),
   }).strict().superRefine((forecast, context) => {
     if (forecast.status === "demonstrative_simulation" && forecast.points.length !== 60) context.addIssue({ code: z.ZodIssueCode.custom, message: "A previsão demonstrativa exige 60 pontos" });
@@ -80,6 +84,7 @@ function mapAsset(raw: z.infer<typeof assetSchema>): ExposureAsset {
   return {
     assetId: raw.asset_id,
     name: raw.name,
+    entityLevel: raw.entity_level,
     technology: raw.technology,
     state: raw.state,
     connectionPoint: raw.connection_point,
@@ -126,6 +131,9 @@ export async function fetchExposureView(assetId: string, signal?: AbortSignal): 
       totalExpectedMwh: raw.forecast_60d.total_expected_mwh,
       totalLowerMwh: raw.forecast_60d.total_lower_mwh,
       totalUpperMwh: raw.forecast_60d.total_upper_mwh,
+      eventThresholdMwh: raw.forecast_60d.event_threshold_mwh,
+      eventPercentile: raw.forecast_60d.event_percentile,
+      probabilityStatus: raw.forecast_60d.probability_status,
       topWindows: raw.forecast_60d.top_windows.map((window) => ({
         start: window.start,
         end: window.end,

@@ -93,10 +93,10 @@ export function SolarNetworkIllustration({ sectionId, connectedCount }: SolarNet
         preserveAspectRatio="xMidYMid meet"
       >
         <title id={titleId}>
-          {`Uma usina solar principal e ${connectedPlantSlots.length} usinas conectadas a uma subestação`}
+          {`Um conjunto solar principal e ${connectedPlantSlots.length} conjuntos conectados a uma subestação`}
         </title>
         <desc id={descriptionId}>
-          {`Uma usina solar principal e ${connectedPlantSlots.length} usinas solares menores estão conectadas a uma subestação coletora. Painéis fazem pequenos movimentos de rastreamento e segmentos verdes mostram a energia chegando à rede.`}
+          {`Um conjunto solar principal e ${connectedPlantSlots.length} conjuntos solares estão conectados a uma subestação coletora. Painéis fazem pequenos movimentos de rastreamento e segmentos verdes mostram a energia chegando à rede.`}
         </desc>
         <defs>
           <filter id={glowId} x="-500%" y="-500%" width="1000%" height="1000%">
@@ -169,7 +169,7 @@ export function SolarNetworkIllustration({ sectionId, connectedCount }: SolarNet
           })}
         </g>
 
-        <g aria-label="Usina solar principal" transform="translate(-300 0)">
+        <g aria-label="Conjunto solar principal" transform="translate(-300 0)">
           <path className="ground" d="M600 92 L812 214 L600 337 L388 214 Z" opacity=".7" />
           <g transform="translate(490 130) scale(.62)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-7 0 22;7 0 22;-7 0 22" dur="12s" repeatCount="indefinite" /></g></g>
           <g transform="translate(600 194) scale(.62)"><use className="equipment" href={`#${standId}`} x="-100" y="-20" width="200" height="150" /><g className="tracker-live"><use className="equipment" href={`#${panelId}`} x="-100" y="-60" width="200" height="120" /><animateTransform attributeName="transform" type="rotate" values="-5 0 22;8 0 22;-5 0 22" dur="13s" repeatCount="indefinite" /></g></g>
@@ -206,7 +206,7 @@ export function SolarNetworkIllustration({ sectionId, connectedCount }: SolarNet
             <g
               key={`plant-${slot.x}-${slot.y}`}
               data-connected-plant={`plant-${index + 1}`}
-              aria-label={`Usina solar conectada ${index + 1}`}
+              aria-label={`Conjunto solar conectado ${index + 1}`}
               transform={`translate(${slot.x} ${slot.y}) scale(${slot.scale})`}
               opacity={slot.edge ? 0.76 : 0.86}
             >

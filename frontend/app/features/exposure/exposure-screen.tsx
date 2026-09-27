@@ -11,8 +11,8 @@ import { formatEvidence, numberFormatter } from "~/lib/format";
 import { useExposure } from "~/state/use-exposure";
 
 const sections: SectionNavItem[] = [
-  { id: "secao-ativo", title: "Onde a usina está conectada" },
-  { id: "secao-resumo", title: "O impacto observado na usina" },
+  { id: "secao-ativo", title: "Onde o conjunto gerador está conectado" },
+  { id: "secao-resumo", title: "O impacto observado no conjunto" },
   { id: "secao-previsao", title: "Previsão de curtailment para 60 dias" },
   { id: "secao-razao-origem", title: "Condições associadas aos cortes" },
   { id: "secao-recorrencia", title: "Dias e horários de maior recorrência" },
@@ -131,15 +131,16 @@ export function ExposureScreen() {
   const forecastData: ChartDataset = {
     points: forecast60d.points.map((point, index) => ({
       label: index % 7 === 0 ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", timeZone: "UTC" }).format(new Date(`${point.forecastDate}T00:00:00Z`)) : "",
-      value: Math.round(point.curtailmentProbability * 1000) / 10,
+      value: Math.round(point.expectedCurtailedMwh * 10) / 10,
     })),
-    evidence: evidence("%", forecast60d.start ?? "", forecast60d.end ?? "", "simulado"),
+    evidence: evidence("MWh/dia", forecast60d.start ?? "", forecast60d.end ?? "", "simulado"),
   };
+  const forecastDescription = "Estimativa diária baseada no histórico mensal, nos últimos 30 dias, nos últimos sete dias e no dia anterior.";
   const forecastHighlights: HighlightItem[] = forecast60d.topWindows.map((window, index) => ({
     label: `${window.start} a ${window.end}`,
-    value: numberFormatter.format(window.meanProbability * 100),
-    unit: "%",
-    detail: `${numberFormatter.format(window.expectedCurtailedMwh)} MWh esperados no cenário`,
+    value: numberFormatter.format(window.expectedCurtailedMwh),
+    unit: "MWh",
+    detail: "Energia restringida estimada na janela",
     emphasis: index === 0 ? "primary" : "supporting",
   }));
   const periodStart = observedImpact.periodStart;
@@ -155,15 +156,16 @@ export function ExposureScreen() {
       <h1 className="sr-only">Exposição</h1>
       <SectionNav items={sections} />
       <div>
-        <AnalysisSection id="secao-ativo" title="Onde a usina está conectada" illustration={illustration("secao-ativo")} analysis={analysis("secao-ativo")}>
-          <Panel data-section-card aria-label="Contexto da usina e do ponto de conexão">
-            <CardSlot showHeader={false} title="Usina e ponto de conexão"><AssetTopologyBody asset={topologyAsset} /></CardSlot>
-            <CardSlot showHeader={false} title="Informações da usina">
-              <HighlightList label="Informações da usina" items={[
-                { label: "Local da usina", value: asset.state },
+        <AnalysisSection id="secao-ativo" title="Onde o conjunto gerador está conectado" illustration={illustration("secao-ativo")} analysis={analysis("secao-ativo")}>
+          <Panel data-section-card aria-label="Contexto do conjunto gerador e do ponto de conexão">
+            <CardSlot showHeader={false} title="Conjunto gerador e ponto de conexão"><AssetTopologyBody asset={topologyAsset} /></CardSlot>
+            <CardSlot showHeader={false} title="Informações do conjunto gerador">
+              <HighlightList label="Informações do conjunto gerador" items={[
+                { label: "Nível do dado público", value: "Conjunto gerador ONS", detail: "Pode reunir várias usinas individuais" },
+                { label: "Estado", value: asset.state },
                 { label: "Tecnologia de geração", value: technology },
                 { label: "Ponto usado nesta análise", value: asset.connectionPoint },
-                { label: "Outras usinas ou conjuntos associados ao ponto", value: String(asset.connectedAssetCount) },
+                { label: "Outros conjuntos associados ao ponto", value: String(asset.connectedAssetCount) },
                 { label: "Dados operacionais", value: asset.operationalDataStatus === "simulated" ? "Simulados" : "Conectados", detail: asset.operationalDataStatus === "simulated" ? "Nesta demonstração" : undefined },
                 { label: "Última atualização dos dados", value: formatUpdate(view.lastDataUpdate) },
               ]} />
@@ -171,8 +173,8 @@ export function ExposureScreen() {
           </Panel>
         </AnalysisSection>
 
-        <AnalysisSection id="secao-resumo" title="O impacto observado na usina" illustration={illustration("secao-resumo")} analysis={analysis("secao-resumo")}>
-          <Panel data-section-card aria-label="Destaques do impacto observado na usina">
+        <AnalysisSection id="secao-resumo" title="O impacto observado no conjunto" illustration={illustration("secao-resumo")} analysis={analysis("secao-resumo")}>
+          <Panel data-section-card aria-label="Destaques do impacto observado no conjunto">
             <HighlightList variant="metrics" label="Destaques do impacto observado" items={[
               { label: "Estimativa histórica acumulada", ...displayMetric(observedImpact.totalCurtailedEnergy), detail: "Proxy calculado a partir do histórico público da ONS.", emphasis: "hero" },
               { label: "Estimativa no último dia observado", ...displayMetric(observedImpact.latestDailyCurtailedEnergy), emphasis: "primary" },
@@ -185,9 +187,9 @@ export function ExposureScreen() {
         <AnalysisSection id="secao-previsao" title="Previsão de curtailment para os próximos 60 dias" illustration={illustration("secao-previsao")} analysis={analysis("secao-previsao")}>
           <Panel data-section-card aria-label="Previsão demonstrativa de curtailment para 60 dias">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-soft">Cenário demonstrativo</p>
-            {forecast60d.status === "unavailable" ? unavailable("O cenário de 60 dias ainda não foi materializado para esta usina.") : <Forecast60dSlot data={forecastData} />}
+            {forecast60d.status === "unavailable" ? unavailable("O cenário de 60 dias ainda não foi materializado para este conjunto.") : <Forecast60dSlot data={forecastData} description={forecastDescription} />}
             <div className="mt-5 border-t border-line pt-5">
-              <HighlightList variant="metrics" label="Períodos com maior chance simulada" items={forecastHighlights} />
+              <HighlightList variant="metrics" label="Períodos com maior energia restringida estimada" items={forecastHighlights} />
             </div>
             <div className="mt-5 border-t border-line pt-5">
               <HighlightList variant="metrics" label="Faixa estimada acumulada" items={[
@@ -219,9 +221,9 @@ export function ExposureScreen() {
             {observedImpact.simultaneousShare.value !== null && observedImpact.exclusiveShare.value !== null ? (
               <MetricComposition label="Abrangência dos registros no ponto de conexão" items={[
                 { label: "Compartilhados no ponto", value: observedImpact.simultaneousShare.value, displayValue: formatEvidence(observedImpact.simultaneousShare.value, observedImpact.simultaneousShare.unit) },
-                { label: "Somente nesta usina", value: observedImpact.exclusiveShare.value, displayValue: formatEvidence(observedImpact.exclusiveShare.value, observedImpact.exclusiveShare.unit) },
+                { label: "Somente neste conjunto", value: observedImpact.exclusiveShare.value, displayValue: formatEvidence(observedImpact.exclusiveShare.value, observedImpact.exclusiveShare.unit) },
               ]} />
-            ) : unavailable("O resumo diário não mede simultaneidade entre usinas ligadas ao mesmo ponto.")}
+            ) : unavailable("O resumo diário não mede simultaneidade entre conjuntos ligados ao mesmo ponto.")}
             <div className="mt-6 border-t border-line pt-5">
               <HighlightList variant="metrics" label="Confiança e disponibilidade dos dados" items={[
                 { label: "Histórico disponível para análise", ...displayMetric(quality.coverage), emphasis: "supporting" },

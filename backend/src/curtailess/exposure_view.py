@@ -137,6 +137,7 @@ def _catalog_asset(
     return ExposureDisplayAsset(
         asset_id=payload["asset_id"],
         name=payload["name"],
+        entity_level="generation_group",
         technology=payload["technology"],
         state=payload["state"],
         connection_point=payload["connection_point"],
@@ -187,6 +188,9 @@ def _forecast(payload: dict[str, Any]) -> ExposureForecast60d:
         total_expected_mwh=round(sum(point.expected_curtailed_mwh for point in points), 3),
         total_lower_mwh=float(accumulated["lower"]),
         total_upper_mwh=float(accumulated["upper"]),
+        event_threshold_mwh=float(payload["material_event"]["threshold_mwh"]),
+        event_percentile=float(payload["material_event"]["percentile"]),
+        probability_status=payload["material_event"]["probability_status"],
         top_windows=top_windows,
     )
 
@@ -365,12 +369,14 @@ def deterministic_narrative(
                 f"{('eólico' if asset.technology == 'wind' else 'solar')} conectado "
                 f"ao ponto {asset.connection_point}.",
                 "O estado operacional mostrado nesta demonstração é uma estimativa "
-                "baseada em dados públicos, não telemetria privada da usina.",
+                "baseada em dados públicos, não telemetria privada do conjunto.",
             ],
             "secao-resumo": [observed_text],
             "secao-previsao": [
-                f"A projeção demonstrativa cobre {len(forecast.points)} dias e expressa "
-                "uma possibilidade estimada, não um corte futuro confirmado.",
+                f"A projeção demonstrativa cobre {len(forecast.points)} dias e usa "
+                "o histórico mensal, os últimos 30 dias, os últimos sete dias e o dia anterior.",
+                "A energia esperada é estimada diretamente pelas médias históricas e "
+                "não representa uma ordem operacional futura do ONS.",
                 "A faixa estimada representa a incerteza do cenário e não uma "
                 "garantia de cobertura uniforme.",
             ],
@@ -414,7 +420,10 @@ def build_exposure_view(
         narrative=selected_narrative,
         limitations=(
             "A previsão de 60 dias é uma simulação demonstrativa baseada em histórico público.",
-            "O estado da usina não representa telemetria Supervisory Control and Data Acquisition.",
+            (
+                "O estado do conjunto não representa telemetria "
+                "Supervisory Control and Data Acquisition."
+            ),
             "A série diária sustenta recorrência por dia da semana, mas não por horário.",
         ),
     )

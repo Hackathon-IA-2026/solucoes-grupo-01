@@ -47,6 +47,14 @@ def convert_forecast_artifact(source_path: str | Path) -> dict[str, Any]:
                 "connected_asset_count": asset["topology_context"]["peers_besides_selected"],
                 "current_state": asset["current_state"],
                 "history": asset["history"],
+                "material_event": asset["material_event"],
+                "probability_evidence": {
+                    "status": asset["backtest"]["probability_calibration"]["status"],
+                    "test_brier": asset["backtest"]["probability_calibration"]["test_raw_brier"],
+                    "test_event_rate": asset["backtest"]["test"]["metrics"]["event_rate"],
+                    "test_origins": asset["backtest"]["test"]["n_origins"],
+                    "test_daily_predictions": asset["backtest"]["test"]["n_daily_predictions"],
+                },
                 "forecast_60d_total_interval_mwh": asset["forecast_60d_total_interval_mwh"],
                 "forecasts": [
                     {

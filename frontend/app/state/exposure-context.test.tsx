@@ -12,7 +12,8 @@ vi.mock("~/domain/exposure-api", () => ({
 
 const wind: ExposureAsset = {
   assetId: "CJU_RNRDV",
-  name: "Conj. Rio do Vento",
+  name: "Rio do Vento",
+  entityLevel: "generation_group",
   technology: "wind",
   state: "RN",
   connectionPoint: "RNCMM-500-A",
@@ -62,6 +63,9 @@ function exposureView(asset: ExposureAsset): ExposureView {
       totalExpectedMwh: null,
       totalLowerMwh: null,
       totalUpperMwh: null,
+      eventThresholdMwh: null,
+      eventPercentile: null,
+      probabilityStatus: "unavailable",
       topWindows: [],
     },
     associatedConditions: { reasons: [], origins: [], modalities: [] },

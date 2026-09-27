@@ -29,7 +29,7 @@ export function AssetTopologyBody({ asset }: { asset: Asset }) {
   const nodes = useMemo<Node[]>(() => [
     { id: "asset", type: "asset", position: { x: 190, y: 0 }, data: { label: asset.name, detail: asset.technology } },
     { id: "point", type: "point", position: { x: 190, y: 110 }, data: { label: asset.connectionPoint, detail: "Ponto usado nesta análise" } },
-    ...Array.from({ length: asset.anonymousEntities }, (_, index) => ({ id: `entity-${index}`, type: "entity", position: { x: (index % 3) * 210, y: 245 + Math.floor(index / 3) * 105 }, data: { label: `Outra usina ou conjunto ${index + 1}`, detail: "Identidade e dados operacionais não exibidos" } })),
+    ...Array.from({ length: asset.anonymousEntities }, (_, index) => ({ id: `entity-${index}`, type: "entity", position: { x: (index % 3) * 210, y: 245 + Math.floor(index / 3) * 105 }, data: { label: `Outro conjunto ${index + 1}`, detail: "Identidade e dados operacionais não exibidos" } })),
   ], [asset]);
   const edges = useMemo(() => [
     { id: "asset-point", source: "asset", target: "point", style: { stroke: "#08756f", strokeWidth: 2 } },
@@ -42,9 +42,9 @@ export function AssetTopologyBody({ asset }: { asset: Asset }) {
         <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodesFocusable={false} edgesFocusable={false} elementsSelectable={false} proOptions={{ hideAttribution: true }} nodesDraggable={false} nodesConnectable={false} fitView fitViewOptions={{ padding: 0.12 }} minZoom={0.5} maxZoom={1.4} zoomOnScroll={false}><Background color="#d7ddd8" gap={18} /><Controls position="top-right" showInteractive={false} /></ReactFlow>
       </div>
       <div data-topology-list className={listView ? "block" : "block md:hidden"}>
-        <ul className="space-y-2 text-sm"><li className="rounded-lg bg-accent-soft p-3"><strong>{asset.name}</strong><br />{asset.technology}</li><li className="rounded-lg bg-ink p-3 text-white"><strong>{asset.connectionPoint}</strong><br />Ponto usado nesta análise</li>{Array.from({ length: asset.anonymousEntities }, (_, index) => <li key={index} className="rounded-lg bg-canvas p-3"><strong>Outra usina ou conjunto {index + 1}</strong><br />Identidade e dados operacionais não exibidos</li>)}</ul>
+        <ul className="space-y-2 text-sm"><li className="rounded-lg bg-accent-soft p-3"><strong>{asset.name}</strong><br />{asset.technology}</li><li className="rounded-lg bg-ink p-3 text-white"><strong>{asset.connectionPoint}</strong><br />Ponto usado nesta análise</li>{Array.from({ length: asset.anonymousEntities }, (_, index) => <li key={index} className="rounded-lg bg-canvas p-3"><strong>Outro conjunto {index + 1}</strong><br />Identidade e dados operacionais não exibidos</li>)}</ul>
       </div>
-      <p className="mt-4 rounded-lg bg-canvas p-3 text-xs leading-5 text-ink-soft">O diagrama mostra quais usinas ou conjuntos aparecem ligados ao mesmo ponto nos dados do ONS. Ele não informa capacidade disponível, direção do fluxo nem causa elétrica dos cortes.</p>
+      <p className="mt-4 rounded-lg bg-canvas p-3 text-xs leading-5 text-ink-soft">O diagrama mostra quais conjuntos geradores aparecem ligados ao mesmo ponto nos dados públicos do ONS. Ele não informa capacidade disponível, direção do fluxo nem causa elétrica dos cortes.</p>
     </>
   );
 }

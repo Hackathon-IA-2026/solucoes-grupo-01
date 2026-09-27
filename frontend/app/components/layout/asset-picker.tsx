@@ -18,7 +18,7 @@ export function AssetPicker() {
     ? exposure.assets.map((asset) => ({
         id: asset.assetId,
         name: asset.name,
-        detail: `${asset.technology === "wind" ? "Eólica" : "Solar"} | ${asset.state} | Dados operacionais simulados`,
+        detail: `Conjunto ONS | ${asset.technology === "wind" ? "Eólica" : "Solar"} | ${asset.state}`,
       }))
     : demonstrationAssets.map((asset) => ({
         id: asset.id,
@@ -52,8 +52,8 @@ export function AssetPicker() {
         className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-line bg-white text-sm font-semibold text-ink hover:border-accent hover:bg-accent-soft max-sm:size-11 sm:px-3"
       >
         <BuildingsIcon aria-hidden="true" />
-        <span className="sr-only">Selecionar usina</span>
-        <span className="max-w-[18ch] truncate max-sm:hidden">{activeAsset?.name ?? "Carregando usinas"}</span>
+        <span className="sr-only">Selecionar conjunto gerador</span>
+        <span className="max-w-[18ch] truncate max-sm:hidden">{activeAsset?.name ?? "Carregando conjuntos"}</span>
       </button>
       <dialog
         ref={dialogRef}
@@ -63,10 +63,10 @@ export function AssetPicker() {
       >
         <div className="flex items-start justify-between gap-3 border-b border-line p-4 sm:p-5">
           <div>
-            <h2 id="asset-picker-title" className="text-lg font-semibold">Usina em análise</h2>
-            <p className="mt-1 text-sm leading-6 text-ink-soft">Na demonstração é possível alternar entre usinas. Na operação real o acesso fica restrito à usina do próprio proprietário.</p>
+            <h2 id="asset-picker-title" className="text-lg font-semibold">Conjunto gerador em análise</h2>
+            <p className="mt-1 text-sm leading-6 text-ink-soft">Os dados públicos de restrição do Operador Nacional do Sistema Elétrico são publicados neste nível agregado. Cada opção pode reunir várias usinas individuais.</p>
           </div>
-          <button type="button" onClick={close} aria-label="Fechar seleção de usina" className="grid size-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-accent-soft hover:text-ink">
+          <button type="button" onClick={close} aria-label="Fechar seleção de conjunto gerador" className="grid size-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-accent-soft hover:text-ink">
             <XIcon aria-hidden="true" />
           </button>
         </div>
@@ -93,7 +93,7 @@ export function AssetPicker() {
               </li>
             );
           })}
-          {assets.length === 0 ? <li className="rounded-lg bg-canvas p-3 text-sm text-ink-soft">Usinas indisponíveis.</li> : null}
+          {assets.length === 0 ? <li className="rounded-lg bg-canvas p-3 text-sm text-ink-soft">Conjuntos geradores indisponíveis.</li> : null}
         </ul>
       </dialog>
     </>

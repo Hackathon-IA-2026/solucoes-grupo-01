@@ -152,6 +152,7 @@ export type AssetExposure = {
 export type ExposureAsset = {
   assetId: string;
   name: string;
+  entityLevel: "generation_group";
   technology: "wind" | "solar";
   state: string;
   connectionPoint: string;
@@ -203,6 +204,9 @@ export type ExposureView = {
     totalExpectedMwh: number | null;
     totalLowerMwh: number | null;
     totalUpperMwh: number | null;
+    eventThresholdMwh: number | null;
+    eventPercentile: number | null;
+    probabilityStatus: "empirical_uncalibrated" | "unavailable";
     topWindows: ExposureForecastWindow[];
   };
   associatedConditions: {

@@ -999,6 +999,7 @@ class ExposureDisplayAsset(BaseModel):
 
     asset_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
     name: BoundedText
+    entity_level: Literal["generation_group"]
     technology: Literal["wind", "solar"]
     state: Annotated[str, StringConstraints(min_length=2, max_length=2)]
     connection_point: BoundedText
@@ -1056,6 +1057,9 @@ class ExposureForecast60d(BaseModel):
     total_expected_mwh: FiniteFloat | None = Field(default=None, ge=0)
     total_lower_mwh: FiniteFloat | None = Field(default=None, ge=0)
     total_upper_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    event_threshold_mwh: FiniteFloat | None = Field(default=None, ge=0)
+    event_percentile: FiniteFloat | None = Field(default=None, ge=0, le=1)
+    probability_status: Literal["empirical_uncalibrated", "unavailable"] = "unavailable"
     top_windows: tuple[ExposureForecastWindow, ...] = Field(default=(), max_length=3)
 
     @model_validator(mode="after")
@@ -1066,6 +1070,12 @@ class ExposureForecast60d(BaseModel):
             return self
         if len(self.points) != 60 or self.start is None or self.end is None:
             raise ValueError("demonstrative forecast requires exactly 60 dated points")
+        if (
+            self.event_threshold_mwh is None
+            or self.event_percentile is None
+            or self.probability_status != "empirical_uncalibrated"
+        ):
+            raise ValueError("demonstrative forecast requires its material-event definition")
         dates = tuple(point.forecast_date for point in self.points)
         if dates != tuple(sorted(set(dates))):
             raise ValueError("forecast dates must be sorted and unique")

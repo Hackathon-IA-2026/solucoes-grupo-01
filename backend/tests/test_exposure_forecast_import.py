@@ -22,9 +22,27 @@ def test_bundled_forecast_has_verified_source_hash_and_count():
     validate_converted_forecast(bundled)
     assert (
         bundled["source_sha256"]
-        == "506d5edded7592019e0920c631c08b506deffc31ffa6b313e3d729a81394e0e1"
+        == "642c34eb14099c0a2e8f962794d4962f8c38c0bf3dfb012a3492d0e452997cf0"
     )
     assert sum(len(asset["forecasts"]) for asset in bundled["assets"]) == 300
+
+
+def test_rio_do_vento_probability_targets_a_material_historical_event():
+    bundled_path = files("curtailess").joinpath("data/five_asset_forecast.json")
+    bundled = json.loads(bundled_path.read_text(encoding="utf-8"))
+    rio_do_vento = next(asset for asset in bundled["assets"] if asset["asset_id"] == "CJU_RNRDV")
+
+    assert rio_do_vento["material_event"] == {
+        "definition": (
+            "daily curtailed-energy proxy at or above the asset historical 75th percentile"
+        ),
+        "percentile": 0.75,
+        "probability_status": "empirical_uncalibrated",
+        "threshold_mwh": 1962.0995,
+    }
+    probabilities = [row["curtailment_probability"] for row in rio_do_vento["forecasts"]]
+    assert min(probabilities) == pytest.approx(0.357472)
+    assert max(probabilities) == pytest.approx(0.557741)
 
 
 @pytest.mark.skipif(

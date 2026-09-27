@@ -158,10 +158,10 @@ export function SimpleHistoricalBarSlot({ title, description, data, showHeader =
   </ChartSlot>;
 }
 
-export function Forecast60dSlot({ data }: { data: ChartDataset }) {
-  const title = "Previsão demonstrativa de curtailment para 60 dias";
+export function Forecast60dSlot({ data, description }: { data: ChartDataset; description: string }) {
+  const title = "Energia restringida estimada para 60 dias";
   return <div data-exposure-forecast="60d">
-    <ChartSlot title={title} description="Chance simulada de curtailment por semana do horizonte." evidence={data.evidence} showHeader={false}>
+    <ChartSlot title={title} description={description} evidence={data.evidence} showHeader={false}>
       <ChartBody evidence={data.evidence} table={simpleTable(title, data, false, true)} showProvenance={false} switchView chartClassName="h-72">{columnGraph(data, 3, true, 44)}</ChartBody>
     </ChartSlot>
   </div>;

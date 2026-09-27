@@ -3,7 +3,8 @@ import { fetchExposureAssets, fetchExposureView } from "./exposure-api";
 
 const asset = {
   asset_id: "CJU_RNRDV",
-  name: "Conj. Rio do Vento",
+  name: "Rio do Vento",
+  entity_level: "generation_group",
   technology: "wind",
   state: "RN",
   connection_point: "RNCMM-500-A",
@@ -54,6 +55,9 @@ const view = {
     total_expected_mwh: 120,
     total_lower_mwh: 60,
     total_upper_mwh: 180,
+    event_threshold_mwh: 50,
+    event_percentile: 0.75,
+    probability_status: "empirical_uncalibrated",
     top_windows: [],
   },
   associated_conditions: { reasons: [], origins: [], modalities: [] },

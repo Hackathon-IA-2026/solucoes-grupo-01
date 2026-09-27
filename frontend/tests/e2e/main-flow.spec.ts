@@ -36,7 +36,7 @@ test("troca o ativo real somente na tela de exposição", async ({ page }) => {
   await expect(windIllustrations).toHaveCount(6);
   await expect(windIllustrations.first().locator("[data-connected-plant]")).toHaveCount(1);
 
-  await selectAsset(page, "Conj. Monte Verde Solar");
+  await selectAsset(page, "Monte Verde Solar");
   await expect(screen).toHaveAttribute("data-asset-id", "CJU_RNMVS");
   const solarIllustrations = screen.locator('[data-energy-illustration="solar"]');
   await expect(solarIllustrations).toHaveCount(6);

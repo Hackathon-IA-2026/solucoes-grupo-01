@@ -22,7 +22,7 @@ export function ExposureProvider({ children }: { children: ReactNode }) {
         setError(null);
       })
       .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Não foi possível carregar as usinas.");
+        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Não foi possível carregar os conjuntos geradores.");
       })
       .finally(() => {
         if (!controller.signal.aborted) setCatalogLoading(false);
