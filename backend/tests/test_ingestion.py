@@ -30,20 +30,89 @@ class FakePaginator:
 
     def paginate(self, **kwargs):
         self.owner.pagination_calls.append(kwargs)
-        return self.pages_by_prefix.get(kwargs["Prefix"], [{"Contents": []}])
+        start_after = kwargs.get("StartAfter")
+        for page in self.pages_by_prefix.get(kwargs["Prefix"], [{"Contents": []}]):
+            contents = page.get("Contents", [])
+            if start_after is not None:
+                contents = [item for item in contents if item["Key"] > start_after]
+            self.owner.page_visits += 1
+            self.owner.object_visits += len(contents)
+            yield {**page, "Contents": contents}
 
 
 class FakeS3:
     def __init__(self, pages_by_prefix):
         self.pages_by_prefix = pages_by_prefix
         self.pagination_calls = []
+        self.boundary_calls = []
+        self.page_visits = 0
+        self.object_visits = 0
 
     def get_paginator(self, operation_name):
         assert operation_name == "list_objects_v2"
         return FakePaginator(self, self.pages_by_prefix)
 
     def list_objects_v2(self, **kwargs):
-        raise AssertionError("discovery must use the paginator, not assume one list page")
+        self.boundary_calls.append(kwargs)
+        key = kwargs["Prefix"]
+        matches = [
+            item
+            for pages in self.pages_by_prefix.values()
+            for page in pages
+            for item in page.get("Contents", [])
+            if item["Key"].startswith(key)
+        ]
+        return {"Contents": matches[: kwargs["MaxKeys"]]}
+
+
+class InstrumentedPagedS3:
+    """Generate a large lexicographic inventory without retaining it in the fake."""
+
+    def __init__(self, spec, *, total: int, page_size: int = 1_000):
+        self.spec = spec
+        self.total = total
+        self.page_size = page_size
+        self.pagination_calls = []
+        self.boundary_calls = []
+        self.page_visits = 0
+        self.object_visits = 0
+        self.objects_materialized = 0
+        self.returned_ranges = []
+
+    def _key(self, index: int) -> str:
+        year, month_index = divmod(index, 12)
+        return (
+            f"{self.spec.s3_prefix}RESTRICAO_COFF_EOLICA_"
+            f"{year + 1:04d}_{month_index + 1:02d}.parquet"
+        )
+
+    def _index(self, key: str) -> int:
+        stem = key.removesuffix(".parquet")
+        year_text, month_text = stem.rsplit("_", 2)[-2:]
+        return (int(year_text) - 1) * 12 + int(month_text) - 1
+
+    def get_paginator(self, operation_name):
+        assert operation_name == "list_objects_v2"
+        return self
+
+    def paginate(self, **kwargs):
+        self.pagination_calls.append(kwargs)
+        start = self._index(kwargs["StartAfter"]) + 1 if "StartAfter" in kwargs else 0
+        while start < self.total:
+            stop = min(start + self.page_size, self.total)
+            contents = [source_object(self._key(index)) for index in range(start, stop)]
+            self.page_visits += 1
+            self.object_visits += len(contents)
+            self.objects_materialized += len(contents)
+            self.returned_ranges.append((start, stop))
+            yield {"Contents": contents}
+            start = stop
+
+    def list_objects_v2(self, **kwargs):
+        self.boundary_calls.append(kwargs)
+        index = self._index(kwargs["Prefix"])
+        contents = [source_object(self._key(index))] if 0 <= index < self.total else []
+        return {"Contents": contents}
 
 
 class FakeSQS:
@@ -87,9 +156,9 @@ def test_discover_dataset_objects_paginates_through_empty_pages_and_skips_malfor
     s3 = FakeS3(
         {
             spec.s3_prefix: [
-                {"Contents": [source_object(valid_09)]},
+                {"Contents": [source_object(valid_08), source_object(malformed)]},
                 {},
-                {"Contents": [source_object(malformed), source_object(valid_08)]},
+                {"Contents": [source_object(valid_09)]},
             ]
         }
     )
@@ -99,6 +168,56 @@ def test_discover_dataset_objects_paginates_through_empty_pages_and_skips_malfor
     assert [item["period"] for item in objects] == ["2026-08", "2026-09"]
     assert malformed_keys == [malformed]
     assert s3.pagination_calls == [{"Bucket": spec.source_bucket, "Prefix": spec.s3_prefix}]
+
+
+def test_discovery_rejects_nonmonotonic_paginator_pages() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    earlier = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_08.parquet"
+    later = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_09.parquet"
+
+    with pytest.raises(ValueError, match="nonmonotonic"):
+        discover_dataset_objects(
+            FakeS3(
+                {
+                    spec.s3_prefix: [
+                        {"Contents": [source_object(later)]},
+                        {"Contents": [source_object(earlier)]},
+                    ]
+                }
+            ),
+            spec,
+        )
+
+
+def test_canonical_filename_lexicographic_order_matches_period_order() -> None:
+    samples = {
+        "restricao_coff_eolica_tm": [
+            "RESTRICAO_COFF_EOLICA_2025_12.parquet",
+            "RESTRICAO_COFF_EOLICA_2026_01.parquet",
+        ],
+        "restricao_coff_fotovoltaica_tm": [
+            "RESTRICAO_COFF_FOTOVOLTAICA_2025_12.parquet",
+            "RESTRICAO_COFF_FOTOVOLTAICA_2026_01.parquet",
+        ],
+        "programacao_x_previsao": [
+            "PROGRAMACAO_X_PREVISAO_2026_01_31.parquet",
+            "PROGRAMACAO_X_PREVISAO_2026_02_01.parquet",
+        ],
+        "geracao_usina_2_ho": [
+            "GERACAO_USINA-2_2020.parquet",
+            "GERACAO_USINA-2_2021.parquet",
+            "GERACAO_USINA-2_2022_01.parquet",
+        ],
+        "usina_conjunto": ["RELACIONAMENTO_USINA_CONJUNTO.parquet"],
+        "capacidade-geracao": ["CAPACIDADE_GERACAO.parquet"],
+    }
+
+    for dataset_id, filenames in samples.items():
+        spec = get_dataset_spec(dataset_id)
+        keys = [f"{spec.s3_prefix}{filename}" for filename in filenames]
+        labels = [spec.period_parser(key).label for key in keys]
+        assert keys == sorted(keys)
+        assert labels == sorted(labels)
 
 
 def test_discovery_collapses_identical_duplicate_keys_on_the_same_page() -> None:
@@ -429,20 +548,22 @@ def test_malformed_keys_are_reported_without_hiding_valid_objects() -> None:
     assert [json.loads(call["MessageBody"])["source_key"] for call in sqs.messages] == [valid]
 
 
-def test_malformed_key_report_is_bounded_and_deterministically_truncated() -> None:
+def test_malformed_key_report_is_bounded_during_large_enumeration() -> None:
     spec = get_dataset_spec("restricao_coff_eolica_tm")
-    malformed = [f"{spec.s3_prefix}invalid-{index}.parquet" for index in range(3)]
+    malformed = [f"{spec.s3_prefix}invalid-{index:04d}.parquet" for index in range(2_500)]
+    pages = [
+        {"Contents": [source_object(key) for key in malformed[offset : offset + 1_000]]}
+        for offset in range(0, len(malformed), 1_000)
+    ]
     result = discovery_handler(
         {"mode": "incremental"},
         None,
-        s3_client=FakeS3(
-            {spec.s3_prefix: [{"Contents": [source_object(key) for key in reversed(malformed)]}]}
-        ),
+        s3_client=FakeS3({spec.s3_prefix: pages}),
         sqs_client=FakeSQS(),
         environment=environment(cap=2),
     )
 
-    assert result["malformed_count"] == 3
+    assert result["malformed_count"] == 2_500
     assert result["malformed_keys"] == malformed[:2]
     assert result["malformed_keys_truncated"] is True
 
@@ -484,6 +605,95 @@ def test_cap_returns_deterministic_continuation_and_next_invocation_resumes() ->
         "2026-09",
         "2026-10",
     ]
+
+
+def test_large_inventory_uses_bounded_pages_and_start_after_without_full_rescan() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    s3 = InstrumentedPagedS3(spec, total=100_000)
+
+    first = discovery_handler(
+        {
+            "mode": "backfill",
+            "dataset": spec.dataset_id,
+            "start_period": "0001-01",
+            "end_period": "9999-12",
+        },
+        None,
+        s3_client=s3,
+        sqs_client=FakeSQS(),
+        environment=environment(cap=25),
+    )
+    boundary_key = s3._key(24)
+    assert first["enqueued"] == 25
+    assert first["has_more"] is True
+    assert s3.page_visits == 1
+    assert s3.object_visits == 1_000
+    assert s3.objects_materialized == 1_000
+    assert s3.returned_ranges == [(0, 1_000)]
+
+    second = discovery_handler(
+        {
+            "mode": "backfill",
+            "dataset": spec.dataset_id,
+            "start_period": "0001-01",
+            "end_period": "9999-12",
+            "continuation": first["continuation"],
+        },
+        None,
+        s3_client=s3,
+        sqs_client=FakeSQS(),
+        environment=environment(cap=25),
+    )
+
+    assert second["enqueued"] == 25
+    assert second["has_more"] is True
+    assert s3.page_visits == 2
+    assert s3.object_visits == 2_000
+    assert s3.objects_materialized == 2_000
+    assert s3.returned_ranges == [(0, 1_000), (25, 1_025)]
+    assert s3.pagination_calls[1]["StartAfter"] == boundary_key
+    assert s3.boundary_calls == [
+        {"Bucket": spec.source_bucket, "Prefix": boundary_key, "MaxKeys": 1}
+    ]
+
+
+def test_continuation_crosses_dataset_boundary_without_relisting_earlier_datasets() -> None:
+    wind = get_dataset_spec("restricao_coff_eolica_tm")
+    solar = get_dataset_spec("restricao_coff_fotovoltaica_tm")
+    wind_key = f"{wind.s3_prefix}RESTRICAO_COFF_EOLICA_2026_09.parquet"
+    solar_key = f"{solar.s3_prefix}RESTRICAO_COFF_FOTOVOLTAICA_2026_09.parquet"
+    pages = {
+        wind.s3_prefix: [{"Contents": [source_object(wind_key)]}],
+        solar.s3_prefix: [{"Contents": [source_object(solar_key)]}],
+    }
+    first = discovery_handler(
+        {"mode": "incremental"},
+        None,
+        s3_client=FakeS3(pages),
+        sqs_client=FakeSQS(),
+        environment=environment(cap=1),
+    )
+    resumed_s3 = FakeS3(pages)
+    resumed_sqs = FakeSQS()
+
+    second = discovery_handler(
+        {"mode": "incremental", "continuation": first["continuation"]},
+        None,
+        s3_client=resumed_s3,
+        sqs_client=resumed_sqs,
+        environment=environment(cap=1),
+    )
+
+    assert [call["Prefix"] for call in resumed_s3.pagination_calls] == [
+        wind.s3_prefix,
+        solar.s3_prefix,
+        get_dataset_spec("usina_conjunto").s3_prefix,
+    ]
+    assert resumed_s3.pagination_calls[0]["StartAfter"] == wind_key
+    assert [json.loads(call["MessageBody"])["source_key"] for call in resumed_sqs.messages] == [
+        solar_key
+    ]
+    assert second["has_more"] is False
 
 
 def test_resume_boundary_is_stable_when_objects_are_inserted_before_and_after_it() -> None:

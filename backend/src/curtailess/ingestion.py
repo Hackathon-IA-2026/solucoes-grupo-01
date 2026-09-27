@@ -5,6 +5,8 @@ import json
 import os
 import re
 import tempfile
+from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import PurePosixPath
 from typing import Any
@@ -47,58 +49,125 @@ def discover_latest_parquet(
     }
 
 
-def discover_dataset_objects(
-    s3_client: Any, spec: DatasetSpec
-) -> tuple[list[dict[str, object]], list[str]]:
-    """Enumerate and deduplicate a dataset; newest metadata wins, ambiguous ties fail."""
-    latest_by_key: dict[str, tuple[dict[str, object], datetime, bool]] = {}
-    malformed_keys: list[str] = []
+@dataclass(slots=True)
+class _MalformedDiagnostics:
+    limit: int | None
+    count: int = 0
+    keys: list[str] = field(default_factory=list)
+
+    def record(self, source_key: str) -> None:
+        self.count += 1
+        if self.limit is None or len(self.keys) < self.limit:
+            self.keys.append(source_key)
+
+
+_StreamCandidate = tuple[dict[str, object], datetime, bool]
+
+
+def _candidate_from_s3_item(
+    spec: DatasetSpec, item: dict[str, Any], period: DatasetPeriod
+) -> _StreamCandidate:
+    last_modified = item["LastModified"]
+    return (
+        {
+            "dataset": spec.dataset_id,
+            "period": period.label,
+            "parsed_period": period,
+            "key": item["Key"],
+            "size": item["Size"],
+            "etag": item["ETag"].strip('"'),
+            "last_modified": last_modified.isoformat(),
+        },
+        last_modified,
+        False,
+    )
+
+
+def _merge_duplicate(existing: _StreamCandidate, candidate: _StreamCandidate) -> _StreamCandidate:
+    existing_item, existing_last_modified, ambiguous = existing
+    candidate_item, candidate_last_modified, _ = candidate
+    if candidate_last_modified > existing_last_modified:
+        return candidate
+    if candidate_last_modified < existing_last_modified:
+        return existing
+    same_version = (
+        candidate_item["size"] == existing_item["size"]
+        and candidate_item["etag"] == existing_item["etag"]
+    )
+    return existing_item, existing_last_modified, ambiguous or not same_version
+
+
+def _finalize_candidate(candidate: _StreamCandidate) -> dict[str, object]:
+    item, _, ambiguous = candidate
+    if ambiguous:
+        raise ValueError(f"conflicting metadata for S3 source key {item['key']!r}")
+    return item
+
+
+def _stream_dataset_objects(
+    s3_client: Any,
+    spec: DatasetSpec,
+    diagnostics: _MalformedDiagnostics,
+    *,
+    start_after: str | None = None,
+) -> Iterator[dict[str, object]]:
+    """Yield one lexicographically ordered object at a time using bounded duplicate state."""
     paginator = s3_client.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=spec.source_bucket, Prefix=spec.s3_prefix):
-        for item in page.get("Contents", []):
-            source_key = item["Key"]
+    request: dict[str, object] = {"Bucket": spec.source_bucket, "Prefix": spec.s3_prefix}
+    if start_after is not None:
+        request["StartAfter"] = start_after
+
+    pending: _StreamCandidate | None = None
+    previous_source_key: str | None = start_after
+    previous_period = spec.period_parser(start_after).label if start_after is not None else None
+    for page in paginator.paginate(**request):
+        contents = sorted(page.get("Contents", []), key=lambda item: item["Key"])
+        for raw_item in contents:
+            source_key = raw_item["Key"]
+            if not isinstance(source_key, str) or (
+                previous_source_key is not None and source_key < previous_source_key
+            ):
+                raise ValueError("S3 paginator returned nonmonotonic object keys")
+            if start_after is not None and source_key <= start_after:
+                raise ValueError("S3 paginator violated StartAfter ordering")
+
+            if pending is not None and source_key != pending[0]["key"]:
+                finalized = _finalize_candidate(pending)
+                period_label = str(finalized["period"])
+                if previous_period is not None and period_label < previous_period:
+                    raise ValueError(
+                        f"dataset {spec.dataset_id!r} filename order does not match period order"
+                    )
+                previous_period = period_label
+                yield finalized
+                pending = None
+
+            previous_source_key = source_key
             try:
                 period = spec.period_parser(source_key)
             except (TypeError, ValueError):
-                malformed_keys.append(source_key)
-                continue
-            last_modified = item["LastModified"]
-            candidate = {
-                "dataset": spec.dataset_id,
-                "period": period.label,
-                "parsed_period": period,
-                "key": source_key,
-                "size": item["Size"],
-                "etag": item["ETag"].strip('"'),
-                "last_modified": last_modified.isoformat(),
-            }
-            existing = latest_by_key.get(source_key)
-            if existing is None:
-                latest_by_key[source_key] = candidate, last_modified, False
+                diagnostics.record(source_key)
                 continue
 
-            existing_item, existing_last_modified, ambiguous = existing
-            if last_modified > existing_last_modified:
-                latest_by_key[source_key] = candidate, last_modified, False
-            elif last_modified == existing_last_modified:
-                same_version = (
-                    candidate["size"] == existing_item["size"]
-                    and candidate["etag"] == existing_item["etag"]
-                )
-                latest_by_key[source_key] = (
-                    existing_item,
-                    existing_last_modified,
-                    ambiguous or not same_version,
-                )
+            candidate = _candidate_from_s3_item(spec, raw_item, period)
+            pending = candidate if pending is None else _merge_duplicate(pending, candidate)
 
-    discovered: list[dict[str, object]] = []
-    for source_key, (item, _, ambiguous) in latest_by_key.items():
-        if ambiguous:
-            raise ValueError(f"conflicting metadata for S3 source key {source_key!r}")
-        discovered.append(item)
-    discovered.sort(key=_discovery_sort_key)
-    malformed_keys.sort()
-    return discovered, malformed_keys
+    if pending is not None:
+        finalized = _finalize_candidate(pending)
+        if previous_period is not None and str(finalized["period"]) < previous_period:
+            raise ValueError(
+                f"dataset {spec.dataset_id!r} filename order does not match period order"
+            )
+        yield finalized
+
+
+def discover_dataset_objects(
+    s3_client: Any, spec: DatasetSpec
+) -> tuple[list[dict[str, object]], list[str]]:
+    """Fully enumerate one dataset for callers that explicitly need a complete inventory."""
+    diagnostics = _MalformedDiagnostics(limit=None)
+    discovered = list(_stream_dataset_objects(s3_client, spec, diagnostics))
+    return discovered, diagnostics.keys
 
 
 def _discovery_sort_key(item: dict[str, object]) -> tuple[str, str, str]:
@@ -188,7 +257,10 @@ def _validate_request(
         unexpected = {"dataset", "start_period", "end_period"}.intersection(event)
         if unexpected:
             raise ValueError("incremental mode enumerates enabled datasets and accepts no bounds")
-        specs = [spec for spec in DATASET_REGISTRY.values() if mode in spec.enabled_modes]
+        specs = sorted(
+            (spec for spec in DATASET_REGISTRY.values() if mode in spec.enabled_modes),
+            key=lambda spec: spec.dataset_id,
+        )
         return mode, specs, None, None
 
     dataset = event.get("dataset")
@@ -216,6 +288,52 @@ def _discovery_cap(environment: dict[str, str]) -> int:
     if not 1 <= cap <= _MAX_DISCOVERY_CAP:
         raise ValueError(f"DISCOVERY_MAX_MESSAGES must be between 1 and {_MAX_DISCOVERY_CAP}")
     return cap
+
+
+def _within_period_bounds(item: dict[str, object], start: date | None, end: date | None) -> bool:
+    if start is None or end is None:
+        return True
+    period = item["parsed_period"]
+    return (
+        isinstance(period, DatasetPeriod)
+        and period.start is not None
+        and period.end is not None
+        and period.start >= start
+        and period.end <= end
+    )
+
+
+def _validate_cursor(
+    object_store: Any,
+    specs: list[DatasetSpec],
+    cursor: tuple[str, str, str],
+    start: date | None,
+    end: date | None,
+) -> int:
+    dataset_id, period_label, source_key = cursor
+    try:
+        dataset_index = next(
+            index for index, spec in enumerate(specs) if spec.dataset_id == dataset_id
+        )
+    except StopIteration as exc:
+        raise ValueError("invalid continuation for this discovery request") from exc
+
+    spec = specs[dataset_index]
+    try:
+        period = spec.period_parser(source_key)
+        boundary: dict[str, object] = {"parsed_period": period}
+        if period.label != period_label or not _within_period_bounds(boundary, start, end):
+            raise ValueError
+        response = object_store.list_objects_v2(
+            Bucket=spec.source_bucket,
+            Prefix=source_key,
+            MaxKeys=1,
+        )
+        if not any(item.get("Key") == source_key for item in response.get("Contents", [])):
+            raise ValueError
+    except Exception as exc:
+        raise ValueError("invalid continuation for this discovery request") from exc
+    return dataset_index
 
 
 def discovery_handler(
@@ -269,33 +387,27 @@ def discovery_handler(
     continuation_context = _continuation_context(event, mode)
     cursor = _decode_continuation(event.get("continuation"), continuation_context)
 
-    discovered: list[dict[str, object]] = []
-    malformed_keys: list[str] = []
-    for spec in specs:
-        dataset_objects, dataset_malformed = discover_dataset_objects(object_store, spec)
-        discovered.extend(dataset_objects)
-        malformed_keys.extend(dataset_malformed)
-    discovered.sort(key=_discovery_sort_key)
-    malformed_keys.sort()
-
-    if start is not None and end is not None:
-        discovered = [
-            item
-            for item in discovered
-            if isinstance(item["parsed_period"], DatasetPeriod)
-            and item["parsed_period"].start is not None
-            and item["parsed_period"].end is not None
-            and item["parsed_period"].start >= start
-            and item["parsed_period"].end <= end
-        ]
-    if cursor is not None:
-        boundaries = {_discovery_sort_key(item) for item in discovered}
-        if cursor not in boundaries:
-            raise ValueError("invalid continuation for this discovery request")
-        discovered = [item for item in discovered if _discovery_sort_key(item) > cursor]
-
-    selected = discovered[:cap]
-    has_more = len(discovered) > cap
+    resume_index = _validate_cursor(object_store, specs, cursor, start, end) if cursor else 0
+    selected: list[dict[str, object]] = []
+    diagnostics = _MalformedDiagnostics(limit=cap)
+    has_more = False
+    for dataset_index in range(resume_index, len(specs)):
+        spec = specs[dataset_index]
+        start_after = cursor[2] if cursor is not None and dataset_index == resume_index else None
+        for item in _stream_dataset_objects(
+            object_store,
+            spec,
+            diagnostics,
+            start_after=start_after,
+        ):
+            if not _within_period_bounds(item, start, end):
+                continue
+            if len(selected) == cap:
+                has_more = True
+                break
+            selected.append(item)
+        if has_more:
+            break
     message_ids: list[str] = []
     for item in selected:
         message = {
@@ -329,9 +441,9 @@ def discovery_handler(
         "message_ids": message_ids,
         "has_more": has_more,
         "continuation": next_continuation,
-        "malformed_count": len(malformed_keys),
-        "malformed_keys": malformed_keys[:cap],
-        "malformed_keys_truncated": len(malformed_keys) > cap,
+        "malformed_count": diagnostics.count,
+        "malformed_keys": diagnostics.keys,
+        "malformed_keys_truncated": diagnostics.count > len(diagnostics.keys),
     }
     # Keep the original single-message response fields for existing callers.
     if len(selected) == 1:
