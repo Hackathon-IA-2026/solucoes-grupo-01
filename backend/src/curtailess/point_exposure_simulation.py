@@ -549,12 +549,20 @@ class PointSimulationResult:
     intervals: int
     selected_curtailed_mw: tuple[tuple[float, ...], ...]
     selected_available_mw: tuple[tuple[float, ...], ...]
+    selected_potential_mw: tuple[tuple[float, ...], ...]
     point_potential_mw: tuple[tuple[float, ...], ...]
+    point_available_mw: tuple[tuple[float, ...], ...]
     point_envelope_mw: tuple[tuple[float, ...], ...]
     point_excess_mw: tuple[tuple[float, ...], ...]
+    plant_mean_operational_capacity_mw: Mapping[str, float]
+    plant_mean_availability_mw: Mapping[str, float]
     plant_mean_available_mw: Mapping[str, float]
+    plant_mean_potential_mw: Mapping[str, float]
+    plant_mean_accepted_limit_mw: Mapping[str, float]
+    plant_mean_generation_mw: Mapping[str, float]
     plant_mean_curtailed_mw: Mapping[str, float]
     point_mean_potential_mw: float
+    point_mean_available_mw: float
     point_mean_envelope_mw: float
     point_mean_excess_mw: float
 
@@ -621,55 +629,98 @@ def simulate_point(
     slope = _clamp(spec.envelope_slope, 0.0, 1.0)
     selected_curtailed: list[tuple[float, ...]] = []
     selected_available: list[tuple[float, ...]] = []
+    selected_resource_potential: list[tuple[float, ...]] = []
     point_potential: list[tuple[float, ...]] = []
+    point_available: list[tuple[float, ...]] = []
     point_envelope: list[tuple[float, ...]] = []
     point_excess: list[tuple[float, ...]] = []
+    plant_operational_capacity_sum = [0.0] * len(plants)
+    plant_availability_sum = [0.0] * len(plants)
     plant_available_sum = [0.0] * len(plants)
+    plant_potential_sum = [0.0] * len(plants)
+    plant_accepted_limit_sum = [0.0] * len(plants)
+    plant_generation_sum = [0.0] * len(plants)
     plant_curtailed_sum = [0.0] * len(plants)
-    generations: list[float] = [0.0] * len(plants)
+    available_generations: list[float] = [0.0] * len(plants)
+    resource_potentials: list[float] = [0.0] * len(plants)
+    availability_capacities: list[float] = [0.0] * len(plants)
+    operational_capacities: list[float] = [0.0] * len(plants)
     for scenario_index in range(samples.scenario_count):
         factors = samples.day_factors[scenario_index]
         curtailed_series: list[float] = []
         available_series: list[float] = []
+        selected_potential_series: list[float] = []
         potential_series: list[float] = []
+        point_available_series: list[float] = []
         envelope_series: list[float] = []
         excess_series: list[float] = []
         for interval in range(intervals):
             factor = factors[day_index[interval]]
-            total = 0.0
-            selected_value = 0.0
-            for position in range(len(plants)):
+            total_resource_potential = 0.0
+            total_available_generation = 0.0
+            selected_available_value = 0.0
+            selected_potential_value = 0.0
+            for position, plant in enumerate(plants):
                 weather = (
                     base_series[position][interval] * factor * noise[position][scenario_index]
                 )
-                potential = lookup_potential_mw(lookups[position], weather, step=steps[position])
-                generation = (
-                    potential
-                    * availability[position][scenario_index][day_index[interval]]
-                    * derates[position][interval]
+                weather_potential = lookup_potential_mw(
+                    lookups[position], weather, step=steps[position]
                 )
-                generations[position] = generation
-                total += generation
-                plant_available_sum[position] += generation
+                equipment_factor = availability[position][scenario_index][day_index[interval]]
+                operational_capacity = plant.capacity_mw * equipment_factor
+                availability_capacity = operational_capacity * derates[position][interval]
+                resource_potential = min(weather_potential, operational_capacity)
+                available_generation = min(resource_potential, availability_capacity)
+                operational_capacities[position] = operational_capacity
+                availability_capacities[position] = availability_capacity
+                resource_potentials[position] = resource_potential
+                available_generations[position] = available_generation
+                total_resource_potential += resource_potential
+                total_available_generation += available_generation
                 if position == selected_position:
-                    selected_value = generation
-            envelope = accepted_envelope_mw(total, intercept_mw=intercept, slope=slope)
-            ratio = envelope / total if total > 0 else 0.0
-            potential_series.append(total)
+                    selected_available_value = available_generation
+                    selected_potential_value = resource_potential
+            envelope = accepted_envelope_mw(
+                total_available_generation, intercept_mw=intercept, slope=slope
+            )
+            ratio = envelope / total_available_generation if total_available_generation > 0 else 0.0
+            potential_series.append(total_resource_potential)
+            point_available_series.append(total_available_generation)
             envelope_series.append(envelope)
-            excess_series.append(total - envelope)
-            available_series.append(selected_value)
-            curtailed_series.append(selected_value * (1.0 - ratio))
+            excess_series.append(total_available_generation - envelope)
+            available_series.append(selected_available_value)
+            selected_potential_series.append(selected_potential_value)
+            selected_curtailed_value = selected_available_value * (1.0 - ratio)
+            curtailed_series.append(selected_curtailed_value)
             if record_plant_totals:
-                share = 1.0 - ratio
                 for position in range(len(plants)):
-                    plant_curtailed_sum[position] += generations[position] * share
+                    accepted_limit = available_generations[position] * ratio
+                    generation = min(resource_potentials[position], accepted_limit)
+                    plant_operational_capacity_sum[position] += operational_capacities[position]
+                    plant_availability_sum[position] += availability_capacities[position]
+                    plant_available_sum[position] += available_generations[position]
+                    plant_potential_sum[position] += resource_potentials[position]
+                    plant_accepted_limit_sum[position] += accepted_limit
+                    plant_generation_sum[position] += generation
+                    plant_curtailed_sum[position] += max(
+                        available_generations[position] - generation, 0.0
+                    )
         selected_curtailed.append(tuple(curtailed_series))
         selected_available.append(tuple(available_series))
+        selected_resource_potential.append(tuple(selected_potential_series))
         point_potential.append(tuple(potential_series))
+        point_available.append(tuple(point_available_series))
         point_envelope.append(tuple(envelope_series))
         point_excess.append(tuple(excess_series))
     divisor = samples.scenario_count * intervals
+
+    def plant_means(values: Sequence[float]) -> dict[str, float]:
+        return {
+            plant.plant_id: round(values[position] / divisor, 6)
+            for position, plant in enumerate(plants)
+        }
+
     return PointSimulationResult(
         point_id=spec.point_id,
         scenario=scenario,
@@ -677,18 +728,20 @@ def simulate_point(
         intervals=intervals,
         selected_curtailed_mw=tuple(selected_curtailed),
         selected_available_mw=tuple(selected_available),
+        selected_potential_mw=tuple(selected_resource_potential),
         point_potential_mw=tuple(point_potential),
+        point_available_mw=tuple(point_available),
         point_envelope_mw=tuple(point_envelope),
         point_excess_mw=tuple(point_excess),
-        plant_mean_available_mw={
-            plant.plant_id: round(plant_available_sum[position] / divisor, 6)
-            for position, plant in enumerate(plants)
-        },
-        plant_mean_curtailed_mw={
-            plant.plant_id: round(plant_curtailed_sum[position] / divisor, 6)
-            for position, plant in enumerate(plants)
-        },
+        plant_mean_operational_capacity_mw=plant_means(plant_operational_capacity_sum),
+        plant_mean_availability_mw=plant_means(plant_availability_sum),
+        plant_mean_available_mw=plant_means(plant_available_sum),
+        plant_mean_potential_mw=plant_means(plant_potential_sum),
+        plant_mean_accepted_limit_mw=plant_means(plant_accepted_limit_sum),
+        plant_mean_generation_mw=plant_means(plant_generation_sum),
+        plant_mean_curtailed_mw=plant_means(plant_curtailed_sum),
         point_mean_potential_mw=round(sum(sum(series) for series in point_potential) / divisor, 6),
+        point_mean_available_mw=round(sum(sum(series) for series in point_available) / divisor, 6),
         point_mean_envelope_mw=round(sum(sum(series) for series in point_envelope) / divisor, 6),
         point_mean_excess_mw=round(sum(sum(series) for series in point_excess) / divisor, 6),
     )

@@ -11,7 +11,6 @@ from curtailess.point_exposure_simulation import (
     CRITICAL_WINDOW_INTERVALS,
     INTERVAL_HOURS,
     INTERVALS_PER_DAY,
-    MAINTENANCE_DERATE,
     SCENARIO_NO_MAINTENANCE,
     SCENARIO_SCHEDULED_MAINTENANCE,
     MaintenanceSchedule,
@@ -22,6 +21,7 @@ from curtailess.point_exposure_simulation import (
     build_day_factors,
     build_maintenance_schedule,
     build_scenario_samples,
+    candidate_maintenance_window,
     climatology_outlook,
     fit_acceptance_envelope,
     load_weather_snapshot,
@@ -203,21 +203,104 @@ def test_scheduled_maintenance_reduces_available_generation_and_never_raises_exc
         spec, days=days, samples=samples, schedule=schedule, scenario=SCENARIO_SCHEDULED_MAINTENANCE
     )
 
-    # The same weather samples feed both scenarios.
-    assert samples.day_factors is samples.day_factors
-    for scenario_index in range(samples.scenario_count):
-        assert all(
-            after <= before + 1e-9
-            for before, after in zip(
-                no_maintenance.point_excess_mw[scenario_index],
-                scheduled.point_excess_mw[scenario_index],
-                strict=True,
-            )
-        )
-    derated = [window for window in schedule.windows]
-    assert any(window.derate == MAINTENANCE_DERATE for window in derated)
     assert scheduled.point_mean_potential_mw <= no_maintenance.point_mean_potential_mw
     assert scheduled.point_mean_excess_mw <= no_maintenance.point_mean_excess_mw + 1e-9
+    # Paired comparison instead of a tautology: the two scenarios were run on the very same
+    # sample set, so the resource potential of the point is bit-for-bit identical.
+    assert no_maintenance.point_potential_mw == scheduled.point_potential_mw
+    assert no_maintenance.selected_potential_mw == scheduled.selected_potential_mw
+
+
+def test_three_scenarios_reuse_the_same_samples_and_differ_only_by_maintenance() -> None:
+    """M3: the three maintenance scenarios must share one sample set, so the only difference
+    between them is the agenda. The resource potential is identical across scenarios; the
+    delivered generation of the derated intervals is not."""
+    spec = point_spec(
+        plants=(
+            plant_spec(plant_id="A", capacity_mw=100.0),
+            plant_spec(plant_id="B", capacity_mw=100.0),
+        ),
+        selected="A",
+        intercept_mw=80.0,
+        slope=0.1,
+    )
+    days = _days(10)
+    samples = build_scenario_samples(
+        spec, days=days, outlook=climatology_outlook(spec.point_id), scenario_count=6
+    )
+    schedule = build_maintenance_schedule(spec, days=days, seed=0, include_plant_id="A")
+    candidate = candidate_maintenance_window(plant_id="A", start_day=0)
+    no_maintenance = simulate_point(spec, days=days, samples=samples, schedule=None)
+    scheduled = simulate_point(spec, days=days, samples=samples, schedule=schedule)
+    with_candidate = simulate_point(
+        spec, days=days, samples=samples, schedule=schedule.with_candidate(candidate)
+    )
+
+    # Paired comparison: one shared sample set, so the resource potential is identical.
+    assert no_maintenance.point_potential_mw == scheduled.point_potential_mw
+    assert scheduled.point_potential_mw == with_candidate.point_potential_mw
+    assert no_maintenance.selected_potential_mw == scheduled.selected_potential_mw
+    assert scheduled.selected_potential_mw == with_candidate.selected_potential_mw
+
+    intervals = len(days) * INTERVALS_PER_DAY
+    derate = schedule.derate_series("A", intervals=intervals)
+    window = [index for index, value in enumerate(derate) if value < 1.0]
+    assert window
+    # Inside the scheduled window the derated scenario delivers no more than the und derated one.
+    for scenario_index in range(samples.scenario_count):
+        assert all(
+            scheduled.selected_available_mw[scenario_index][index]
+            <= no_maintenance.selected_available_mw[scenario_index][index] + 1e-9
+            for index in range(intervals)
+        )
+    assert any(
+        scheduled.selected_available_mw[scenario_index][index]
+        < no_maintenance.selected_available_mw[scenario_index][index] - 1e-9
+        for scenario_index in range(samples.scenario_count)
+        for index in window
+    )
+
+
+def test_plant_capacity_quantities_are_ordered_and_distinct() -> None:
+    """The per-plant means keep the physical chain ordered: availability after equipment
+    unavailability and the maintenance derate, the operational ceiling, the resource potential,
+    the accepted envelope and the delivered generation."""
+    spec = point_spec(
+        plants=(
+            plant_spec(plant_id="A", capacity_mw=100.0),
+            plant_spec(plant_id="B", capacity_mw=100.0),
+        ),
+        selected="A",
+        intercept_mw=80.0,
+        slope=0.1,
+    )
+    days = _days(10)
+    samples = build_scenario_samples(
+        spec, days=days, outlook=climatology_outlook(spec.point_id), scenario_count=6
+    )
+    schedule = build_maintenance_schedule(spec, days=days, seed=0, include_plant_id="A")
+    result = simulate_point(
+        spec, days=days, samples=samples, schedule=schedule, record_plant_totals=True
+    )
+
+    capacity = 100.0
+    availability = result.plant_mean_availability_mw["A"]
+    operational = result.plant_mean_operational_capacity_mw["A"]
+    potential = result.plant_mean_potential_mw["A"]
+    accepted = result.plant_mean_accepted_limit_mw["A"]
+    generation = result.plant_mean_generation_mw["A"]
+    available = result.plant_mean_available_mw["A"]
+
+    assert 0.0 < availability <= capacity + 1e-9
+    assert 0.0 < operational <= capacity + 1e-9
+    assert availability <= operational + 1e-9
+    assert potential <= operational + 1e-9
+    assert available <= potential + 1e-9
+    assert generation <= available + 1e-9
+    assert generation <= potential + 1e-9
+    assert generation <= accepted + 1e-9
+    # The scheduled maintenance makes the availability strictly tighter than the ceiling.
+    assert availability < operational
 
 
 def test_selected_plant_receives_only_its_own_share_of_the_envelope() -> None:

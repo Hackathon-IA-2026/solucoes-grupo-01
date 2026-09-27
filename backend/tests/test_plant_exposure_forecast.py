@@ -11,8 +11,7 @@ import pytest
 from curtailess.plant_exposure_forecast import (
     FEATURE_NAMES,
     HORIZON_DAYS,
-    OUT_OF_SUPPORT_TOLERANCE_DAYS,
-    PUBLISHED_DOZENS_ABOVE_95,
+    PROBABILITY_SOURCE_BASELINE,
     LogisticModel,
     PlantDailyHistory,
     PlantForecastInputs,
@@ -34,6 +33,7 @@ from curtailess.plant_exposure_forecast import (
 )
 from curtailess.point_exposure_simulation import (
     INTERVALS_PER_DAY,
+    MaintenanceSchedule,
     PlantSimulationSpec,
     PointSimulationSpec,
     build_maintenance_schedule,
@@ -103,11 +103,13 @@ def build_forecast(
     intercept_mw: float,
     scenario_count: int = 6,
     horizon_days: int = HORIZON_DAYS,
+    level: float = 12.0,
+    maintenance_for_selected: bool = True,
 ) -> dict:
     spec = PointSimulationSpec(
         point_id="POINT-1",
         plants=(
-            plant_spec(plant_id=history.asset_id),
+            plant_spec(plant_id=history.asset_id, level=level),
             plant_spec(plant_id="OTHER", capacity_mw=50.0),
         ),
         envelope_intercept_mw=intercept_mw,
@@ -121,7 +123,12 @@ def build_forecast(
     samples = build_scenario_samples(
         spec, days=days, outlook=climatology_outlook(spec.point_id), scenario_count=scenario_count
     )
-    schedule = build_maintenance_schedule(spec, days=days, seed=0)
+    schedule = build_maintenance_schedule(
+        spec,
+        days=days,
+        seed=0,
+        include_plant_id=history.asset_id if maintenance_for_selected else None,
+    )
     return build_plant_forecast(
         plant=PlantForecastInputs(
             asset_id=history.asset_id,
@@ -239,18 +246,22 @@ def test_probability_varies_with_season_and_recent_activity() -> None:
     probabilities = [row["curtailment_probability"] for row in payload["forecasts"]]
     distribution = payload["probability_diagnostics"]
 
-    # The model's own forward trajectory varies with season and recent activity, even when the
-    # frozen policy then refuses it for extrapolating past the validated support.
+    # The model's own forward trajectory varies with season and recent activity.
     model_forward = distribution["model_forward_probabilities"]
     assert len({round(value, 4) for value in model_forward}) > 3
     assert max(model_forward) > min(model_forward)
     assert distribution["max"] > distribution["min"]
     assert distribution["median"] > 0.0
-    # The published series is non-constant and stays inside the frozen validation support.
-    assert len({round(value, 4) for value in probabilities}) >= 3
-    assert (
-        distribution["published"]["future_days_outside_support"] <= OUT_OF_SUPPORT_TOLERANCE_DAYS
-    )
+    # The published series is whatever the frozen validation policy chose. Under the strict
+    # support rule that may legitimately be a constant baseline, published honestly as one row
+    # per date; what can never happen is a model series leaving the frozen support.
+    published = distribution["published"]
+    if published["candidate"] in {"model_raw", "model_calibrated"}:
+        assert published["future_days_outside_support"] == 0
+    else:
+        assert published["candidate"].startswith("baseline_")
+    assert len(set(probabilities)) >= 1
+    assert all(0.0 <= value <= 1.0 for value in probabilities)
 
 
 def test_materialization_fails_when_every_day_is_above_the_alert_threshold() -> None:
@@ -262,18 +273,51 @@ def test_materialization_fails_when_every_day_is_above_the_alert_threshold() -> 
         enforce_published_series("PLANT1", [1.4] * 60)
     # A constant published series is allowed: the frozen policy may pick a constant baseline,
     # and it is published honestly, one row per date, instead of a saturated model series.
-    constant = enforce_published_series("PLANT1", [0.5] * 60)
+    constant = enforce_published_series(
+        "PLANT1", [0.5] * 60, candidate="baseline_frequency"
+    )
     assert constant["days_above_95_pct"] == 0
     assert constant["distinct_values"] == 1
     assert constant["saturated"] is False
-    # Isolated days above the alert threshold remain allowed when the model supports them.
+    # Isolated days above the alert threshold remain allowed for a baseline source.
     distribution = enforce_published_series(
-        "PLANT1", [0.4 + 0.009 * index for index in range(60)]
+        "PLANT1", [0.4 + 0.009 * index for index in range(60)], candidate="baseline_frequency"
     )
     assert distribution["days"] == 60
     assert distribution["days_above_95_pct"] == 0
     assert distribution["distinct_values"] == 60
     assert distribution["saturated"] is False
+
+
+def test_published_gate_refuses_any_model_day_outside_the_frozen_support() -> None:
+    """Strict, auditable policy: no tolerance, no clamp, no jitter. A model series with a single
+    day outside the support the validation paths froze is refused instead of published."""
+    inside = [0.5] * 59 + [0.9]
+    allowed = enforce_published_series(
+        "PLANT1",
+        inside,
+        candidate="model_raw",
+        support_low=0.4,
+        support_high=0.9,
+    )
+    assert allowed["days"] == 60
+    with pytest.raises(ValueError, match="fora do suporte"):
+        enforce_published_series(
+            "PLANT1",
+            [0.5] * 59 + [0.900001],
+            candidate="model_raw",
+            support_low=0.4,
+            support_high=0.9,
+        )
+    # A constant baseline is a declared fallback, never refused by the support rule.
+    fallback = enforce_published_series(
+        "PLANT1",
+        [0.95] * 60,
+        candidate="baseline_frequency",
+        support_low=0.4,
+        support_high=0.9,
+    )
+    assert fallback["distinct_values"] == 1
 
 
 def test_count_outside_support_bounds_the_frozen_validation_range() -> None:
@@ -319,8 +363,7 @@ def test_candidate_eligibility_refuses_a_model_that_leaves_the_frozen_support() 
     )
     assert baseline["eligible"] is True
 
-    # A model series inside the support stays eligible, and a couple of isolated days outside the
-    # support are tolerated.
+    # A model series inside the support stays eligible.
     inside = candidate_eligibility(
         name="model_raw",
         probabilities=[0.62 + 0.004 * index for index in range(HORIZON_DAYS)],
@@ -331,6 +374,8 @@ def test_candidate_eligibility_refuses_a_model_that_leaves_the_frozen_support() 
     assert inside["eligible"] is True
     assert inside["outside_support_days"] == 0
 
+    # The strict policy is the whole point: a single isolated day outside the support is already
+    # enough to refuse the model, with no tolerance, clamp or jitter.
     near = candidate_eligibility(
         name="model_raw",
         probabilities=[0.6, 0.62] + [0.7] * (HORIZON_DAYS - 2),
@@ -339,8 +384,8 @@ def test_candidate_eligibility_refuses_a_model_that_leaves_the_frozen_support() 
         calibration_applied=True,
     )
     assert near["outside_support_days"] == 1
-    assert near["eligible"] is True
-    assert near["outside_support_days"] <= OUT_OF_SUPPORT_TOLERANCE_DAYS
+    assert near["eligible"] is False
+    assert "1 de 60" in near["reason"]
 
 
 def test_candidate_eligibility_still_refuses_saturated_baselines() -> None:
@@ -355,24 +400,21 @@ def test_candidate_eligibility_still_refuses_saturated_baselines() -> None:
     assert "saturada" in saturated["reason"]
 
 
-def test_published_gate_refuses_dozens_above_95_from_out_of_support_extrapolation() -> None:
-    # Dozens of days above 95% with a material out-of-support excursion: refused.
+def test_published_gate_has_no_arbitrary_dose_rule() -> None:
+    """The old ``PUBLISHED_DOZENS_ABOVE_95`` threshold is gone: eligibility is decided by the
+    strict support rule, not by counting how many days sit above an arbitrary level."""
     series = [0.96] * 30 + [0.4] * 30
-    assert PUBLISHED_DOZENS_ABOVE_95 <= 30
-    with pytest.raises(ValueError, match="fora do suporte"):
-        enforce_published_series("PLANT1", series, out_of_support_days=30)
-    # The same series is allowed when the validation paths reached that range (no extrapolation).
-    allowed = enforce_published_series("PLANT1", series, out_of_support_days=0)
+    # A baseline with dozens of days above 95% is allowed: the validation ranking chose it.
+    allowed = enforce_published_series(
+        "PLANT1", series, candidate="baseline_frequency", support_low=0.3, support_high=0.99
+    )
     assert allowed["days_above_95_pct"] == 30
     assert allowed["saturated"] is False
-    # A few isolated days outside the support do not trigger the dozens rule.
-    few = enforce_published_series("PLANT1", series, out_of_support_days=2)
-    assert few["days_above_95_pct"] == 30
-    # Below the dozens threshold the extrapolation guard does not fire.
-    sparse = enforce_published_series(
-        "PLANT1", [0.96] * (PUBLISHED_DOZENS_ABOVE_95 - 1) + [0.4] * 41, out_of_support_days=60
-    )
-    assert sparse["days_above_95_pct"] == PUBLISHED_DOZENS_ABOVE_95 - 1
+    # The same series as a model with any day outside the support is refused.
+    with pytest.raises(ValueError, match="fora do suporte"):
+        enforce_published_series(
+            "PLANT1", series, candidate="model_raw", support_low=0.3, support_high=0.95
+        )
 
 
 def test_small_sample_seasonal_rates_are_shrunk_toward_the_base_rate() -> None:
@@ -494,8 +536,9 @@ def test_calibration_is_rejected_when_it_inflates_the_alert_band() -> None:
     assert result.probability_source in {
         "model_calibrated_backtested",
         "model_raw_backtested",
-        "baseline_frequency_seasonal",
+        PROBABILITY_SOURCE_BASELINE,
     }
+    assert PROBABILITY_SOURCE_BASELINE == "baseline_frequency"
     assert result.probability_decision_note
     assert result.baseline_briers
     assert result.baseline_reliability_gaps
@@ -614,6 +657,159 @@ def test_point_context_simulates_every_entity_without_attributing_their_energy()
         entity for entity in context["simulated_entities"] if entity["plant_id"] == "PLANT1"
     )
     assert selected["mean_available_generation_mw"] <= context["potential_generation_mw"] + 1e-6
+
+
+def test_simulated_telemetry_separates_physical_quantities() -> None:
+    """I1: installed capacity, availability, operational capacity, resource potential, accepted
+    envelope and delivered generation are distinct physical quantities in a fixed order."""
+    payload = build_forecast(history=synthetic_history(), slope=0.3, intercept_mw=200.0, level=4.0)
+    telemetry = payload["simulated_telemetry"]
+    capacity = payload["capacity_mw"]
+
+    assert telemetry["origin"] == "SIMULADO"
+    assert 0.0 < telemetry["availability_mw"] <= capacity + 1e-9
+    assert 0.0 < telemetry["operational_capacity_mw"] <= capacity + 1e-9
+    assert telemetry["availability_mw"] <= telemetry["operational_capacity_mw"] + 1e-9
+    assert telemetry["potential_generation_mw"] <= telemetry["operational_capacity_mw"] + 1e-9
+    assert telemetry["generation_mw"] <= telemetry["potential_generation_mw"] + 1e-9
+    assert telemetry["generation_mw"] <= telemetry["accepted_generation_limit_mw"] + 1e-9
+    assert telemetry["potentially_curtailed_mw"] == pytest.approx(
+        max(telemetry["potential_generation_mw"] - telemetry["generation_mw"], 0.0), abs=1e-9
+    )
+    assert telemetry["restricted"] == (telemetry["potentially_curtailed_mw"] > 0.0)
+    # The defect this replaces published the same number as availability, operational capacity,
+    # potential and accepted limit at once. The resource potential sits below the ceiling, and the
+    # scheduled maintenance derate separates the operational ceiling from the availability.
+    assert telemetry["potential_generation_mw"] < telemetry["operational_capacity_mw"]
+    assert telemetry["availability_mw"] < telemetry["operational_capacity_mw"]
+    assert telemetry["potential_generation_mw"] != telemetry["generation_mw"]
+
+
+def test_daily_potential_is_the_resource_curve_before_the_plant_own_maintenance() -> None:
+    """I2: the published daily potential is the meteorological resource potential, never the
+    already derated available energy. The maintenance appears in the relief and the avoided
+    curtailment, without collapsing the potential curve."""
+    history = synthetic_history()
+    spec = PointSimulationSpec(
+        point_id="POINT-1",
+        plants=(
+            plant_spec(plant_id=history.asset_id, level=4.0),
+            plant_spec(plant_id="OTHER", capacity_mw=50.0),
+        ),
+        envelope_intercept_mw=60.0,
+        envelope_slope=0.2,
+        installed_capacity_mw=150.0,
+        selected_asset_id=history.asset_id,
+    )
+    days = tuple(
+        START + timedelta(days=len(history.days) + offset) for offset in range(HORIZON_DAYS)
+    )
+    samples = build_scenario_samples(
+        spec, days=days, outlook=climatology_outlook(spec.point_id), scenario_count=6
+    )
+    scheduled = build_maintenance_schedule(
+        spec, days=days, seed=0, include_plant_id=history.asset_id
+    )
+    window = next(item for item in scheduled.windows if item.plant_id == history.asset_id)
+    plant = PlantForecastInputs(
+        asset_id=history.asset_id,
+        name="Usina Sintética",
+        technology="wind",
+        state="RN",
+        ceg="EOL.CV.RN.000001-1.01",
+        ons_group_id="CJU_TEST",
+        ons_group_name="Conjunto Teste",
+        connection_point="POINT-1",
+        capacity_mw=100.0,
+        history=history,
+    )
+
+    def run(schedule: MaintenanceSchedule) -> dict:
+        return build_plant_forecast(
+            plant=plant,
+            spec=spec,
+            samples=samples,
+            schedule=schedule,
+            days=days,
+            weather_normal_z={},
+            point_share=tuple(0.5 for _ in history.days),
+            backtest_plan=default_backtest_plan(len(history.days)),
+            weather_source="ons_plant_climatology",
+            weather_unit="m/s",
+            scenario_count=6,
+        )
+
+    with_maintenance = run(scheduled)
+    without_maintenance = run(MaintenanceSchedule(point_id="POINT-1"))
+    potentials_with = [row["potential_generation_mwh"] for row in with_maintenance["forecasts"]]
+    potentials_without = [
+        row["potential_generation_mwh"] for row in without_maintenance["forecasts"]
+    ]
+
+    # The potential curve is the resource curve: identical with and without the plant's own
+    # maintenance, so it cannot collapse because of it.
+    assert potentials_with == potentials_without
+    assert all(value > 0.0 for value in potentials_with)
+    start_day = window.start_interval // INTERVALS_PER_DAY
+    end_day = (window.end_interval - 1) // INTERVALS_PER_DAY
+    during = with_maintenance["forecasts"][start_day : end_day + 1]
+    # The maintenance is visible in the relief and the avoided curtailment on its own days.
+    assert any(row["scheduled_maintenance_relief_mwh"] > 0.0 for row in during)
+    assert any(row["avoided_curtailment_mwh"] > 0.0 for row in during)
+    # The day immediately before the window is not a collapse artefact either.
+    before = with_maintenance["forecasts"][max(start_day - 1, 0)]
+    assert before["potential_generation_mwh"] > 0.0
+    assert all(row["potential_generation_mwh"] > 0.0 for row in during)
+
+
+def test_input_manifest_is_deterministic_and_identifies_the_inputs(tmp_path) -> None:
+    """M2: a deterministic SHA-256 manifest of the inputs actually read, with no mtime."""
+    from curtailess.plant_exposure_forecast import build_input_manifest
+
+    catalog = tmp_path / "catalog.json"
+    catalog.write_bytes(b'{"plants":[]}')
+    history = tmp_path / "history.json"
+    history.write_bytes(b'{"plants":[]}')
+    ons = tmp_path / "ons"
+    ons.mkdir()
+    (ons / "a.parquet").write_bytes(b"ons-a")
+    (ons / "b.parquet").write_bytes(b"ons-b")
+
+    inputs = [
+        ("catalog", str(catalog)),
+        ("history", str(history)),
+        ("wind_aggregate", str(ons / "*.parquet")),
+    ]
+    first = build_input_manifest(inputs)
+    second = build_input_manifest(inputs)
+
+    assert first == second
+    assert first["algorithm"] == "sha256"
+    assert first["digest"] == second["digest"]
+    assert {entry["role"] for entry in first["inputs"]} == {
+        "catalog",
+        "history",
+        "wind_aggregate",
+    }
+    assert all(len(entry["sha256"]) == 64 for entry in first["inputs"])
+    assert all("mtime" not in entry for entry in first["inputs"])
+    assert all(entry["file_count"] > 0 for entry in first["inputs"])
+
+    catalog.write_bytes(b'{"plants":[1]}')
+    third = build_input_manifest(inputs)
+    assert third["digest"] != first["digest"]
+
+
+def test_limitations_state_the_selection_is_frozen_on_validation() -> None:
+    """M1: the selection is frozen on the validation paths; the test only reports. No limitation
+    may describe the choice as made out of sample."""
+    from curtailess.plant_exposure_forecast import LIMITATIONS
+
+    text = " ".join(LIMITATIONS)
+    lowered = text.lower()
+    assert "fora da amostra" not in lowered
+    assert "validação" in lowered
+    assert "congelad" in lowered
 
 
 def test_backtest_plan_keeps_the_test_paths_out_of_the_fitting_window() -> None:
@@ -765,7 +961,7 @@ def _minimal_artifact() -> dict:
                 "name": f"Usina {plant_index + 1}",
                 "entity_level": "plant",
                 "connection_point": f"POINT-{plant_index + 1}",
-                "probability_source": "baseline_frequency_seasonal",
+                "probability_source": "baseline_frequency",
                 "forecasts": [
                     {
                         "forecast_date": (
@@ -843,8 +1039,42 @@ def test_bundled_forecast_has_five_plants_sixty_consecutive_days_and_three_windo
         assert published["future_days"] == HORIZON_DAYS
         assert isinstance(published["future_days_outside_support"], int)
         assert published["future_days_outside_support"] >= 0
+        # Strict support policy: a published model series never leaves the frozen support.
         if published["candidate"] in {"model_raw", "model_calibrated"}:
-            assert published["future_days_outside_support"] <= OUT_OF_SUPPORT_TOLERANCE_DAYS
+            assert published["future_days_outside_support"] == 0
+        else:
+            assert published["candidate"].startswith("baseline_")
+            assert plant["probability_source"] == PROBABILITY_SOURCE_BASELINE
+        # The simulated telemetry keeps physically distinct quantities, never the same number
+        # under different names.
+        telemetry = plant["simulated_telemetry"]
+        capacity = plant["capacity_mw"]
+        assert telemetry["availability_mw"] <= capacity + 1e-6
+        assert telemetry["operational_capacity_mw"] <= capacity + 1e-6
+        assert (
+            telemetry["availability_mw"] <= telemetry["operational_capacity_mw"] + 1e-6
+        )
+        assert (
+            telemetry["potential_generation_mw"] <= telemetry["operational_capacity_mw"] + 1e-6
+        )
+        assert telemetry["generation_mw"] <= telemetry["potential_generation_mw"] + 1e-6
+        assert (
+            telemetry["generation_mw"] <= telemetry["accepted_generation_limit_mw"] + 1e-6
+        )
+        assert telemetry["potentially_curtailed_mw"] == pytest.approx(
+            max(
+                telemetry["potential_generation_mw"] - telemetry["generation_mw"],
+                0.0,
+            ),
+            abs=1e-6,
+        )
+        assert telemetry["restricted"] == (telemetry["potentially_curtailed_mw"] > 0.0)
+        # The daily potential is the resource curve, never negative and never above the ceiling.
+        for row in plant["forecasts"]:
+            assert row["potential_generation_mwh"] >= 0.0
+            assert row["accepted_generation_envelope_mwh"] >= 0.0
+            assert row["scheduled_maintenance_relief_mwh"] >= 0.0
+            assert row["avoided_curtailment_mwh"] >= 0.0
         backtest = diagnostics["backtest"]
         assert backtest["test_days"] > 0
         assert backtest["validation_days"] > 0
@@ -874,9 +1104,49 @@ def test_bundled_forecast_has_five_plants_sixty_consecutive_days_and_three_windo
         )
     assert payload["checks"]["all_plants_have_days_below_95_pct"] is True
     assert payload["checks"]["published_series_within_validated_support"] is True
+    assert payload["checks"]["published_model_series_outside_support_days"] == 0
     assert interval_rows == 5 * HORIZON_DAYS
     assert payload["interval_series"]["resolution_minutes"] == 30
     assert payload["interval_series"]["intervals_per_day"] == INTERVALS_PER_DAY
+
+    # RNEM13 has exactly one future day outside its frozen validation support. Under the strict
+    # policy that single day makes the raw model ineligible, so the plant publishes the baseline.
+    rnem13 = next(plant for plant in payload["plants"] if plant["asset_id"] == "RNEM13")
+    rnem13_published = rnem13["probability_diagnostics"]["published"]
+    assert rnem13_published["candidate"].startswith("baseline_")
+    assert rnem13["probability_source"] == PROBABILITY_SOURCE_BASELINE
+    assert rnem13_published["eligibility"]["model_raw"]["eligible"] is False
+    assert rnem13_published["eligibility"]["model_raw"]["outside_support_days"] >= 1
+    assert rnem13_published["future_days_outside_support"] == 0
+
+    # M2: both artifacts carry the same deterministic SHA-256 manifest of the inputs read.
+    manifest = payload["input_manifest"]
+    assert manifest["algorithm"] == "sha256"
+    assert manifest["digest"]
+    roles = {entry["role"] for entry in manifest["inputs"]}
+    assert {
+        "catalog",
+        "history",
+        "relationship",
+        "capacity",
+        "wind_aggregate",
+        "solar_aggregate",
+        "wind_detail",
+        "solar_detail",
+        "weather_snapshot",
+    } <= roles
+    assert all(len(entry["sha256"]) == 64 for entry in manifest["inputs"])
+    assert all(entry["file_count"] > 0 for entry in manifest["inputs"])
+
+
+@pytest.mark.skipif(not BUNDLED_FORECAST.exists(), reason="forecast not materialized yet")
+def test_bundled_schedule_shares_the_forecast_input_manifest() -> None:
+    forecast = json.loads(BUNDLED_FORECAST.read_text(encoding="utf-8"))
+    schedule_path = BUNDLED_FORECAST.parent / "simulated_point_maintenance_schedule.json"
+    schedule = json.loads(schedule_path.read_text(encoding="utf-8"))
+
+    assert schedule["input_manifest"] == forecast["input_manifest"]
+    assert schedule["input_manifest"]["digest"] == forecast["input_manifest"]["digest"]
 
 
 @pytest.mark.skipif(not BUNDLED_FORECAST.exists(), reason="forecast not materialized yet")

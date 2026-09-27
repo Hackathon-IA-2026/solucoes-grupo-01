@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import glob
+import hashlib
 import json
 import math
 import statistics
@@ -97,23 +99,12 @@ SEASONAL_SHRINKAGE_PRIOR_DAYS = 21.0
 PRESSURE_SHRINKAGE_PRIOR_DAYS = 7.0
 PROBABILITY_SOURCE_MODEL_CALIBRATED = "model_calibrated_backtested"
 PROBABILITY_SOURCE_MODEL_RAW = "model_raw_backtested"
-PROBABILITY_SOURCE_BASELINE = "baseline_frequency_seasonal"
+PROBABILITY_SOURCE_BASELINE = "baseline_frequency"
 ALERT_BAND_LOWER = 0.8
-# A published 60-day series may never sit entirely above the alert threshold: that is the
-# saturated regime the gate exists to catch. Isolated values above it remain allowed when the
-# out-of-sample evidence supports them, but never all 60 days.
+# A model is publishable only inside the probability support frozen on validation paths. One
+# future value outside that support makes the candidate ineligible and selects the best eligible
+# baseline from the frozen validation ranking. No tolerance, clipping or visual jitter is used.
 PUBLISHED_SATURATION_THRESHOLD = PROBABILITY_ALERT_THRESHOLD
-# The horizon may not leave, materially, the probability range the model was validated on. A
-# trajectory that sits systematically above (or below) the frozen validation support is
-# extrapolation no matter whether the calibration or the raw model is published, so it is marked
-# ineligible and the best eligible baseline of the frozen validation ranking is published instead.
-# A couple of isolated days outside the support are tolerated; a shift of the whole trajectory is
-# not.
-OUT_OF_SUPPORT_TOLERANCE_DAYS = 2
-# A published series with dozens of days above the alert threshold is only defensible when the
-# validation paths actually reached that range. When those days come from an out-of-support
-# extrapolation the gate refuses the series instead of publishing a saturated curve.
-PUBLISHED_DOZENS_ABOVE_95 = 20
 CANDIDATE_MODEL_RAW = "model_raw"
 CANDIDATE_MODEL_CALIBRATED = "model_calibrated"
 BASELINE_NAMES = ("frequency", "persistence", "seasonal", "seasonal_blend")
@@ -147,8 +138,10 @@ LIMITATIONS = (
     "O backtest é temporal e recursivo; o ajuste usa apenas o passado do ponto de emissão, a "
     "regularização e a calibração são escolhidas nos caminhos de validação e o teste é "
     "preservado; a calibração só é aceita quando melhora o Brier e não piora a confiabilidade.",
-    "Quando o modelo não supera o baseline de frequência histórica fora da amostra, a "
-    "probabilidade publicada é o baseline sazonal de frequência, declarado no artefato.",
+    "A seleção de modelo, regularização e calibração é congelada nos caminhos de validação; "
+    "os caminhos de teste apenas reportam o desempenho da escolha já congelada.",
+    "Quando o modelo não supera o baseline de frequência histórica na validação, a "
+    "probabilidade publicada é o baseline de frequência correspondente, declarado no artefato.",
     "As taxas de mês, dia da semana e das janelas recentes passam por encolhimento empírico "
     "em direção à taxa base, para que amostras pequenas não virem certeza.",
     "A meteorologia histórica vem da própria usina e a prevista entra como anomalia "
@@ -1758,7 +1751,7 @@ def candidate_eligibility(
         reason = (
             f"a série de {distribution['days']} dias ficou inteiramente acima de 95% (saturada)"
         )
-    elif is_model and outside > OUT_OF_SUPPORT_TOLERANCE_DAYS:
+    elif is_model and outside > 0:
         eligible = False
         reason = (
             "a trajetória futura sai do suporte de probabilidade congelado na validação em "
@@ -1782,14 +1775,15 @@ def enforce_published_series(
     plant_id: str,
     probabilities: Sequence[float],
     *,
-    out_of_support_days: int = 0,
+    candidate: str = CANDIDATE_MODEL_RAW,
+    support_low: float | None = None,
+    support_high: float | None = None,
 ) -> dict[str, Any]:
-    """Validate the series that will actually be published, without touching its numbers.
+    """Validate the exact series selected for publication without changing its values.
 
-    Two hard failures, both on the published series itself: a 60-day series entirely above the
-    alert threshold, and a series with dozens of days above it that come from an out-of-support
-    extrapolation. No clamp, jitter or cosmetic threshold is applied — an ineligible series is
-    replaced by a defensible source upstream.
+    Saturated series fail for every candidate. A model also fails when any future day falls
+    outside the probability support frozen on validation. Baselines do not inherit model support
+    because they are independently ranked validation candidates and the explicit fallback.
     """
     if not probabilities:
         raise ValueError(f"a usina {plant_id} não produziu pontos de previsão")
@@ -1803,14 +1797,18 @@ def enforce_published_series(
             f"{distribution['days']} dias; a materialização foi interrompida"
         )
     if (
-        distribution["days_above_95_pct"] >= PUBLISHED_DOZENS_ABOVE_95
-        and out_of_support_days > OUT_OF_SUPPORT_TOLERANCE_DAYS
+        candidate in (CANDIDATE_MODEL_RAW, CANDIDATE_MODEL_CALIBRATED)
+        and support_low is not None
+        and support_high is not None
     ):
-        raise ValueError(
-            f"a usina {plant_id} publicaria {distribution['days_above_95_pct']} dias acima de 95% "
-            f"com {out_of_support_days} dias fora do suporte congelado na validação; a "
-            "materialização foi interrompida"
+        outside = count_outside_support(
+            probabilities, support_low=support_low, support_high=support_high
         )
+        if outside:
+            raise ValueError(
+                f"a usina {plant_id} publicaria {outside} dias fora do suporte congelado na "
+                "validação; a materialização foi interrompida"
+            )
     return distribution
 
 
@@ -1863,8 +1861,6 @@ def build_plant_forecast(
     scheduled_daily = scenario_daily_mwh(scheduled.selected_curtailed_mw)
     no_maintenance_daily = scenario_daily_mwh(no_maintenance.selected_curtailed_mw)
     expected, lower, upper = mean_and_quantiles(scheduled_daily)
-    available_daily = scenario_daily_mwh(scheduled.selected_available_mw)
-    available_expected, _, _ = mean_and_quantiles(available_daily)
     scenario_probability = scenario_event_probability(scheduled_daily)
     scheduled_metrics = window_metrics(scheduled.selected_curtailed_mw)
     critical = select_critical_windows(scheduled_metrics, count=CRITICAL_WINDOW_COUNT)
@@ -1934,7 +1930,11 @@ def build_plant_forecast(
         support_high=backtest.frozen_support_high,
     )
     distribution = enforce_published_series(
-        plant.asset_id, probabilities, out_of_support_days=published_outside
+        plant.asset_id,
+        probabilities,
+        candidate=published_candidate.name,
+        support_low=backtest.frozen_support_low,
+        support_high=backtest.frozen_support_high,
     )
     published = {
         "candidate": published_candidate.name,
@@ -1961,6 +1961,9 @@ def build_plant_forecast(
 
     no_maintenance_by_day = _daily_expectation(no_maintenance_daily)
     scheduled_by_day = _daily_expectation(scheduled_daily)
+    resource_potential_by_day = _daily_expectation(
+        scenario_daily_mwh(scheduled.selected_potential_mw)
+    )
     expected_mwh_by_day = expected
     point_excess_no_maintenance = _daily_expectation(
         scenario_daily_mwh(no_maintenance.point_excess_mw)
@@ -2001,7 +2004,7 @@ def build_plant_forecast(
                 "upper_mwh": round(upper[index], 6),
                 "curtailment_probability": probabilities[index],
                 "scenario_event_probability": scenario_probability[index],
-                "potential_generation_mwh": round(available_expected[index], 6),
+                "potential_generation_mwh": round(resource_potential_by_day[index], 6),
                 "accepted_generation_envelope_mwh": round(envelope_expected[index], 6),
                 "scheduled_maintenance_relief_mwh": max(relief, 0.0),
                 "avoided_curtailment_mwh": max(
@@ -2163,16 +2166,21 @@ def _simulated_telemetry(
     weather_values: Sequence[float],
     weather_unit: str,
 ) -> dict[str, Any]:
-    """Simulated operating state of the plant at the reference interval."""
-    available = scheduled.plant_mean_available_mw.get(plant.asset_id, 0.0)
-    curtailed = scheduled.plant_mean_curtailed_mw.get(plant.asset_id, 0.0)
-    capacity = plant.capacity_mw
+    """Simulated mean operating state, with each physical quantity kept separate."""
+    operational_capacity = scheduled.plant_mean_operational_capacity_mw.get(plant.asset_id, 0.0)
+    availability = scheduled.plant_mean_availability_mw.get(plant.asset_id, 0.0)
+    potential = scheduled.plant_mean_potential_mw.get(plant.asset_id, 0.0)
+    accepted_limit = scheduled.plant_mean_accepted_limit_mw.get(plant.asset_id, 0.0)
+    generation = scheduled.plant_mean_generation_mw.get(plant.asset_id, 0.0)
+    potentially_curtailed = max(potential - generation, 0.0)
     return {
-        "generation_mw": round(available - curtailed, 6),
-        "potential_generation_mw": round(available, 6),
-        "availability_mw": round(capacity, 6),
-        "operational_capacity_mw": round(available, 6),
-        "accepted_generation_limit_mw": round(max(available - curtailed, 0.0), 6),
+        "generation_mw": round(generation, 6),
+        "potential_generation_mw": round(potential, 6),
+        "availability_mw": round(availability, 6),
+        "operational_capacity_mw": round(operational_capacity, 6),
+        "accepted_generation_limit_mw": round(accepted_limit, 6),
+        "potentially_curtailed_mw": round(potentially_curtailed, 6),
+        "restricted": potentially_curtailed > 1e-9,
         "weather_value": round(weather_values[0], 6) if weather_values else 0.0,
         "weather_unit": weather_unit,
         "origin": ORIGIN_SIMULATED,
@@ -2265,6 +2273,52 @@ def _window_payload(
     }
 
 
+def build_input_manifest(inputs: Sequence[tuple[str, str]]) -> dict[str, Any]:
+    """Hash every input file used by a materialization without relying on timestamps."""
+    entries: list[dict[str, Any]] = []
+    for role, source_text in inputs:
+        source = Path(source_text)
+        if source.is_dir():
+            paths = sorted(path for path in source.rglob("*") if path.is_file())
+            labels = {path: path.relative_to(source).as_posix() for path in paths}
+        elif source.is_file():
+            paths = [source]
+            labels = {source: source.name}
+        else:
+            paths = sorted(Path(item) for item in glob.glob(source_text, recursive=True))
+            paths = [path for path in paths if path.is_file()]
+            labels = {path: path.name for path in paths}
+        if not paths:
+            raise FileNotFoundError(f"nenhum arquivo encontrado para o input {role}: {source_text}")
+        files = [
+            {
+                "path": labels[path],
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            for path in paths
+        ]
+        canonical_files = json.dumps(
+            files, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        entries.append(
+            {
+                "role": role,
+                "file_count": len(files),
+                "sha256": hashlib.sha256(canonical_files).hexdigest(),
+                "files": files,
+            }
+        )
+    canonical_entries = json.dumps(
+        entries, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return {
+        "algorithm": "sha256",
+        "digest": hashlib.sha256(canonical_entries).hexdigest(),
+        "inputs": entries,
+    }
+
+
 def materialize(
     *,
     catalog_path: str | Path,
@@ -2283,6 +2337,7 @@ def materialize(
     horizon_days: int = HORIZON_DAYS,
     cutoff: str,
     scenario_count: int = DEFAULT_SCENARIO_COUNT,
+    input_manifest: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build the individual plant forecast and the simulated maintenance agenda."""
     catalog = history_module.load_bundled_history(history_path)
@@ -2454,6 +2509,7 @@ def materialize(
     return (
         {
             "schema": SCHEMA,
+            "input_manifest": dict(input_manifest) if input_manifest is not None else None,
             "source": ONS_ORIGIN,
             "calculation": PROXY_ORIGIN,
             "simulation": ORIGIN_SIMULATED,
@@ -2499,7 +2555,13 @@ def materialize(
                 ),
                 "published_series_within_validated_support": all(
                     plant["probability_diagnostics"]["published"]["future_days_outside_support"]
-                    <= OUT_OF_SUPPORT_TOLERANCE_DAYS
+                    == 0
+                    for plant in plants
+                    if plant["probability_diagnostics"]["published"]["candidate"]
+                    in (CANDIDATE_MODEL_RAW, CANDIDATE_MODEL_CALIBRATED)
+                ),
+                "published_model_series_outside_support_days": sum(
+                    plant["probability_diagnostics"]["published"]["future_days_outside_support"]
                     for plant in plants
                     if plant["probability_diagnostics"]["published"]["candidate"]
                     in (CANDIDATE_MODEL_RAW, CANDIDATE_MODEL_CALIBRATED)
@@ -2508,7 +2570,7 @@ def materialize(
                     "uma série publicada com os 60 dias acima de 95% falha a materialização"
                 ),
                 "support_rule": (
-                    "um modelo publicado não pode deixar, de forma material, o suporte de "
+                    "um modelo publicado não pode ter qualquer dia fora do suporte de "
                     "probabilidade congelado nos caminhos de validação usados na seleção"
                 ),
                 "plant_count": len(plants),
@@ -2520,6 +2582,7 @@ def materialize(
         },
         {
             "schema": "curtailless.simulated_point_maintenance_schedule.v1",
+            "input_manifest": dict(input_manifest) if input_manifest is not None else None,
             "origin": ORIGIN_SIMULATED,
             "cutoff": cutoff,
             "window": {"start": days[0].isoformat(), "end": days[-1].isoformat()},
@@ -2812,11 +2875,12 @@ def validate_forecast_artifact(payload: Mapping[str, Any]) -> None:
             and float(frozen_support["high"]) < float(frozen_support["low"])
         ):
             raise ValueError(f"o suporte congelado de {asset_id} é inválido")
-        out_of_support_days = int(published.get("future_days_outside_support") or 0)
         enforce_published_series(
             asset_id,
             [row["curtailment_probability"] for row in forecasts],
-            out_of_support_days=out_of_support_days,
+            candidate=str(published.get("candidate") or CANDIDATE_MODEL_RAW),
+            support_low=frozen_support.get("low"),
+            support_high=frozen_support.get("high"),
         )
     checks = payload.get("checks") or {}
     if not checks.get("all_plants_have_days_below_95_pct"):
@@ -2854,6 +2918,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--schedule-output", required=True)
     args = parser.parse_args(argv)
 
+    input_manifest = build_input_manifest(
+        [
+            ("catalog", args.catalog),
+            ("history", args.history),
+            ("relationship", args.relationship),
+            ("capacity", args.capacity),
+            ("wind_aggregate", args.wind_aggregate),
+            ("solar_aggregate", args.solar_aggregate),
+            ("wind_detail", args.wind_detail),
+            ("solar_detail", args.solar_detail),
+            ("weather_snapshot", args.weather_snapshot),
+            ("weather_snapshot_solar", args.weather_snapshot_solar or args.weather_snapshot),
+        ]
+    )
     forecast, schedule = materialize(
         catalog_path=args.catalog,
         history_path=args.history,
@@ -2871,6 +2949,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         horizon_days=args.horizon_days,
         cutoff=args.cutoff,
         scenario_count=args.scenarios,
+        input_manifest=input_manifest,
     )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
