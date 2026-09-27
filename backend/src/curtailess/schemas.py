@@ -144,8 +144,16 @@ class EvidenceProvenance(BaseModel):
     def validate_source_and_interval(self) -> Self:
         if self.source_uri is None and self.source_key is None:
             raise ValueError("source_uri ou source_key é obrigatório")
-        if self.observed_at is None and self.effective_at is None:
-            raise ValueError("observed_at ou effective_at é obrigatório")
+        unknown_capacity_time = (
+            self.origin is DataOrigin.ONS_PUBLICO
+            and self.field_name == "capacity_mw"
+            and self.method_version == "ons_capacity_source_v1"
+            and any("temporal" in limitation.lower() for limitation in self.limitations)
+        )
+        if self.observed_at is None and self.effective_at is None and not unknown_capacity_time:
+            raise ValueError(
+                "observed_at ou effective_at é obrigatório, salvo limitação temporal explícita"
+            )
         if (self.valid_from is None) != (self.valid_to is None):
             raise ValueError("valid_from e valid_to devem ser informados juntos")
         if (
@@ -224,6 +232,7 @@ class Asset(BaseModel):
     ons_group: str
     connection_point: str
     data_mode: Literal["demo", "ons_materialized"]
+    field_provenance: dict[str, EvidenceProvenance]
 
     @model_validator(mode="after")
     def require_capacity_provenance(self) -> Self:
@@ -231,6 +240,25 @@ class Asset(BaseModel):
             raise ValueError("capacity_mw and capacity_provenance must be provided together")
         if self.capacity_provenance and self.capacity_provenance.field_name != "capacity_mw":
             raise ValueError("capacity provenance must identify capacity_mw")
+        required = {
+            "asset_id",
+            "name",
+            "technology",
+            "capacity_mw",
+            "ons_group",
+            "connection_point",
+        }
+        if set(self.field_provenance) != required:
+            raise ValueError("field_provenance must cover every asset field")
+        if any(
+            provenance.field_name != field_name
+            for field_name, provenance in self.field_provenance.items()
+        ):
+            raise ValueError("asset field_provenance field_name mismatch")
+        if self.capacity_provenance and (
+            self.field_provenance["capacity_mw"].evidence_id != self.capacity_provenance.evidence_id
+        ):
+            raise ValueError("asset capacity provenance must match field_provenance")
         return self
 
 
@@ -298,6 +326,7 @@ class ProvenanceResponse(BaseModel):
     evidence_id: str
     classification: ValueStatus
     origin: DataOrigin
+    dataset: str
     source: str
     source_bucket: str | None
     source_key: str
@@ -312,6 +341,7 @@ class ProvenanceResponse(BaseModel):
     valid_from: datetime | None
     valid_to: datetime | None
     asset_ids: list[str]
+    parent_evidence_ids: list[str]
     limitations: list[str]
     provenance: EvidenceProvenance
 
@@ -384,7 +414,8 @@ _MAINTENANCE_INPUT_FIELDS = {
     "duration_hours",
     "minimum_notice_hours",
     "baseline_window_start",
-    "constraints",
+    "weekdays_only",
+    "unavailable_periods",
     "energy_price",
 }
 
@@ -410,7 +441,11 @@ class MaintenanceRankRequest(BaseModel):
                 "duration_hours": self.duration_hours,
                 "minimum_notice_hours": self.minimum_notice_hours,
                 "baseline_window_start": self.baseline_window_start,
-                "constraints": self.constraints.model_dump(mode="json"),
+                "weekdays_only": self.constraints.weekdays_only,
+                "unavailable_periods": [
+                    period.model_dump(mode="json")
+                    for period in self.constraints.unavailable_periods
+                ],
             }
             self.input_provenance = {
                 field_name: inferred_client_provenance(
@@ -480,6 +515,7 @@ class RankedMaintenanceWindow(BaseModel):
             "expected_curtailed_energy",
             "opportunity_cost",
             "difference_from_baseline_mwh",
+            "difference_from_baseline",
         }
         if set(self.field_provenance) != required:
             raise ValueError("field_provenance must cover every ranked window output")
@@ -491,7 +527,7 @@ class RankedMaintenanceWindow(BaseModel):
         nested = {
             "expected_curtailed_energy": self.expected_curtailed_energy.provenance,
             "opportunity_cost": self.opportunity_cost.provenance,
-            "difference_from_baseline_mwh": self.difference_from_baseline.provenance,
+            "difference_from_baseline": self.difference_from_baseline.provenance,
         }
         if any(
             self.field_provenance[field_name].evidence_id != provenance.evidence_id
@@ -531,6 +567,8 @@ class BessScreenRequest(BaseModel):
     @model_validator(mode="after")
     def validate_input_provenance(self) -> Self:
         required = {
+            "asset_id",
+            "maintenance_result_id",
             "power_mw",
             "energy_mwh",
             "capex_brl",
@@ -572,6 +610,7 @@ class BessScreenResponse(BaseModel):
     annual_benefit_brl: float
     annual_net_benefit_brl: float
     preliminary_viable: bool
+    input_provenance: dict[str, EvidenceProvenance]
     source_observation: EvidenceProvenance
     output_evidence: dict[str, NumericEvidence | MonetaryEvidence]
     missing_data: list[str]

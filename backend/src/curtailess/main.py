@@ -1,4 +1,6 @@
 import hashlib
+import json
+import re
 import uuid
 from datetime import UTC, date, datetime
 from typing import Annotated, Literal
@@ -65,6 +67,8 @@ def _field_provenance(
     source_hashes: list[str] | tuple[str, ...] = (),
     source_item: dict | None = None,
     source_uri: str | None = None,
+    source_key: str | None = None,
+    use_source_period: bool = True,
     observed_at: datetime | None = None,
     effective_at: datetime | None = None,
     valid_from: datetime | None = None,
@@ -74,15 +78,16 @@ def _field_provenance(
     hashes = tuple(sorted(set(source_hashes)))
     identities = list(hashes) or [source_uri or "curtailess://unspecified"]
     evidence_id = build_evidence_id(identities, field_name, method_version, context)
-    observed_at = observed_at or (_aware(source_item["period_end"]) if source_item else None)
-    valid_from = valid_from or (_aware(source_item["period_start"]) if source_item else None)
-    valid_to = valid_to or (_aware(source_item["period_end"]) if source_item else None)
+    period_item = source_item if source_item and use_source_period else None
+    observed_at = observed_at or (_aware(period_item["period_end"]) if period_item else None)
+    valid_from = valid_from or (_aware(period_item["period_start"]) if period_item else None)
+    valid_to = valid_to or (_aware(period_item["period_end"]) if period_item else None)
     return EvidenceProvenance(
         evidence_id=evidence_id,
         field_name=field_name,
         origin=origin,
         source_uri=source_uri,
-        source_key=source_item.get("source_key") if source_item else None,
+        source_key=source_key or (source_item.get("source_key") if source_item else None),
         source_sha256=hashes[0] if hashes else None,
         source_sha256s=hashes,
         parent_evidence_ids=tuple(sorted(set(parent_evidence_ids))),
@@ -102,6 +107,14 @@ _SERVER_PROVENANCE_CONTRACTS: dict[
     tuple[str, str], tuple[DataOrigin, Literal["medido", "calculado"]]
 ] = {
     ("capacity_mw", "ons_capacity_source_v1"): (DataOrigin.ONS_PUBLICO, "medido"),
+    ("capacity_mw", "asset_capacity_unavailable_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
+    **{
+        (field_name, "ons_materialized_asset_v1"): (DataOrigin.ONS_PUBLICO, "medido")
+        for field_name in ("asset_id", "name", "technology", "ons_group", "connection_point")
+    },
     ("total_curtailed_energy", "curtailed_energy_sum_v1"): (
         DataOrigin.PROXY_CALCULADO,
         "calculado",
@@ -139,6 +152,10 @@ _SERVER_PROVENANCE_CONTRACTS: dict[
         DataOrigin.PROXY_CALCULADO,
         "calculado",
     ),
+    ("difference_from_baseline", "maintenance_difference_v1"): (
+        DataOrigin.PROXY_CALCULADO,
+        "calculado",
+    ),
     ("residual_exposure_source", "curtailed_energy_sum_v1"): (
         DataOrigin.PROXY_CALCULADO,
         "calculado",
@@ -156,9 +173,331 @@ _SERVER_PROVENANCE_CONTRACTS: dict[
 }
 
 
+def _json_context(kind: str, **values: object) -> str:
+    return json.dumps({"kind": kind, **values}, sort_keys=True, separators=(",", ":"))
+
+
+def _candidate_from_repository(identity: dict, items: list[dict]) -> EvidenceProvenance | None:
+    """Regenerate a canonical emitted fact from current repository rows."""
+
+    field = identity["field"]
+    method = identity["method"]
+    context = identity["context"]
+    hashes = identity["sources"]
+    limitation = "Linhagem de campo da materialização; o manifesto bruto permanece privado no S3."
+
+    if method in {
+        "ons_materialized_asset_v1",
+        "ons_capacity_source_v1",
+        "asset_capacity_unavailable_v1",
+    }:
+        item = repository.get_asset(context)
+        if item is None:
+            return None
+        asset = materialized_asset(item)
+        return asset.field_provenance.get(field)
+
+    exposure_match = re.fullmatch(
+        r"(?P<asset>[^:]+):(?P<start>\d{4}-\d{2}-\d{2}):"
+        r"(?P<end>\d{4}-\d{2}-\d{2}):(?P<reason>all|ENE|REL|CNF)",
+        context,
+    )
+    if field == "total_curtailed_energy" and method == "curtailed_energy_sum_v1":
+        if exposure_match is None:
+            return None
+        start = date.fromisoformat(exposure_match["start"])
+        end = date.fromisoformat(exposure_match["end"])
+        reason = exposure_match["reason"]
+        exposure = repository.get_exposure(
+            exposure_match["asset"], start, end, None if reason == "all" else reason
+        )
+        if exposure is None:
+            return None
+        return _field_provenance(
+            field_name=field,
+            method_version=method,
+            context=context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=[
+                "Agregado mensal materializado de dados públicos do ONS; períodos mensais "
+                "sobrepostos são incluídos integralmente."
+            ],
+            source_hashes=exposure["source_sha256s"],
+            source_item=exposure["items"][0],
+            source_uri=f"curtailess://assets/{exposure_match['asset']}/exposure",
+            observed_at=max(_aware(item["period_end"]) for item in exposure["items"]),
+            valid_from=datetime.combine(start, datetime.min.time(), tzinfo=UTC),
+            valid_to=datetime.combine(end, datetime.max.time(), tzinfo=UTC),
+        )
+
+    if field == "residual_exposure_source" and method == "curtailed_energy_sum_v1":
+        item = items[0]
+        expected_context = f"{item['asset_id']}:{item['period']}"
+        if context != expected_context:
+            return None
+        return _field_provenance(
+            field_name=field,
+            method_version=method,
+            context=context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=["Agregado mensal curado e calculado a partir de observações públicas."],
+            source_hashes=hashes,
+            source_item=item,
+            source_uri=f"curtailess://assets/{item['asset_id']}/materialized-exposure",
+        )
+
+    try:
+        structured = json.loads(context)
+    except (TypeError, json.JSONDecodeError):
+        structured = None
+    if isinstance(structured, dict) and structured.get("kind") == "historical_window":
+        try:
+            asset_id = structured["asset_id"]
+            start = datetime.fromisoformat(structured["start"])
+            end = datetime.fromisoformat(structured["end"])
+            reason = structured["reason"]
+            duration = int((end - start).total_seconds() / 3600)
+        except (KeyError, TypeError, ValueError):
+            return None
+        if reason not in {None, "ENE", "REL", "CNF"} or duration <= 0:
+            return None
+        asset_item = repository.get_asset(asset_id)
+        if asset_item is None:
+            return None
+        windows = repository.get_historical_windows(
+            asset_id, start.date(), end.date(), duration, reason
+        )
+        window = next(
+            (
+                value
+                for value in windows
+                if value["start"] == start
+                and value["end"] == end
+                and value["method"] == method
+                and value["source_sha256"] in hashes
+            ),
+            None,
+        )
+        if window is None:
+            return None
+        return _field_provenance(
+            field_name=field,
+            method_version=method,
+            context=context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=[
+                "Sinal derivado da taxa mensal histórica materializada; não é previsão "
+                "operacional ex ante nem preserva a distribuição intramensal."
+            ],
+            source_hashes=[window["source_sha256"]],
+            source_item=asset_item,
+            source_uri=f"curtailess://assets/{asset_id}/windows",
+        )
+
+    if isinstance(structured, dict) and structured.get("kind") == "maintenance_rank":
+        try:
+            asset_id = structured["asset_id"]
+            candidate_start = datetime.fromisoformat(structured["candidate_start"])
+            candidate_end = datetime.fromisoformat(structured["candidate_end"])
+            baseline_start = datetime.fromisoformat(structured["baseline_start"])
+            request_start = date.fromisoformat(structured["request_start"])
+            request_end = date.fromisoformat(structured["request_end"])
+            input_ids = structured["input_evidence_ids"]
+            duration = int((candidate_end - candidate_start).total_seconds() / 3600)
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not isinstance(input_ids, dict) or duration <= 0:
+            return None
+        asset_item = repository.get_asset(asset_id)
+        if asset_item is None:
+            return None
+        candidates = repository.get_historical_windows(
+            asset_id, request_start, request_end, duration
+        )
+        candidate = next(
+            (
+                value
+                for value in candidates
+                if value["start"] == candidate_start and value["end"] == candidate_end
+            ),
+            None,
+        )
+        if candidate is None:
+            return None
+        baseline_candidate = min(candidates, key=lambda value: abs(value["start"] - baseline_start))
+        rank_limitation = (
+            "Ranking baseado em taxa mensal histórica materializada do ONS: não é previsão "
+            "operacional e não preserva a distribuição intramensal; não coordena nem revela "
+            "manutenções de terceiros."
+        )
+
+        def energy_provenance(value: dict) -> EvidenceProvenance:
+            return _field_provenance(
+                field_name="expected_curtailed_energy",
+                method_version=value["method"],
+                context=_json_context(
+                    "maintenance_rank",
+                    asset_id=asset_id,
+                    candidate_start=value["start"].isoformat(),
+                    candidate_end=value["end"].isoformat(),
+                    baseline_start=baseline_start.isoformat(),
+                    request_start=request_start.isoformat(),
+                    request_end=request_end.isoformat(),
+                    input_evidence_ids=input_ids,
+                ),
+                origin=DataOrigin.PROXY_CALCULADO,
+                limitations=[rank_limitation],
+                source_hashes=[value["source_sha256"]],
+                source_item=asset_item,
+                source_uri=f"curtailess://maintenance/{asset_id}/rank",
+            )
+
+        energy = energy_provenance(candidate)
+        baseline_energy = energy_provenance(baseline_candidate)
+        if method.startswith("monthly_observed_") and field == "expected_curtailed_energy":
+            return energy
+        if method == "opportunity_cost_v1" and field == "opportunity_cost":
+            parents = [energy.evidence_id, input_ids.get("energy_price", "")]
+            source_hashes = [candidate["source_sha256"]]
+        elif method == "maintenance_difference_v1" and field in {
+            "difference_from_baseline",
+            "difference_from_baseline_mwh",
+        }:
+            parents = [energy.evidence_id, baseline_energy.evidence_id]
+            source_hashes = [candidate["source_sha256"], baseline_candidate["source_sha256"]]
+        elif method in {"maintenance_rank_v1", "maintenance_window_boundary_v1"}:
+            parents = [energy.evidence_id, *input_ids.values()]
+            source_hashes = [candidate["source_sha256"]]
+        else:
+            return None
+        if any(not parent for parent in parents):
+            return None
+        return _field_provenance(
+            field_name=field,
+            method_version=method,
+            context=context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=[rank_limitation],
+            source_hashes=source_hashes,
+            source_item=asset_item,
+            source_uri=f"curtailess://maintenance/{asset_id}/rank",
+            parent_evidence_ids=parents,
+        )
+
+    if isinstance(structured, dict) and structured.get("kind") == "bess_screen":
+        asset_id = structured.get("asset_id")
+        parent_ids = structured.get("parent_evidence_ids")
+        if not isinstance(asset_id, str) or not isinstance(parent_ids, list):
+            return None
+        item = repository.get_asset(asset_id)
+        if item is None or [item["source_sha256"]] != hashes:
+            return None
+        source_observation = _field_provenance(
+            field_name="residual_exposure_source",
+            method_version="curtailed_energy_sum_v1",
+            context=f"{asset_id}:{item['period']}",
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=["Agregado mensal curado e calculado a partir de observações públicas."],
+            source_hashes=hashes,
+            source_item=item,
+            source_uri=f"curtailess://assets/{asset_id}/materialized-exposure",
+        )
+        if source_observation.evidence_id not in parent_ids:
+            return None
+        return _field_provenance(
+            field_name=field,
+            method_version=method,
+            context=context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=[
+                "Triagem determinística sobre exposição histórica: não é dimensionamento, "
+                "previsão de despacho ou garantia de corte evitado."
+            ],
+            source_hashes=hashes,
+            source_item=item,
+            source_uri=f"curtailess://bess/{asset_id}/screen",
+            parent_evidence_ids=parent_ids,
+        )
+
+    # Point-context facts can be regenerated from the current point aggregation.
+    if method in {"point_context_v1", "historical_simultaneity_v1"}:
+        asset_id = context.split(":", 1)[0]
+        item = repository.get_asset(asset_id)
+        point = repository.get_point_context(asset_id)
+        if item is None or point is None:
+            return None
+        expected_context = (
+            f"{asset_id}:{point['connection_point']}:{point['period_start']}:{point['period_end']}"
+        )
+        if context != expected_context:
+            return None
+        return _field_provenance(
+            field_name=field,
+            method_version=method,
+            context=context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=[
+                "Agregado materializado sem nomes ou planos de terceiros; conexões cadastrais "
+                "não comprovam limite, folga ou causalidade elétrica."
+            ],
+            source_hashes=point["source_sha256s"],
+            source_item=item,
+            source_uri=f"curtailess://assets/{asset_id}/point-context",
+        )
+
+    # Window facts must map to a real row start and a positive duration.
+    if method.startswith("monthly_observed_"):
+        item = items[0]
+        asset_id = item["asset_id"]
+        prefix = f"{asset_id}:"
+        if not context.startswith(prefix):
+            return None
+        remainder = context[len(prefix) :]
+        timestamps = re.fullmatch(r"(.+?\+00:00):(.+?\+00:00)", remainder)
+        if timestamps is None:
+            return None
+        start = datetime.fromisoformat(timestamps[1])
+        end = datetime.fromisoformat(timestamps[2])
+        duration = int((end - start).total_seconds() / 3600)
+        if duration <= 0:
+            return None
+        windows = repository.get_historical_windows(
+            asset_id,
+            start.date(),
+            end.date(),
+            duration,
+            "ENE" if method.endswith("reason_rate_prorated_to_window_v1") else None,
+        )
+        if not any(
+            window["start"] == start
+            and window["end"] == end
+            and window["source_sha256"] in hashes
+            and window["method"] == method
+            for window in windows
+        ):
+            return None
+        return _field_provenance(
+            field_name=field,
+            method_version=method,
+            context=context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=[limitation],
+            source_hashes=hashes,
+            source_item=item,
+            source_uri=f"curtailess://assets/{asset_id}/windows",
+        )
+    return None
+
+
 def _resolve_server_evidence(
     evidence_id: str,
-) -> tuple[dict, DataOrigin, Literal["medido", "calculado"], list[dict]]:
+) -> tuple[
+    dict,
+    DataOrigin,
+    Literal["medido", "calculado"],
+    list[dict],
+    EvidenceProvenance,
+]:
     try:
         identity = parse_evidence_id(evidence_id)
     except ValueError as exc:
@@ -177,7 +516,14 @@ def _resolve_server_evidence(
     source_items = [repository.get_provenance(value) for value in source_hashes]
     if any(item is None for item in source_items):
         raise HTTPException(status_code=404, detail="Proveniência não encontrada.")
-    return identity, *contract, [item for item in source_items if item is not None]
+    materialized_items = [item for item in source_items if item is not None]
+    candidate = _candidate_from_repository(identity, materialized_items)
+    if candidate is None or candidate.evidence_id != evidence_id:
+        raise HTTPException(status_code=404, detail="Fato de proveniência não materializado.")
+    origin, classification = contract
+    if candidate.origin is not origin:
+        raise HTTPException(status_code=404, detail="Origem de proveniência inconsistente.")
+    return identity, origin, classification, materialized_items, candidate
 
 
 def _validate_caller_provenance(provenances: dict[str, EvidenceProvenance]) -> None:
@@ -189,7 +535,7 @@ def _validate_caller_provenance(provenances: dict[str, EvidenceProvenance]) -> N
                 status_code=422, detail="Proveniência simulada não é entrada confiável."
             )
         try:
-            identity, origin, _, _ = _resolve_server_evidence(provenance.evidence_id)
+            identity, origin, _, _, candidate = _resolve_server_evidence(provenance.evidence_id)
         except HTTPException as exc:
             raise HTTPException(
                 status_code=422,
@@ -200,6 +546,7 @@ def _validate_caller_provenance(provenances: dict[str, EvidenceProvenance]) -> N
             or provenance.field_name != identity["field"]
             or provenance.method_version != identity["method"]
             or tuple(identity["sources"]) != provenance.source_sha256s
+            or provenance != candidate
         ):
             raise HTTPException(
                 status_code=422,
@@ -207,24 +554,35 @@ def _validate_caller_provenance(provenances: dict[str, EvidenceProvenance]) -> N
             )
 
 
-_DEMO_CAPACITY_URI = "curtailess://demo/assets/demo-wind-ne-001/capacity_mw"
+_DEMO_FIELDS = {
+    field_name: _field_provenance(
+        field_name=field_name,
+        method_version="demo_fixture_v1",
+        context="demo-wind-ne-001",
+        origin=DataOrigin.SIMULADO,
+        limitations=["Campo fictício usado somente na demonstração."],
+        source_uri=f"curtailess://demo/assets/demo-wind-ne-001/{field_name}",
+        effective_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    for field_name in (
+        "asset_id",
+        "name",
+        "technology",
+        "capacity_mw",
+        "ons_group",
+        "connection_point",
+    )
+}
 DEMO_ASSET = Asset(
     asset_id="demo-wind-ne-001",
     name="Ativo eólico de demonstração",
     technology="wind",
     capacity_mw=100.0,
-    capacity_provenance=_field_provenance(
-        field_name="capacity_mw",
-        method_version="demo_fixture_v1",
-        context="demo-wind-ne-001",
-        origin=DataOrigin.SIMULADO,
-        limitations=["Capacidade fictícia usada somente na demonstração."],
-        source_uri=_DEMO_CAPACITY_URI,
-        effective_at=datetime(2026, 1, 1, tzinfo=UTC),
-    ),
+    capacity_provenance=_DEMO_FIELDS["capacity_mw"],
     ons_group="Conjunto anonimizado NE-001",
     connection_point="Ponto cadastral anonimizado NE-001",
     data_mode="demo",
+    field_provenance=_DEMO_FIELDS,
 )
 
 app = FastAPI(
@@ -267,33 +625,83 @@ def get_demo_asset(asset_id: str) -> Asset:
     return DEMO_ASSET
 
 
+def _optional_aware(item: dict, key: str) -> datetime | None:
+    value = item.get(key)
+    return _aware(value) if value else None
+
+
 def materialized_asset(item: dict) -> Asset:
+    asset_id = item["asset_id"]
     capacity = item.get("capacity_mw")
+    common_limitations = ["Campo cadastral materializado de fonte pública do ONS."]
+    field_provenance = {
+        field_name: _field_provenance(
+            field_name=field_name,
+            method_version="ons_materialized_asset_v1",
+            context=asset_id,
+            origin=DataOrigin.ONS_PUBLICO,
+            limitations=common_limitations,
+            source_hashes=[item["source_sha256"]],
+            source_item=item,
+            source_uri="s3://ons-aws-prod-opendata/dataset/restricao_coff_eolica_tm/",
+        )
+        for field_name in ("asset_id", "name", "technology", "ons_group", "connection_point")
+    }
     capacity_provenance = None
     if capacity is not None:
+        capacity_limitations = list(item.get("capacity_limitations", []))
+        capacity_valid_from = _optional_aware(item, "capacity_valid_from")
+        capacity_valid_to = _optional_aware(item, "capacity_valid_to")
+        capacity_observed_at = _optional_aware(item, "capacity_observed_at")
+        capacity_effective_at = _optional_aware(item, "capacity_effective_at")
+        if not capacity_observed_at and not capacity_effective_at:
+            capacity_limitations.append(
+                "Metadados de validade temporal da fonte de capacidade indisponíveis; "
+                "validade aberta/desconhecida."
+            )
+        if bool(capacity_valid_from) != bool(capacity_valid_to):
+            capacity_limitations.append(
+                "Intervalo temporal da capacidade incompleto; validade tratada como "
+                "aberta/desconhecida."
+            )
+            capacity_valid_from = capacity_valid_to = None
         capacity_provenance = _field_provenance(
             field_name="capacity_mw",
             method_version="ons_capacity_source_v1",
-            context=item["asset_id"],
+            context=asset_id,
             origin=DataOrigin.ONS_PUBLICO,
-            limitations=item.get("capacity_limitations", []),
+            limitations=capacity_limitations,
             source_hashes=[item["capacity_source_sha256"]],
-            source_item={
-                **item,
-                "source_key": item["capacity_source_key"],
-                "source_sha256": item["capacity_source_sha256"],
-            },
             source_uri="s3://ons-aws-prod-opendata/dataset/capacidade-geracao/",
+            source_key=item["capacity_source_key"],
+            use_source_period=False,
+            observed_at=capacity_observed_at,
+            effective_at=capacity_effective_at,
+            valid_from=capacity_valid_from,
+            valid_to=capacity_valid_to,
+        )
+        field_provenance["capacity_mw"] = capacity_provenance
+    else:
+        field_provenance["capacity_mw"] = _field_provenance(
+            field_name="capacity_mw",
+            method_version="asset_capacity_unavailable_v1",
+            context=asset_id,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=["Capacidade não materializada para este ativo."],
+            source_hashes=[item["source_sha256"]],
+            source_item=item,
+            source_uri=f"curtailess://assets/{asset_id}",
         )
     return Asset(
-        asset_id=item["asset_id"],
+        asset_id=asset_id,
         name=item["asset_name"],
         technology="wind",
         capacity_mw=capacity,
         capacity_provenance=capacity_provenance,
-        ons_group=item["asset_id"],
+        ons_group=asset_id,
         connection_point=item["point_id"],
         data_mode="ons_materialized",
+        field_provenance=field_provenance,
     )
 
 
@@ -348,20 +756,26 @@ def get_data_quality(asset_id: str) -> DataQualityResponse:
     tags=["audit"],
 )
 def get_provenance(provenance_id: str) -> ProvenanceResponse:
-    identity, origin, classification, items = _resolve_server_evidence(provenance_id)
+    identity, origin, classification, items, provenance = _resolve_server_evidence(provenance_id)
     source_hashes = identity["sources"]
     item = items[0]
-    limitation = "Linhagem de campo da materialização; o manifesto bruto permanece privado no S3."
-    provenance = _field_provenance(
-        field_name=identity["field"],
-        method_version=identity["method"],
-        context=identity["context"],
-        origin=origin,
-        limitations=[limitation],
-        source_hashes=source_hashes,
-        source_item=item,
-        source_uri=f"curtailess://evidence/{provenance_id}",
+    source_key = provenance.source_key or item["source_key"]
+    dataset = next(
+        (
+            dataset_id
+            for dataset_id in (
+                "capacidade-geracao",
+                "usina_conjunto",
+                "restricao_coff_eolica_tm",
+                "restricao_coff_fotovoltaica_tm",
+                "programacao_x_previsao",
+                "geracao_usina_2_ho",
+            )
+            if f"/{dataset_id}/" in f"/{source_key}"
+        ),
+        "restricao_coff_eolica_tm",
     )
+    limitation = "Linhagem de campo da materialização; o manifesto bruto permanece privado no S3."
     asset_ids = sorted(
         {
             asset_id
@@ -374,13 +788,18 @@ def get_provenance(provenance_id: str) -> ProvenanceResponse:
         evidence_id=provenance_id,
         classification=classification,
         origin=provenance.origin,
-        source="ONS/restricao_coff_eolica_tm",
-        source_bucket=item.get("source_bucket"),
-        source_key=item["source_key"],
+        dataset=dataset,
+        source=f"ONS/{dataset}",
+        source_bucket=item.get("source_bucket", "ons-aws-prod-opendata"),
+        source_key=source_key,
         source_sha256=source_hashes[0],
         source_sha256s=source_hashes,
-        data_version=",".join(sorted({source_item["period"] for source_item in items})),
-        method=item["method"],
+        data_version=(
+            item.get("capacity_data_version", "snapshot")
+            if dataset == "capacidade-geracao"
+            else ",".join(sorted({source_item["period"] for source_item in items}))
+        ),
+        method=item.get("capacity_method", item.get("method", identity["method"])),
         method_version=identity["method"],
         field_name=identity["field"],
         observed_at=provenance.observed_at,
@@ -388,7 +807,8 @@ def get_provenance(provenance_id: str) -> ProvenanceResponse:
         valid_from=provenance.valid_from,
         valid_to=provenance.valid_to,
         asset_ids=asset_ids,
-        limitations=[limitation],
+        parent_evidence_ids=list(provenance.parent_evidence_ids),
+        limitations=provenance.limitations or [limitation],
         provenance=provenance,
     )
 
@@ -575,7 +995,13 @@ def get_asset_windows(
         provenance = _field_provenance(
             field_name="expected_curtailed_energy",
             method_version=window["method"],
-            context=f"{asset_id}:{window['start'].isoformat()}:{window['end'].isoformat()}",
+            context=_json_context(
+                "historical_window",
+                asset_id=asset_id,
+                start=window["start"].isoformat(),
+                end=window["end"].isoformat(),
+                reason=reason,
+            ),
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[window["source_sha256"]],
@@ -656,15 +1082,28 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
     baseline_energy = baseline_candidate["curtailed_mwh"]
     decision_parent_ids = [item.evidence_id for item in input_provenance.values()]
 
-    def candidate_energy_provenance(candidate: dict) -> EvidenceProvenance:
-        candidate_context = (
-            f"{request.asset_id}:{candidate['start'].isoformat()}:"
-            f"{candidate['end'].isoformat()}:{baseline.isoformat()}"
+    input_evidence_ids = {
+        field_name: provenance.evidence_id for field_name, provenance in input_provenance.items()
+    }
+
+    def candidate_context(candidate: dict) -> str:
+        return _json_context(
+            "maintenance_rank",
+            asset_id=request.asset_id,
+            candidate_start=candidate["start"].isoformat(),
+            candidate_end=candidate["end"].isoformat(),
+            baseline_start=baseline.isoformat(),
+            request_start=request.start.isoformat(),
+            request_end=request.end.isoformat(),
+            input_evidence_ids=input_evidence_ids,
         )
+
+    def candidate_energy_provenance(candidate: dict) -> EvidenceProvenance:
+        context = candidate_context(candidate)
         return _field_provenance(
             field_name="expected_curtailed_energy",
             method_version=candidate["method"],
-            context=candidate_context,
+            context=context,
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[candidate["source_sha256"]],
@@ -676,15 +1115,12 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
     ranked_windows = []
     for rank, candidate in enumerate(candidates, start=1):
         energy = candidate["curtailed_mwh"]
-        context = (
-            f"{request.asset_id}:{candidate['start'].isoformat()}:"
-            f"{candidate['end'].isoformat()}:{baseline.isoformat()}"
-        )
+        context = candidate_context(candidate)
         energy_provenance = candidate_energy_provenance(candidate)
         cost_provenance = _field_provenance(
             field_name="opportunity_cost",
             method_version="opportunity_cost_v1",
-            context=f"{context}:{request.energy_price.provenance.evidence_id}",
+            context=context,
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[candidate["source_sha256"]],
@@ -695,8 +1131,22 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
                 request.energy_price.provenance.evidence_id,
             ],
         )
-        difference_provenance = _field_provenance(
+        difference_mwh_provenance = _field_provenance(
             field_name="difference_from_baseline_mwh",
+            method_version="maintenance_difference_v1",
+            context=context,
+            origin=DataOrigin.PROXY_CALCULADO,
+            limitations=[limitation],
+            source_hashes=[candidate["source_sha256"], baseline_candidate["source_sha256"]],
+            source_item=asset_item,
+            source_uri=f"curtailess://maintenance/{request.asset_id}/rank",
+            parent_evidence_ids=[
+                energy_provenance.evidence_id,
+                baseline_energy_provenance.evidence_id,
+            ],
+        )
+        difference_provenance = _field_provenance(
+            field_name="difference_from_baseline",
             method_version="maintenance_difference_v1",
             context=context,
             origin=DataOrigin.PROXY_CALCULADO,
@@ -795,7 +1245,8 @@ def rank_maintenance(request: MaintenanceRankRequest) -> MaintenanceRankResponse
                     "end": end_provenance,
                     "expected_curtailed_energy": energy_provenance,
                     "opportunity_cost": cost_provenance,
-                    "difference_from_baseline_mwh": difference_provenance,
+                    "difference_from_baseline_mwh": difference_mwh_provenance,
+                    "difference_from_baseline": difference_provenance,
                 },
             )
         )
@@ -843,11 +1294,30 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
         source_item=item,
         source_uri=f"curtailess://assets/{request.asset_id}/materialized-exposure",
     )
-    simulation_inputs = [
-        request.maintenance_result_id,
-        *(provenance.evidence_id for provenance in input_provenance.values()),
-    ]
-    input_fingerprint = hashlib.sha256("|".join(sorted(simulation_inputs)).encode()).hexdigest()
+    output_parent_ids = sorted(
+        {
+            source_observation.evidence_id,
+            *(provenance.evidence_id for provenance in input_provenance.values()),
+        }
+    )
+    output_context = _json_context(
+        "bess_screen",
+        asset_id=request.asset_id,
+        maintenance_result_id=request.maintenance_result_id,
+        parent_evidence_ids=output_parent_ids,
+        inputs={
+            field_name: getattr(request, field_name)
+            for field_name in (
+                "power_mw",
+                "energy_mwh",
+                "capex_brl",
+                "annualized_cost_brl",
+                "round_trip_efficiency",
+                "cycles_per_year",
+                "energy_price_brl_mwh",
+            )
+        },
+    )
     period = Period(
         start=date.fromisoformat(item["period_start"][:10]),
         end=date.fromisoformat(item["period_end"][:10]),
@@ -857,16 +1327,13 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
         return _field_provenance(
             field_name=field_name,
             method_version=method_version,
-            context=(f"{request.asset_id}:{request.maintenance_result_id}:{input_fingerprint}"),
+            context=output_context,
             origin=DataOrigin.PROXY_CALCULADO,
             limitations=[limitation],
             source_hashes=[item["source_sha256"]],
             source_item=item,
             source_uri=f"curtailess://bess/{request.asset_id}/screen",
-            parent_evidence_ids=[
-                source_observation.evidence_id,
-                *(provenance.evidence_id for provenance in input_provenance.values()),
-            ],
+            parent_evidence_ids=output_parent_ids,
         )
 
     output_values = {
@@ -913,6 +1380,7 @@ def screen_bess(request: BessScreenRequest) -> BessScreenResponse:
         annual_benefit_brl=round(annual_benefit, 2),
         annual_net_benefit_brl=round(annual_net_benefit, 2),
         preliminary_viable=annual_net_benefit > 0,
+        input_provenance=input_provenance,
         source_observation=source_observation,
         output_evidence=output_evidence,
         missing_data=[

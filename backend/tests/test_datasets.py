@@ -70,7 +70,27 @@ def test_monthly_constrained_off_period_parsing_is_dataset_specific() -> None:
         == "2024-04"
     )
     with pytest.raises(ValueError, match="não corresponde ao padrão"):
-        wind.period_parser("RESTRICAO_COFF_FOTOVOLTAICA_2026_09.parquet")
+        wind.period_parser(
+            "dataset/restricao_coff_eolica_tm/RESTRICAO_COFF_FOTOVOLTAICA_2026_09.parquet"
+        )
+
+
+@pytest.mark.parametrize("dataset_id", sorted(DATASET_REGISTRY))
+def test_period_parsers_reject_valid_basename_under_another_prefix(dataset_id: str) -> None:
+    spec = get_dataset_spec(dataset_id)
+    examples = {
+        "restricao_coff_eolica_tm": "RESTRICAO_COFF_EOLICA_2026_09.parquet",
+        "restricao_coff_fotovoltaica_tm": "RESTRICAO_COFF_FOTOVOLTAICA_2026_09.parquet",
+        "programacao_x_previsao": "PROGRAMACAO_X_PREVISAO_2026_09_01.parquet",
+        "geracao_usina_2_ho": "GERACAO_USINA-2_2026_09.parquet",
+        "usina_conjunto": "RELACIONAMENTO_USINA_CONJUNTO.parquet",
+        "capacidade-geracao": "CAPACIDADE_GERACAO.parquet",
+    }
+
+    with pytest.raises(ValueError, match="prefixo ONS"):
+        spec.period_parser(f"dataset/attacker/{examples[dataset_id]}")
+    with pytest.raises(ValueError, match="prefixo ONS"):
+        spec.period_parser(examples[dataset_id])
 
 
 def test_daily_and_yearly_period_parsing_matches_verified_ons_names() -> None:
@@ -112,9 +132,9 @@ def test_generation_period_parser_rejects_unverified_granularity_for_year() -> N
     parser = get_dataset_spec("geracao_usina_2_ho").period_parser
 
     with pytest.raises(ValueError, match="até 2021"):
-        parser("GERACAO_USINA-2_2025.parquet")
+        parser("dataset/geracao_usina_2_ho/GERACAO_USINA-2_2025.parquet")
     with pytest.raises(ValueError, match="desde 2022"):
-        parser("GERACAO_USINA-2_2021_09.parquet")
+        parser("dataset/geracao_usina_2_ho/GERACAO_USINA-2_2021_09.parquet")
 
 
 def test_capacity_identity_uses_verified_ceg_not_absent_id_ons_column() -> None:

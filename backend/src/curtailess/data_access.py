@@ -126,7 +126,8 @@ class ExposureRepository:
         items = [
             item
             for item in response.get("Items", [])
-            if "#" not in item["period"] and item.get("source_sha256") == source_sha256
+            if "#" not in item["period"]
+            and source_sha256 in {item.get("source_sha256"), item.get("capacity_source_sha256")}
         ]
         if not items:
             return None

@@ -43,6 +43,8 @@ def bess_input_provenance() -> dict:
     return {
         field_name: client_provenance(field_name)
         for field_name in (
+            "asset_id",
+            "maintenance_result_id",
             "power_mw",
             "energy_mwh",
             "capex_brl",
@@ -113,19 +115,22 @@ def test_list_assets_returns_materialized_ons_assets(monkeypatch) -> None:
     response = client.get("/v1/assets")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "items": [
-            {
-                "asset_id": "CJU_BAOUR",
-                "name": "Conj. Ourolândia II",
-                "technology": "wind",
-                "capacity_mw": None,
-                "capacity_provenance": None,
-                "ons_group": "CJU_BAOUR",
-                "connection_point": "BAOUR-500-A",
-                "data_mode": "ons_materialized",
-            }
-        ]
+    payload = response.json()["items"][0]
+    assert payload["asset_id"] == "CJU_BAOUR"
+    assert payload["name"] == "Conj. Ourolândia II"
+    assert payload["technology"] == "wind"
+    assert payload["capacity_mw"] is None
+    assert payload["capacity_provenance"] is None
+    assert payload["ons_group"] == "CJU_BAOUR"
+    assert payload["connection_point"] == "BAOUR-500-A"
+    assert payload["data_mode"] == "ons_materialized"
+    assert set(payload["field_provenance"]) == {
+        "asset_id",
+        "name",
+        "technology",
+        "capacity_mw",
+        "ons_group",
+        "connection_point",
     }
 
 
@@ -160,6 +165,22 @@ def test_get_asset_capacity_has_public_field_level_provenance(monkeypatch) -> No
     assert provenance["field_name"] == "capacity_mw"
     assert provenance["source_sha256"] == capacity_hash
     assert provenance["source_key"].endswith("CAPACIDADE_GERACAO.parquet")
+    assert provenance["observed_at"] is None
+    assert provenance["valid_from"] is None
+    assert provenance["valid_to"] is None
+    assert "temporal" in " ".join(provenance["limitations"]).lower()
+    assert set(payload["field_provenance"]) == {
+        "asset_id",
+        "name",
+        "technology",
+        "capacity_mw",
+        "ons_group",
+        "connection_point",
+    }
+    assert all(
+        value["field_name"] == field_name
+        for field_name, value in payload["field_provenance"].items()
+    )
 
 
 def test_get_asset_exposure_returns_materialized_ons_values(monkeypatch) -> None:
@@ -292,6 +313,16 @@ def test_get_provenance_returns_source_lineage(monkeypatch) -> None:
         "get_provenance",
         lambda source_sha256: MATERIALIZED_ITEM,
     )
+    monkeypatch.setattr(
+        main.repository,
+        "get_exposure",
+        lambda asset_id, start, end, reason=None: {
+            "curtailed_mwh": MATERIALIZED_ITEM["curtailed_mwh"],
+            "periods": [MATERIALIZED_ITEM["period"]],
+            "source_sha256s": [MATERIALIZED_ITEM["source_sha256"]],
+            "items": [MATERIALIZED_ITEM],
+        },
+    )
 
     evidence_id = main.build_evidence_id(
         MATERIALIZED_ITEM["source_sha256"],
@@ -316,7 +347,7 @@ def test_get_provenance_returns_source_lineage(monkeypatch) -> None:
     assert payload["field_name"] == "total_curtailed_energy"
     assert payload["provenance"]["evidence_id"] == evidence_id
     assert payload["valid_from"] == "2026-08-01T00:00:00Z"
-    assert payload["valid_to"] == "2026-08-31T23:30:00Z"
+    assert payload["valid_to"] == "2026-08-31T23:59:59.999999Z"
     assert payload["asset_ids"] == ["CJU_BAOUR"]
 
 
@@ -343,6 +374,65 @@ def test_get_provenance_rejects_forged_or_non_server_contracts(
     response = client.get(f"/v1/provenances/{forged_id}")
 
     assert response.status_code == 404
+
+
+def test_get_provenance_rejects_valid_hash_id_for_non_emitted_context(monkeypatch) -> None:
+    monkeypatch.setattr(main.repository, "get_provenance", lambda source_sha256: MATERIALIZED_ITEM)
+    forged_id = main.build_evidence_id(
+        MATERIALIZED_ITEM["source_sha256"],
+        "total_curtailed_energy",
+        "curtailed_energy_sum_v1",
+        "CJU_BAOUR:1900-01-01:1900-01-31:all",
+    )
+
+    response = client.get(f"/v1/provenances/{forged_id}")
+
+    assert response.status_code == 404
+
+
+def test_get_provenance_rejects_arbitrary_dataset_and_context_pairing(monkeypatch) -> None:
+    item = {
+        **MATERIALIZED_ITEM,
+        "capacity_mw": 87.5,
+        "capacity_source_key": "dataset/capacidade-geracao/CAPACIDADE_GERACAO.parquet",
+        "capacity_source_sha256": "b" * 64,
+    }
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: item)
+    monkeypatch.setattr(main.repository, "get_provenance", lambda source_sha256: item)
+    forged_id = main.build_evidence_id(
+        MATERIALIZED_ITEM["source_sha256"],
+        "capacity_mw",
+        "ons_capacity_source_v1",
+        "CJU_BAOUR",
+    )
+
+    response = client.get(f"/v1/provenances/{forged_id}")
+
+    assert response.status_code == 404
+
+
+def test_capacity_provenance_resolves_capacity_dataset_without_borrowed_dates(monkeypatch) -> None:
+    capacity_hash = "b" * 64
+    item = {
+        **MATERIALIZED_ITEM,
+        "capacity_mw": 87.5,
+        "capacity_source_key": "dataset/capacidade-geracao/CAPACIDADE_GERACAO.parquet",
+        "capacity_source_sha256": capacity_hash,
+    }
+    monkeypatch.setattr(main.repository, "get_asset", lambda asset_id: item)
+    monkeypatch.setattr(main.repository, "get_provenance", lambda source_sha256: item)
+    emitted = client.get("/v1/assets/CJU_BAOUR").json()["capacity_provenance"]
+
+    response = client.get(f"/v1/provenances/{emitted['evidence_id']}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dataset"] == "capacidade-geracao"
+    assert payload["source"] == "ONS/capacidade-geracao"
+    assert payload["source_key"] == item["capacity_source_key"]
+    assert payload["source_sha256"] == capacity_hash
+    assert payload["valid_from"] is None
+    assert payload["valid_to"] is None
 
 
 def test_get_point_context_returns_materialized_anonymized_aggregates(monkeypatch) -> None:
@@ -547,7 +637,7 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(monkeypatch) 
     assert evidence["provenance_id"].startswith("ev1.")
     assert window["difference_from_baseline"]["value"] == 12.0
     assert window["difference_from_baseline"]["provenance"]["field_name"] == (
-        "difference_from_baseline_mwh"
+        "difference_from_baseline"
     )
     ids = {
         evidence["provenance_id"],
@@ -562,7 +652,8 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(monkeypatch) 
         "duration_hours",
         "minimum_notice_hours",
         "baseline_window_start",
-        "constraints",
+        "weekdays_only",
+        "unavailable_periods",
         "energy_price",
     }
     assert all(
@@ -576,6 +667,7 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(monkeypatch) 
         "expected_curtailed_energy",
         "opportunity_cost",
         "difference_from_baseline_mwh",
+        "difference_from_baseline",
     }
     assert all(
         provenance["field_name"] == field_name
@@ -586,6 +678,12 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(monkeypatch) 
         window["expected_curtailed_energy"]["provenance_id"],
         payload["input_provenance"]["energy_price"]["evidence_id"],
     }
+    monkeypatch.setattr(main.repository, "get_provenance", lambda source_sha256: MATERIALIZED_ITEM)
+    for field_name, provenance in window["field_provenance"].items():
+        resolved = client.get(f"/v1/provenances/{provenance['evidence_id']}")
+        assert resolved.status_code == 200
+        assert resolved.json()["field_name"] == field_name
+        assert resolved.json()["parent_evidence_ids"] == provenance["parent_evidence_ids"]
     assert "não é previsão" in " ".join(payload["limitations"]).lower()
 
 
@@ -718,6 +816,7 @@ def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(monkeyp
     assert payload["annual_benefit_brl"] == 3400000.0
     assert payload["annual_net_benefit_brl"] == 3300000.0
     assert payload["preliminary_viable"] is True
+    assert set(payload["input_provenance"]) == set(bess_input_provenance())
     assert payload["source_observation"]["origin"] == "PROXY_CALCULADO"
     output_evidence = payload["output_evidence"]
     assert set(output_evidence) == {
@@ -747,6 +846,7 @@ def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(monkeyp
         assert provenance_response.status_code == 200
         assert provenance_response.json()["field_name"] == field_name
         assert provenance_response.json()["origin"] == "PROXY_CALCULADO"
+        assert set(provenance_response.json()["parent_evidence_ids"]) == expected_parents
     assert "soc_cronológico" in payload["missing_data"]
     assert "não é dimensionamento" in " ".join(payload["limitations"]).lower()
 
@@ -774,7 +874,18 @@ def test_bess_screen_accepts_legacy_payload_and_infers_client_lineage(monkeypatc
     parents = payload["output_evidence"]["annual_net_benefit_brl"]["provenance"][
         "parent_evidence_ids"
     ]
-    assert len(parents) == 8
+    assert len(parents) == 10
+    assert set(payload["input_provenance"]) == {
+        "asset_id",
+        "maintenance_result_id",
+        "power_mw",
+        "energy_mwh",
+        "capex_brl",
+        "annualized_cost_brl",
+        "round_trip_efficiency",
+        "cycles_per_year",
+        "energy_price_brl_mwh",
+    }
     assert all(not parent.startswith("ons:") for parent in parents)
     assert "inferida" in " ".join(payload["limitations"]).lower()
 

@@ -72,14 +72,24 @@ class DatasetSpec(BaseModel):
         return self
 
 
+def _require_prefix(source_key: str, expected_prefix: str) -> str:
+    path = PurePosixPath(source_key)
+    if not source_key.startswith(
+        expected_prefix
+    ) or path.parent.as_posix() != expected_prefix.rstrip("/"):
+        raise ValueError(f"{source_key!r} não pertence ao prefixo ONS {expected_prefix!r}")
+    return path.name
+
+
 def _dated_parser(
+    expected_prefix: str,
     filename_pattern: str,
     granularity: Literal["day", "month", "year"],
 ) -> Callable[[str], DatasetPeriod]:
     compiled = re.compile(filename_pattern)
 
     def parse(source_key: str) -> DatasetPeriod:
-        filename = PurePosixPath(source_key).name
+        filename = _require_prefix(source_key, expected_prefix)
         match = compiled.fullmatch(filename)
         if match is None:
             raise ValueError(f"{filename!r} não corresponde ao padrão ONS {filename_pattern!r}")
@@ -113,12 +123,12 @@ def _dated_parser(
 
 
 def _generation_period_parser(source_key: str) -> DatasetPeriod:
+    expected_prefix = "dataset/geracao_usina_2_ho/"
     filename_pattern = r"GERACAO_USINA-2_(?P<year>\d{4})(?:_(?P<month>\d{2}))?\.parquet"
-    match = re.fullmatch(filename_pattern, PurePosixPath(source_key).name)
+    filename = _require_prefix(source_key, expected_prefix)
+    match = re.fullmatch(filename_pattern, filename)
     if match is None:
-        raise ValueError(
-            f"{PurePosixPath(source_key).name!r} não corresponde ao padrão ONS {filename_pattern!r}"
-        )
+        raise ValueError(f"{filename!r} não corresponde ao padrão ONS {filename_pattern!r}")
     year = int(match.group("year"))
     month_text = match.group("month")
     if month_text is None and year > 2021:
@@ -141,9 +151,11 @@ def _generation_period_parser(source_key: str) -> DatasetPeriod:
     )
 
 
-def _snapshot_parser(expected_filename: str) -> Callable[[str], DatasetPeriod]:
+def _snapshot_parser(
+    expected_prefix: str, expected_filename: str
+) -> Callable[[str], DatasetPeriod]:
     def parse(source_key: str) -> DatasetPeriod:
-        filename = PurePosixPath(source_key).name
+        filename = _require_prefix(source_key, expected_prefix)
         if filename != expected_filename:
             raise ValueError(
                 f"{filename!r} não corresponde ao padrão ONS estático {expected_filename!r}"
@@ -184,6 +196,7 @@ _DATASETS = (
         grain="plant_half_hour",
         filename_pattern=r"RESTRICAO_COFF_EOLICA_(?P<year>\d{4})_(?P<month>\d{2})\.parquet",
         period_parser=_dated_parser(
+            "dataset/restricao_coff_eolica_tm/",
             r"RESTRICAO_COFF_EOLICA_(?P<year>\d{4})_(?P<month>\d{2})\.parquet",
             "month",
         ),
@@ -202,6 +215,7 @@ _DATASETS = (
         grain="plant_half_hour",
         filename_pattern=(r"RESTRICAO_COFF_FOTOVOLTAICA_(?P<year>\d{4})_(?P<month>\d{2})\.parquet"),
         period_parser=_dated_parser(
+            "dataset/restricao_coff_fotovoltaica_tm/",
             r"RESTRICAO_COFF_FOTOVOLTAICA_(?P<year>\d{4})_(?P<month>\d{2})\.parquet",
             "month",
         ),
@@ -222,6 +236,7 @@ _DATASETS = (
             r"PROGRAMACAO_X_PREVISAO_(?P<year>\d{4})_(?P<month>\d{2})_(?P<day>\d{2})\.parquet"
         ),
         period_parser=_dated_parser(
+            "dataset/programacao_x_previsao/",
             r"PROGRAMACAO_X_PREVISAO_(?P<year>\d{4})_(?P<month>\d{2})_"
             r"(?P<day>\d{2})\.parquet",
             "day",
@@ -272,7 +287,9 @@ _DATASETS = (
         technology="all",
         grain="plant_group_relationship",
         filename_pattern=r"RELACIONAMENTO_USINA_CONJUNTO\.parquet",
-        period_parser=_snapshot_parser("RELACIONAMENTO_USINA_CONJUNTO.parquet"),
+        period_parser=_snapshot_parser(
+            "dataset/usina_conjunto/", "RELACIONAMENTO_USINA_CONJUNTO.parquet"
+        ),
         required_columns=(
             "id_ons_conjunto",
             "id_ons_usina",
@@ -300,7 +317,7 @@ _DATASETS = (
         technology="all",
         grain="generating_unit",
         filename_pattern=r"CAPACIDADE_GERACAO\.parquet",
-        period_parser=_snapshot_parser("CAPACIDADE_GERACAO.parquet"),
+        period_parser=_snapshot_parser("dataset/capacidade-geracao/", "CAPACIDADE_GERACAO.parquet"),
         required_columns=(
             "ceg",
             "nom_usina",
