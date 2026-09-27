@@ -9,10 +9,10 @@ from collections.abc import Iterator
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
-from pathlib import PurePosixPath
 from typing import Any
 
 import boto3
+from botocore.exceptions import ClientError
 
 from curtailess.datasets import DATASET_REGISTRY, DatasetPeriod, DatasetSpec, get_dataset_spec
 from curtailess.ingestion_state import (
@@ -569,6 +569,61 @@ def discovery_handler(
     return result
 
 
+def _content_addressed_raw_key(dataset: str, period: DatasetPeriod, digest: str) -> str:
+    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+        raise ValueError("invalid content SHA-256")
+    if period.start is None:
+        partition = "source_period=snapshot"
+    else:
+        partition = f"source_year={period.start.year:04d}/source_month={period.start.month:02d}"
+    return f"raw/ons/{dataset}/{partition}/sha256={digest[:2]}/{digest}.parquet"
+
+
+def _immutable_manifest_key(dataset: str, fingerprint: str) -> str:
+    return f"manifests/{dataset}/source_fingerprint={fingerprint}.json"
+
+
+def _is_missing_object(exc: ClientError) -> bool:
+    return exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}
+
+
+def _verify_source_response(response: dict[str, Any], identity: dict[str, object]) -> None:
+    response_etag = str(response["ETag"]).strip('"')
+    if response_etag != identity["source_etag"]:
+        raise RuntimeError("downloaded source ETag does not match discovery identity")
+    if int(response["ContentLength"]) != identity["source_size"]:
+        raise RuntimeError("downloaded source length does not match discovery identity")
+    last_modified = response["LastModified"]
+    if (
+        not isinstance(last_modified, datetime)
+        or last_modified.tzinfo is None
+        or last_modified.astimezone(UTC).isoformat() != identity["source_last_modified"]
+    ):
+        raise RuntimeError("downloaded source timestamp does not match discovery identity")
+
+
+def _verify_content_addressed_object(
+    client: Any,
+    *,
+    bucket: str,
+    key: str,
+    digest: str,
+    size: int,
+) -> bool:
+    try:
+        response = client.head_object(Bucket=bucket, Key=key)
+    except ClientError as exc:
+        if _is_missing_object(exc):
+            return False
+        raise
+    metadata = response.get("Metadata", {})
+    if metadata.get("sha256") != digest:
+        raise RuntimeError("existing content-addressed object has mismatched SHA-256 metadata")
+    if metadata.get("content-length") != str(size) or response.get("ContentLength") != size:
+        raise RuntimeError("existing content-addressed object has mismatched content length")
+    return True
+
+
 def copy_handler(
     event: dict[str, Any],
     context: Any,
@@ -619,67 +674,60 @@ def copy_handler(
                 if not claim.claimed:
                     continue
                 claimed_fingerprint = fingerprint
-            filename = PurePosixPath(source_key).name
-            if period.start is None:
-                raw_key = f"raw/ons/{message['dataset']}/source_period=snapshot/{filename}"
-            else:
-                raw_key = (
-                    f"raw/ons/{message['dataset']}/source_year={period.start.year:04d}/"
-                    f"source_month={period.start.month:02d}/{filename}"
-                )
-
+            canonical_identity = identity.canonical_payload()
             response = client.get_object(
                 Bucket=message["source_bucket"],
                 Key=source_key,
+                IfMatch=f'"{canonical_identity["source_etag"]}"',
             )
+            _verify_source_response(response, canonical_identity)
             sha256 = hashlib.sha256()
+            copied_size = 0
             with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024) as body:
                 for chunk in response["Body"].iter_chunks(chunk_size=1024 * 1024):
                     if not chunk:
                         continue
+                    copied_size += len(chunk)
                     sha256.update(chunk)
                     body.write(chunk)
-                body.seek(0)
-                client.upload_fileobj(
-                    body,
-                    env["DATA_BUCKET"],
-                    raw_key,
-                    ExtraArgs={
-                        "ContentType": "application/vnd.apache.parquet",
-                        "Metadata": {
-                            "source-bucket": message["source_bucket"],
-                            "source-key": source_key,
-                            "source-etag": message["source_etag"],
-                            "sha256": sha256.hexdigest(),
-                        },
-                    },
+                if copied_size != identity.source_size:
+                    raise RuntimeError(
+                        "downloaded source size mismatch: "
+                        f"expected {identity.source_size}, got {copied_size}"
+                    )
+                digest = sha256.hexdigest()
+                raw_key = _content_addressed_raw_key(message["dataset"], period, digest)
+                destination_exists = _verify_content_addressed_object(
+                    client,
+                    bucket=env["DATA_BUCKET"],
+                    key=raw_key,
+                    digest=digest,
+                    size=copied_size,
                 )
+                if not destination_exists:
+                    body.seek(0)
+                    client.upload_fileobj(
+                        body,
+                        env["DATA_BUCKET"],
+                        raw_key,
+                        ExtraArgs={
+                            "ContentType": "application/vnd.apache.parquet",
+                            "Metadata": {
+                                "content-length": str(copied_size),
+                                "sha256": digest,
+                            },
+                        },
+                    )
+                    if not _verify_content_addressed_object(
+                        client,
+                        bucket=env["DATA_BUCKET"],
+                        key=raw_key,
+                        digest=digest,
+                        size=copied_size,
+                    ):
+                        raise RuntimeError("content-addressed upload could not be verified")
 
-            collected_at = clock()
-            manifest_key = (
-                f"manifests/{message['dataset']}/"
-                f"ingestion_date={collected_at.date().isoformat()}/"
-                f"{filename.removesuffix('.parquet')}.json"
-            )
-            manifest = {
-                "dataset": message["dataset"],
-                "source_url": f"s3://{message['source_bucket']}/{source_key}",
-                "source_key": source_key,
-                "source_size": message["source_size"],
-                "source_etag": message["source_etag"],
-                "source_last_modified": message["source_last_modified"],
-                "source_fingerprint": fingerprint,
-                "destination_key": raw_key,
-                "sha256": sha256.hexdigest(),
-                "collected_at": collected_at.isoformat(),
-                "validation_status": "pending",
-            }
-            client.put_object(
-                Bucket=env["DATA_BUCKET"],
-                Key=manifest_key,
-                Body=json.dumps(manifest, ensure_ascii=False).encode(),
-                ContentType="application/json",
-            )
+            manifest_key = _immutable_manifest_key(message["dataset"], fingerprint)
             if function_client is not None and env.get("MATERIALIZATION_FUNCTION"):
                 function_client.invoke(
                     FunctionName=env["MATERIALIZATION_FUNCTION"],
@@ -688,7 +736,7 @@ def copy_handler(
                         {
                             "bucket": env["DATA_BUCKET"],
                             "key": raw_key,
-                            "sha256": sha256.hexdigest(),
+                            "sha256": digest,
                             "manifest_key": manifest_key,
                             "source_fingerprint": fingerprint,
                         }
@@ -700,7 +748,7 @@ def copy_handler(
                     owner=copy_owner,
                     now=clock(),
                     raw_key=raw_key,
-                    raw_sha256=sha256.hexdigest(),
+                    raw_sha256=digest,
                     manifest_key=manifest_key,
                 )
         except Exception as exc:

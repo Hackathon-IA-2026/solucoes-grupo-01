@@ -924,23 +924,47 @@ class FakeDestinationS3:
     def __init__(self):
         self.uploads = []
         self.objects = []
+        self.head_calls = []
+        self.destination_objects = {}
 
     def get_object(self, **kwargs):
         assert kwargs == {
             "Bucket": "ons-aws-prod-opendata",
             "Key": "dataset/restricao_coff_eolica_tm/RESTRICAO_COFF_EOLICA_2026_09.parquet",
+            "IfMatch": '"source-etag"',
         }
-        return {"Body": StreamingBody([b"parquet-", b"bytes"])}
+        return {
+            "Body": StreamingBody([b"parquet-", b"bytes"]),
+            "ContentLength": 13,
+            "ETag": '"source-etag"',
+            "LastModified": datetime(2026, 9, 3, tzinfo=UTC),
+        }
+
+    def head_object(self, **kwargs):
+        self.head_calls.append(kwargs)
+        item = self.destination_objects.get((kwargs["Bucket"], kwargs["Key"]))
+        if item is None:
+            raise ClientError(
+                {"Error": {"Code": "404", "Message": "not found"}},
+                "HeadObject",
+            )
+        return deepcopy(item)
 
     def upload_fileobj(self, fileobj, bucket, key, ExtraArgs):
+        body = fileobj.read()
         self.uploads.append(
             {
                 "bucket": bucket,
                 "key": key,
-                "body": fileobj.read(),
+                "body": body,
                 "extra_args": ExtraArgs,
             }
         )
+        self.destination_objects[(bucket, key)] = {
+            "ContentLength": len(body),
+            "ContentType": ExtraArgs["ContentType"],
+            "Metadata": deepcopy(ExtraArgs["Metadata"]),
+        }
 
     def put_object(self, **kwargs):
         self.objects.append(kwargs)
@@ -955,7 +979,7 @@ class FakeLambda:
         return {"StatusCode": 202}
 
 
-def test_copy_handler_preserves_raw_object_and_writes_traceable_manifest() -> None:
+def test_copy_handler_writes_verified_content_addressed_raw_object() -> None:
     s3 = FakeDestinationS3()
     event = {
         "Records": [
@@ -986,23 +1010,105 @@ def test_copy_handler_preserves_raw_object_and_writes_traceable_manifest() -> No
     )
 
     assert result == {"batchItemFailures": []}
+    digest = "fba56374a33fa9ac89f203b90e6c34687cbd6721bfa94e78af45580a132641e0"
     assert s3.uploads[0]["key"] == (
-        "raw/ons/restricao_coff_eolica_tm/source_year=2026/source_month=09/"
-        "RESTRICAO_COFF_EOLICA_2026_09.parquet"
+        f"raw/ons/restricao_coff_eolica_tm/source_year=2026/source_month=09/sha256={digest[:2]}/{digest}.parquet"
     )
     assert s3.uploads[0]["body"] == b"parquet-bytes"
-    assert s3.uploads[0]["extra_args"]["Metadata"]["source-etag"] == "source-etag"
-    manifest_write = s3.objects[0]
-    assert manifest_write["Key"] == (
-        "manifests/restricao_coff_eolica_tm/ingestion_date=2026-09-26/"
-        "RESTRICAO_COFF_EOLICA_2026_09.json"
+    assert s3.uploads[0]["extra_args"]["Metadata"] == {
+        "content-length": "13",
+        "sha256": digest,
+    }
+    assert len(s3.head_calls) == 2
+    assert s3.objects == []
+
+
+def test_copy_handler_reuses_existing_verified_content_addressed_object() -> None:
+    digest = "fba56374a33fa9ac89f203b90e6c34687cbd6721bfa94e78af45580a132641e0"
+    key = (
+        "raw/ons/restricao_coff_eolica_tm/source_year=2026/source_month=09/"
+        f"sha256={digest[:2]}/{digest}.parquet"
     )
-    manifest = json.loads(manifest_write["Body"])
-    assert manifest["source_url"].startswith("s3://ons-aws-prod-opendata/")
-    assert manifest["sha256"] == (
-        "fba56374a33fa9ac89f203b90e6c34687cbd6721bfa94e78af45580a132641e0"
+    s3 = FakeDestinationS3()
+    s3.destination_objects[("curtailess-data", key)] = {
+        "ContentLength": 13,
+        "ContentType": "application/vnd.apache.parquet",
+        "Metadata": {"content-length": "13", "sha256": digest},
+    }
+
+    result = copy_handler(
+        {"Records": [{"messageId": "reuse", "body": json.dumps(copy_message())}]},
+        RequestContext("reuse"),
+        s3_client=s3,
+        environment={"DATA_BUCKET": "curtailess-data"},
+        now=lambda: datetime(2026, 9, 27, tzinfo=UTC),
     )
-    assert manifest["validation_status"] == "pending"
+
+    assert result == {"batchItemFailures": []}
+    assert s3.uploads == []
+    assert s3.head_calls == [{"Bucket": "curtailess-data", "Key": key}]
+    assert s3.objects == []
+
+
+def test_copy_handler_rejects_existing_object_with_mismatched_sha_metadata() -> None:
+    digest = "fba56374a33fa9ac89f203b90e6c34687cbd6721bfa94e78af45580a132641e0"
+    key = (
+        "raw/ons/restricao_coff_eolica_tm/source_year=2026/source_month=09/"
+        f"sha256={digest[:2]}/{digest}.parquet"
+    )
+    s3 = FakeDestinationS3()
+    s3.destination_objects[("curtailess-data", key)] = {
+        "ContentLength": 13,
+        "ContentType": "application/vnd.apache.parquet",
+        "Metadata": {"content-length": "13", "sha256": "0" * 64},
+    }
+    table = MemoryLedgerTable()
+    ledger = IngestionLedger(table)
+    message = copy_message()
+
+    result = copy_handler(
+        {"Records": [{"messageId": "mismatch", "body": json.dumps(message)}]},
+        RequestContext("mismatch"),
+        s3_client=s3,
+        environment={"DATA_BUCKET": "curtailess-data"},
+        now=lambda: datetime(2026, 9, 27, tzinfo=UTC),
+        ledger=ledger,
+    )
+
+    assert result == {"batchItemFailures": [{"itemIdentifier": "mismatch"}]}
+    assert s3.uploads == []
+    assert table.items[message["source_fingerprint"]]["state"] == "FAILED"
+    assert (
+        "mismatched SHA-256 metadata" in table.items[message["source_fingerprint"]]["failure_error"]
+    )
+
+
+def test_copy_handler_rejects_downloaded_size_mismatch_before_upload() -> None:
+    message = copy_message()
+    message["source_size"] = 12
+    message["source_fingerprint"] = source_fingerprint(
+        SourceIdentity(
+            dataset=message["dataset"],
+            source_bucket=message["source_bucket"],
+            source_key=message["source_key"],
+            source_etag=message["source_etag"],
+            source_size=message["source_size"],
+            source_last_modified=message["source_last_modified"],
+        )
+    )
+    s3 = FakeDestinationS3()
+
+    result = copy_handler(
+        {"Records": [{"messageId": "short", "body": json.dumps(message)}]},
+        RequestContext("short"),
+        s3_client=s3,
+        environment={"DATA_BUCKET": "curtailess-data"},
+        now=lambda: datetime(2026, 9, 27, tzinfo=UTC),
+    )
+
+    assert result == {"batchItemFailures": [{"itemIdentifier": "short"}]}
+    assert s3.uploads == []
+    assert s3.head_calls == []
 
 
 def test_copy_handler_starts_materialization_with_provenance() -> None:
@@ -1044,8 +1150,15 @@ def test_copy_handler_starts_materialization_with_provenance() -> None:
     assert call["InvocationType"] == "Event"
     payload = json.loads(call["Payload"])
     assert payload["bucket"] == "curtailess-data"
-    assert payload["key"].startswith("raw/ons/")
+    assert payload["key"] == (
+        f"raw/ons/restricao_coff_eolica_tm/source_year=2026/source_month=09/sha256={payload['sha256'][:2]}/"
+        f"{payload['sha256']}.parquet"
+    )
     assert len(payload["sha256"]) == 64
+    assert payload["manifest_key"].endswith(
+        f"source_fingerprint={payload['source_fingerprint']}.json"
+    )
+    assert s3.objects == []
 
 
 class MemoryLedgerTable:
@@ -1211,7 +1324,7 @@ def test_duplicate_sqs_delivery_copies_once_with_ledger() -> None:
     )
     assert result == {"batchItemFailures": []}
     assert len(s3.uploads) == 1
-    assert len(s3.objects) == 1
+    assert s3.objects == []
     item = table.items[message["source_fingerprint"]]
     assert item["state"] == "COPIED"
 
