@@ -5,13 +5,20 @@ from curtailess.data_access import ExposureRepository
 
 
 class FakeTable:
-    def __init__(self, items):
+    def __init__(self, items, pages=None):
         self.items = items
+        self.pages = pages
         self.scan_calls = []
 
     def scan(self, **kwargs):
         self.scan_calls.append(kwargs)
-        return {"Items": self.items}
+        if self.pages is None:
+            return {"Items": self.items}
+        index = int(kwargs.get("ExclusiveStartKey", {}).get("page", 0))
+        response = {"Items": self.pages[index]}
+        if index + 1 < len(self.pages):
+            response["LastEvaluatedKey"] = {"page": index + 1}
+        return response
 
 
 def test_list_assets_uses_latest_monthly_materialization_per_asset() -> None:
@@ -136,3 +143,26 @@ def test_historical_windows_supports_dynamodb_decimal_interval_count() -> None:
     )
 
     assert windows[0]["curtailed_mwh"] == 2319.493016
+
+
+def test_scan_paginates_until_evidence_beyond_first_megabyte_page() -> None:
+    target = {
+        "asset_id": "TARGET",
+        "period": "2026-08",
+        "period_start": "2026-08-01T00:00:00",
+        "period_end": "2026-08-31T23:30:00",
+        "curtailed_mwh": Decimal("1"),
+        "source_sha256": "f" * 64,
+    }
+    # The first page models a full 1 MB DynamoDB scan page; the target is only on page 2.
+    filler = [
+        {"asset_id": f"FILLER-{index}", "period": "2026-08", "payload": "x" * 1024}
+        for index in range(1024)
+    ]
+    table = FakeTable([], pages=[filler, [target]])
+
+    found = ExposureRepository(table).get_provenance("f" * 64)
+
+    assert found is not None
+    assert found["asset_id"] == "TARGET"
+    assert table.scan_calls == [{}, {"ExclusiveStartKey": {"page": 1}}]

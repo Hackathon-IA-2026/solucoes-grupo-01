@@ -335,7 +335,7 @@ def test_evidence_models_reject_missing_or_contradictory_origin_and_provenance()
         )
 
 
-def test_field_level_evidence_ids_are_unique_self_describing_and_tamper_evident() -> None:
+def test_field_level_evidence_ids_are_unique_compact_digests() -> None:
     source_hashes = ["a" * 64, "b" * 64]
     count_id = build_evidence_id(source_hashes, "entity_count", "point_context_v1", "point-1")
     rate_id = build_evidence_id(
@@ -346,12 +346,10 @@ def test_field_level_evidence_ids_are_unique_self_describing_and_tamper_evident(
     )
 
     assert count_id != rate_id
-    assert "," not in count_id
+    assert len(count_id) == 69
     assert parse_evidence_id(count_id) == {
-        "context": "point-1",
-        "field": "entity_count",
-        "method": "point_context_v1",
-        "sources": source_hashes,
+        "digest": count_id.removeprefix("evd1."),
+        "kind": "derived",
     }
     with pytest.raises(ValueError, match="inválido"):
-        parse_evidence_id(count_id[:-1] + "0")
+        parse_evidence_id("evd1.not-a-digest")

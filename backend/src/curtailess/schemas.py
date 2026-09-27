@@ -1,12 +1,26 @@
-import base64
 import hashlib
-import json
 import re
 from datetime import UTC, date, datetime
 from enum import StrEnum
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    FiniteFloat,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
+
+from .canonical import canonical_json
+from .provenance import EVIDENCE_ID_MAX_LENGTH, build_evidence_id
+from .provenance import parse_evidence_id as parse_evidence_id
+
+BoundedText = Annotated[str, StringConstraints(min_length=1, max_length=512)]
+EvidenceId = Annotated[str, StringConstraints(min_length=1, max_length=EVIDENCE_ID_MAX_LENGTH)]
+Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 
 
 class DataOrigin(StrEnum):
@@ -27,53 +41,10 @@ STATUS_ORIGIN: dict[str, DataOrigin] = {
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
-def build_evidence_id(
-    source_identities: str | list[str] | tuple[str, ...],
-    field_name: str,
-    method_version: str,
-    context: str,
-) -> str:
-    """Build a deterministic, self-describing field-level evidence identifier."""
-
-    sources = (
-        [source_identities] if isinstance(source_identities, str) else sorted(source_identities)
-    )
-    payload = {
-        "context": context,
-        "field": field_name,
-        "method": method_version,
-        "sources": sources,
-    }
-    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    encoded = base64.urlsafe_b64encode(raw).decode().rstrip("=")
-    digest = hashlib.sha256(raw).hexdigest()[:24]
-    return f"ev1.{encoded}.{digest}"
-
-
-def parse_evidence_id(evidence_id: str) -> dict[str, Any]:
-    """Decode and integrity-check an identifier produced by :func:`build_evidence_id`."""
-
-    try:
-        prefix, encoded, digest = evidence_id.split(".")
-        if prefix != "ev1":
-            raise ValueError
-        raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
-        if hashlib.sha256(raw).hexdigest()[:24] != digest:
-            raise ValueError
-        payload = json.loads(raw)
-        if set(payload) != {"context", "field", "method", "sources"}:
-            raise ValueError
-        if not payload["field"] or not payload["method"] or not payload["sources"]:
-            raise ValueError
-        return payload
-    except (ValueError, TypeError, json.JSONDecodeError) as exc:
-        raise ValueError("evidence_id inválido ou corrompido") from exc
-
-
 def inferred_client_provenance(field_name: str, value: Any, context: str) -> "EvidenceProvenance":
     """Create deterministic, explicitly inferred provenance for a legacy caller input."""
 
-    serialized = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    serialized = canonical_json(value)
     value_digest = hashlib.sha256(serialized.encode()).hexdigest()
     source_uri = f"client://inferred/{context}/{field_name}"
     return EvidenceProvenance(
@@ -96,24 +67,25 @@ def inferred_client_provenance(field_name: str, value: Any, context: str) -> "Ev
 
 
 class EvidenceProvenance(BaseModel):
-    """Authoritative source, temporal validity, and method metadata for one field."""
+    """Authoritative, bounded source and method metadata for one field."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    evidence_id: str = Field(min_length=1)
-    field_name: str = Field(min_length=1)
+    evidence_id: EvidenceId
+    field_name: Annotated[str, StringConstraints(min_length=1, max_length=100)]
     origin: DataOrigin
-    source_uri: str | None = Field(default=None, min_length=1)
-    source_key: str | None = Field(default=None, min_length=1)
-    source_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    source_sha256s: tuple[str, ...] = ()
-    parent_evidence_ids: tuple[str, ...] = ()
+    source_uri: BoundedText | None = None
+    source_key: Annotated[str, StringConstraints(min_length=1, max_length=1024)] | None = None
+    source_sha256: Sha256 | None = None
+    source_sha256s: tuple[Sha256, ...] = Field(default=(), max_length=32)
+    parent_evidence_ids: tuple[EvidenceId, ...] = Field(default=(), max_length=32)
     observed_at: datetime | None = None
     effective_at: datetime | None = None
     valid_from: datetime | None = None
     valid_to: datetime | None = None
-    method_version: str = Field(min_length=1)
-    limitations: list[str]
+    temporal_coverage: Literal["known", "unknown", "partial"] = "known"
+    method_version: Annotated[str, StringConstraints(min_length=1, max_length=100)]
+    limitations: tuple[BoundedText, ...] = Field(max_length=16)
 
     @field_validator("source_sha256s")
     @classmethod
@@ -144,15 +116,13 @@ class EvidenceProvenance(BaseModel):
     def validate_source_and_interval(self) -> Self:
         if self.source_uri is None and self.source_key is None:
             raise ValueError("source_uri ou source_key é obrigatório")
-        unknown_capacity_time = (
-            self.origin is DataOrigin.ONS_PUBLICO
-            and self.field_name == "capacity_mw"
-            and self.method_version == "ons_capacity_source_v1"
-            and any("temporal" in limitation.lower() for limitation in self.limitations)
-        )
-        if self.observed_at is None and self.effective_at is None and not unknown_capacity_time:
+        if (
+            self.observed_at is None
+            and self.effective_at is None
+            and self.temporal_coverage == "known"
+        ):
             raise ValueError(
-                "observed_at ou effective_at é obrigatório, salvo limitação temporal explícita"
+                "observed_at ou effective_at é obrigatório quando temporal_coverage=known"
             )
         if (self.valid_from is None) != (self.valid_to is None):
             raise ValueError("valid_from e valid_to devem ser informados juntos")
@@ -205,11 +175,11 @@ class HealthResponse(BaseModel):
 class CurtailmentScenario(BaseModel):
     regiao_subsistema: str = Field(min_length=1, max_length=100)
     timestamp: datetime
-    demanda_prevista_mw: float = Field(ge=0)
-    geracao_renovavel_prevista_mw: float = Field(ge=0)
-    geracao_convencional_disponivel_mw: float = Field(ge=0)
-    restricoes_transmissao: list[str] = Field(default_factory=list)
-    limite_corte_permitido_mw: float = Field(ge=0)
+    demanda_prevista_mw: FiniteFloat = Field(ge=0)
+    geracao_renovavel_prevista_mw: FiniteFloat = Field(ge=0)
+    geracao_convencional_disponivel_mw: FiniteFloat = Field(ge=0)
+    restricoes_transmissao: list[BoundedText] = Field(default_factory=list, max_length=64)
+    limite_corte_permitido_mw: FiniteFloat = Field(ge=0)
     prioridade_operacional: Literal["baixa", "media", "alta", "critica"]
     observacoes: str | None = Field(default=None, max_length=4000)
 
@@ -375,13 +345,13 @@ class HistoricalWindowsResponse(BaseModel):
 
 class MaintenanceConstraints(BaseModel):
     weekdays_only: bool = False
-    unavailable_periods: list[Period] = Field(default_factory=list)
+    unavailable_periods: list[Period] = Field(default_factory=list, max_length=64)
 
 
 class EnergyPrice(BaseModel):
-    value: float = Field(ge=0)
+    value: FiniteFloat = Field(ge=0)
     unit: Literal["BRL/MWh"]
-    source: str = Field(min_length=1)
+    source: BoundedText
     value_status: Literal["informado"]
     origin: Literal[DataOrigin.CLIENTE_INFORMADO]
     provenance: EvidenceProvenance
@@ -421,11 +391,11 @@ _MAINTENANCE_INPUT_FIELDS = {
 
 
 class MaintenanceRankRequest(BaseModel):
-    asset_id: str
+    asset_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
     start: date
     end: date
-    duration_hours: int = Field(gt=0)
-    minimum_notice_hours: int = Field(ge=0)
+    duration_hours: int = Field(gt=0, le=8760)
+    minimum_notice_hours: int = Field(ge=0, le=8760)
     baseline_window_start: datetime
     constraints: MaintenanceConstraints = Field(default_factory=MaintenanceConstraints)
     energy_price: EnergyPrice
@@ -553,15 +523,15 @@ class MaintenanceRankResponse(BaseModel):
 
 
 class BessScreenRequest(BaseModel):
-    asset_id: str
-    maintenance_result_id: str
-    power_mw: float = Field(gt=0)
-    energy_mwh: float = Field(gt=0)
-    capex_brl: float = Field(ge=0)
-    annualized_cost_brl: float = Field(ge=0)
-    round_trip_efficiency: float = Field(gt=0, le=1)
-    cycles_per_year: int = Field(gt=0)
-    energy_price_brl_mwh: float = Field(ge=0)
+    asset_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
+    maintenance_result_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
+    power_mw: FiniteFloat = Field(gt=0)
+    energy_mwh: FiniteFloat = Field(gt=0)
+    capex_brl: FiniteFloat = Field(ge=0)
+    annualized_cost_brl: FiniteFloat = Field(ge=0)
+    round_trip_efficiency: FiniteFloat = Field(gt=0, le=1)
+    cycles_per_year: int = Field(gt=0, le=1_000_000)
+    energy_price_brl_mwh: FiniteFloat = Field(ge=0)
     input_provenance: dict[str, EvidenceProvenance] | None = None
 
     @model_validator(mode="after")
@@ -653,8 +623,8 @@ class ModelRunResponse(BaseModel):
 
 
 class ReportCreateRequest(BaseModel):
-    asset_id: str
-    evidence_ids: list[str] = Field(min_length=1)
+    asset_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
+    evidence_ids: list[EvidenceId] = Field(min_length=1, max_length=64)
     report_type: Literal["decision_support"]
     format: Literal["json"]
 

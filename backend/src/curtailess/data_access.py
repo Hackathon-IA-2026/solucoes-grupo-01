@@ -10,10 +10,20 @@ class ExposureRepository:
     def __init__(self, table: Any):
         self.table = table
 
+    def _scan_all(self) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        request: dict[str, Any] = {}
+        while True:
+            response = self.table.scan(**request)
+            items.extend(response.get("Items", []))
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                return items
+            request = {"ExclusiveStartKey": last_key}
+
     def list_assets(self) -> list[dict[str, Any]]:
-        response = self.table.scan()
         latest: dict[str, dict[str, Any]] = {}
-        for item in response.get("Items", []):
+        for item in self._scan_all():
             period = item.get("period", "")
             if "#" in period:
                 continue
@@ -29,10 +39,9 @@ class ExposureRepository:
     def get_exposure(
         self, asset_id: str, start: date, end: date, reason: str | None = None
     ) -> dict[str, Any] | None:
-        response = self.table.scan()
         items = [
             item
-            for item in response.get("Items", [])
+            for item in self._scan_all()
             if item["asset_id"] == asset_id
             and "#" not in item["period"]
             and date.fromisoformat(item["period_start"][:10]) <= end
@@ -57,10 +66,9 @@ class ExposureRepository:
         asset = self.get_asset(asset_id)
         if asset is None:
             return None
-        response = self.table.scan()
         items = [
             item
-            for item in response.get("Items", [])
+            for item in self._scan_all()
             if "#" not in item["period"] and item.get("point_id") == asset["point_id"]
         ]
         latest_by_asset: dict[str, dict[str, Any]] = {}
@@ -122,10 +130,9 @@ class ExposureRepository:
         return self.get_asset(asset_id)
 
     def get_provenance(self, source_sha256: str) -> dict[str, Any] | None:
-        response = self.table.scan()
         items = [
             item
-            for item in response.get("Items", [])
+            for item in self._scan_all()
             if "#" not in item["period"]
             and source_sha256 in {item.get("source_sha256"), item.get("capacity_source_sha256")}
         ]
@@ -137,8 +144,7 @@ class ExposureRepository:
         return result
 
     def get_materialization_run(self, period: str) -> dict[str, Any] | None:
-        response = self.table.scan()
-        items = [item for item in response.get("Items", []) if item.get("period") == period]
+        items = [item for item in self._scan_all() if item.get("period") == period]
         if not items:
             return None
         return {
