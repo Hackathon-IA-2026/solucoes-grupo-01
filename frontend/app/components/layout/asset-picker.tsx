@@ -1,13 +1,32 @@
 import { useRef } from "react";
 import { BuildingsIcon, CheckCircleIcon, XIcon } from "@phosphor-icons/react";
-import { assets } from "~/domain/fixtures";
-import { useAnalysis } from "~/state/use-analysis";
+import { useLocation } from "react-router";
+import { assets as demonstrationAssets } from "~/domain/fixtures";
 import { cn } from "~/lib/cn";
+import { useAnalysis } from "~/state/use-analysis";
+import { useExposure } from "~/state/use-exposure";
+
+type PickerAsset = { id: string; name: string; detail: string };
 
 export function AssetPicker() {
-  const { state, selectAsset } = useAnalysis();
+  const analysis = useAnalysis();
+  const exposure = useExposure();
+  const location = useLocation();
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const activeAsset = assets.find((asset) => asset.id === state.assetId) ?? assets[0];
+  const exposureMode = location.pathname === "/exposicao";
+  const assets: PickerAsset[] = exposureMode
+    ? exposure.assets.map((asset) => ({
+        id: asset.assetId,
+        name: asset.name,
+        detail: `${asset.technology === "wind" ? "Eólica" : "Solar"} | ${asset.state} | Dados operacionais simulados`,
+      }))
+    : demonstrationAssets.map((asset) => ({
+        id: asset.id,
+        name: asset.name,
+        detail: `${asset.technology} | ${asset.location} | Telemetria ${asset.telemetry}`,
+      }));
+  const selectedId = exposureMode ? exposure.selectedAssetId : analysis.state.assetId;
+  const activeAsset = assets.find((asset) => asset.id === selectedId) ?? assets[0];
   const open = () => {
     const dialog = dialogRef.current;
     if (typeof dialog?.showModal === "function") dialog.showModal();
@@ -17,7 +36,10 @@ export function AssetPicker() {
     if (typeof dialog?.close === "function") dialog.close();
   };
   const choose = (assetId: string) => {
-    if (assetId !== state.assetId) selectAsset(assetId);
+    if (assetId !== selectedId) {
+      if (exposureMode) exposure.selectAsset(assetId);
+      else analysis.selectAsset(assetId);
+    }
     close();
   };
   return (
@@ -31,7 +53,7 @@ export function AssetPicker() {
       >
         <BuildingsIcon aria-hidden="true" />
         <span className="sr-only">Selecionar usina</span>
-        <span className="max-w-[18ch] truncate max-sm:hidden">{activeAsset.name}</span>
+        <span className="max-w-[18ch] truncate max-sm:hidden">{activeAsset?.name ?? "Carregando usinas"}</span>
       </button>
       <dialog
         ref={dialogRef}
@@ -50,7 +72,7 @@ export function AssetPicker() {
         </div>
         <ul className="space-y-2 p-4 sm:p-5">
           {assets.map((asset) => {
-            const selected = asset.id === state.assetId;
+            const selected = asset.id === selectedId;
             return (
               <li key={asset.id}>
                 <button
@@ -64,13 +86,14 @@ export function AssetPicker() {
                 >
                   <span className="min-w-0">
                     <span className="block truncate font-semibold">{asset.name}</span>
-                    <span className="block text-xs text-ink-soft">{asset.technology} | {asset.location} | Telemetria {asset.telemetry}</span>
+                    <span className="block text-xs text-ink-soft">{asset.detail}</span>
                   </span>
                   {selected ? <CheckCircleIcon weight="fill" className="shrink-0 text-accent" aria-hidden="true" /> : null}
                 </button>
               </li>
             );
           })}
+          {assets.length === 0 ? <li className="rounded-lg bg-canvas p-3 text-sm text-ink-soft">Usinas indisponíveis.</li> : null}
         </ul>
       </dialog>
     </>

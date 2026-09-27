@@ -28,19 +28,23 @@ test("percorre exposição, manutenção, bateria e relatório sem perder o modo
   await expect(page.getByText("91.000 R$/ano")).toHaveCount(0);
 });
 
-test("troca o ativo usado pela tela de exposição", async ({ page }) => {
+test("troca o ativo real somente na tela de exposição", async ({ page }) => {
   await page.goto("/exposicao");
   const screen = page.locator("[data-exposure-screen]");
-  await expect(screen).toHaveAttribute("data-asset-id", "asset-wind");
+  await expect(screen).toHaveAttribute("data-asset-id", "CJU_RNRDV");
   const windIllustrations = screen.locator('[data-energy-illustration="wind"]');
   await expect(windIllustrations).toHaveCount(6);
-  await expect(windIllustrations.first().locator("[data-connected-plant]")).toHaveCount(5);
-  await selectAsset(page, "Ativo Solar MG-02");
-  await expect(screen).toHaveAttribute("data-asset-id", "asset-solar");
+  await expect(windIllustrations.first().locator("[data-connected-plant]")).toHaveCount(1);
+
+  await selectAsset(page, "Conj. Monte Verde Solar");
+  await expect(screen).toHaveAttribute("data-asset-id", "CJU_RNMVS");
   const solarIllustrations = screen.locator('[data-energy-illustration="solar"]');
   await expect(solarIllustrations).toHaveCount(6);
   await expect(solarIllustrations.first().locator("[data-connected-plant]")).toHaveCount(3);
   await expect(screen.locator('[data-energy-illustration="wind"]')).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Manutenção", exact: true }).click();
+  await expect(page.locator("button[data-asset-picker]")).toContainText("Ativo Eólico RN-01");
 });
 
 test("não reutiliza ranking após parâmetros sem pacote ou ida e volta entre ativos", async ({ page }) => {
@@ -195,6 +199,7 @@ test("navegação lateral expande, transfere destaque e navega entre seções", 
 test("a roda do mouse focaliza somente a seção seguinte ou anterior", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/exposicao");
+  await expect(page.locator("[data-exposure-screen]")).toBeVisible();
   const links = page.locator("nav[data-section-nav] button[data-section-link]");
   await expect(links.first()).toHaveAttribute("aria-current", "true");
 

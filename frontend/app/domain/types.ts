@@ -148,3 +148,75 @@ export type AssetExposure = {
   forecast60d: ChartDataset;
   modality?: ChartDataset;
 };
+
+export type ExposureAsset = {
+  assetId: string;
+  name: string;
+  technology: "wind" | "solar";
+  state: string;
+  connectionPoint: string;
+  capacityMw: number | null;
+  connectedAssetCount: number;
+  operationalDataStatus: "simulated" | "client_connected";
+};
+
+export type ExposureMetric = { value: number | null; unit: string };
+export type ExposureDistribution = { label: string; value: number };
+export type ExposureForecastPoint = {
+  forecastDate: string;
+  expectedCurtailedMwh: number;
+  lowerMwh: number;
+  upperMwh: number;
+  curtailmentProbability: number;
+};
+export type ExposureForecastWindow = {
+  start: string;
+  end: string;
+  expectedCurtailedMwh: number;
+  meanProbability: number;
+};
+export type ExposureNarrative = Record<
+  "secao-ativo" | "secao-resumo" | "secao-previsao" | "secao-razao-origem" | "secao-recorrencia" | "secao-qualidade",
+  string[]
+>;
+export type ExposureView = {
+  asset: ExposureAsset;
+  lastDataUpdate: string;
+  inputDigest: string;
+  observedImpact: {
+    totalCurtailedEnergy: ExposureMetric;
+    characterizedShare: ExposureMetric;
+    simultaneousShare: ExposureMetric;
+    exclusiveShare: ExposureMetric;
+    periodStart: string;
+    periodEnd: string;
+  };
+  forecast60d: {
+    status: "demonstrative_simulation" | "unavailable";
+    start: string | null;
+    end: string | null;
+    points: ExposureForecastPoint[];
+    totalExpectedMwh: number | null;
+    totalLowerMwh: number | null;
+    totalUpperMwh: number | null;
+    topWindows: ExposureForecastWindow[];
+  };
+  associatedConditions: {
+    reasons: ExposureDistribution[];
+    origins: ExposureDistribution[];
+    modalities: ExposureDistribution[];
+  };
+  recurrence: {
+    timezone: "America/Sao_Paulo";
+    weekdays: ExposureDistribution[];
+    hours: ExposureDistribution[];
+  };
+  quality: {
+    coverage: ExposureMetric;
+    updateDelay: ExposureMetric;
+    missingRate: ExposureMetric;
+    duplicateCount: ExposureMetric;
+  };
+  narrative: ExposureNarrative;
+  limitations: string[];
+};
