@@ -186,14 +186,16 @@ export function MaintenanceScreen() {
         </AnalysisSection>
       </div>
 
-      <MaintenanceSchedulingModal
-        open={modalOpen}
-        assetName={asset.name}
-        suggestion={activeSuggestion}
-        scenarioPricePerMwh={scenarioPricePerMwh}
-        onClose={() => setModalOpen(false)}
-        onConfirm={confirmBooking}
-      />
+      {modalOpen ? (
+        <MaintenanceSchedulingModal
+          open
+          assetName={asset.name}
+          suggestion={activeSuggestion}
+          scenarioPricePerMwh={scenarioPricePerMwh}
+          onClose={() => setModalOpen(false)}
+          onConfirm={confirmBooking}
+        />
+      ) : null}
     </div>
   );
 }
