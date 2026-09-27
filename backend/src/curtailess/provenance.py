@@ -98,6 +98,28 @@ class IssuedProvenanceRepository:
     def _operation_key(operation_id: str) -> dict[str, str]:
         return {"plant_id": "PROVENANCE", "scenario_id": f"operation#{operation_id}"}
 
+    @classmethod
+    def _index_item(
+        cls, evidence_id: str, operation_id: str, provenance: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {
+            **cls._key(evidence_id),
+            "record_type": "provenance_index",
+            "evidence_id": evidence_id,
+            "operation_id": operation_id,
+            "provenance_digest": canonical_digest(provenance),
+        }
+
+    @classmethod
+    def _operation_item(cls, operation_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            **cls._operation_key(operation_id),
+            "record_type": "provenance_operation",
+            "committed": True,
+            "operation_id": operation_id,
+            **payload,
+        }
+
     def _put_immutable(self, item: dict[str, Any]) -> None:
         _guard_item_size(item)
         key = {"plant_id": item["plant_id"], "scenario_id": item["scenario_id"]}
@@ -166,23 +188,10 @@ class IssuedProvenanceRepository:
             "source_records": compact_sources,
         }
         operation_id = canonical_digest(payload)
-        operation_item = {
-            **self._operation_key(operation_id),
-            "record_type": "provenance_operation",
-            "committed": True,
-            "operation_id": operation_id,
-            **payload,
-        }
+        operation_item = self._operation_item(operation_id, payload)
         _guard_item_size(operation_item)
         for evidence_id, provenance in provenances.items():
-            index = {
-                **self._key(evidence_id),
-                "record_type": "provenance_index",
-                "evidence_id": evidence_id,
-                "operation_id": operation_id,
-                "provenance_digest": canonical_digest(provenance),
-            }
-            self._put_immutable(index)
+            self._put_immutable(self._index_item(evidence_id, operation_id, provenance))
         self._put_immutable(operation_item)
         return operation_id
 
@@ -204,18 +213,41 @@ class IssuedProvenanceRepository:
         operation = self.table.get_item(
             Key=self._operation_key(operation_id), ConsistentRead=True
         ).get("Item")
-        if (
-            operation is None
-            or operation.get("record_type") != "provenance_operation"
-            or operation.get("committed") is not True
-            or operation.get("operation_id") != operation_id
-        ):
+        if not isinstance(operation, dict):
             return None
-        provenance = operation.get("provenances", {}).get(evidence_id)
-        if (
-            not isinstance(provenance, dict)
-            or provenance.get("evidence_id") != evidence_id
-            or canonical_digest(provenance) != index.get("provenance_digest")
+        try:
+            # The original compact format is safe to read only after reconstructing its
+            # canonical commit and every deterministic member index from persisted content.
+            payload = {
+                key: operation[key]
+                for key in ("operation", "request_digest", "provenances", "source_records")
+            }
+            provenances = payload["provenances"]
+            if (
+                not isinstance(provenances, dict)
+                or canonical_digest(payload) != operation_id
+                or operation != self._operation_item(operation_id, payload)
+            ):
+                return None
+            for member_id, member_provenance in provenances.items():
+                if (
+                    not isinstance(member_id, str)
+                    or not isinstance(member_provenance, dict)
+                    or member_provenance.get("evidence_id") != member_id
+                ):
+                    return None
+                parse_evidence_id(member_id)
+                expected_index = self._index_item(member_id, operation_id, member_provenance)
+                stored_index = self.table.get_item(
+                    Key=self._key(member_id), ConsistentRead=True
+                ).get("Item")
+                if stored_index != expected_index:
+                    return None
+        except (KeyError, TypeError, ValueError):
+            return None
+        provenance = provenances.get(evidence_id)
+        if not isinstance(provenance, dict) or index != self._index_item(
+            evidence_id, operation_id, provenance
         ):
             return None
         return {

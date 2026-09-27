@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import curtailess.main as main
+from curtailess.canonical import canonical_digest
 from curtailess.main import app
 from curtailess.provenance import (
     EVIDENCE_ID_MAX_LENGTH,
@@ -277,6 +278,123 @@ def test_operation_rejects_conditional_conflict_and_tampered_read() -> None:
     assert repository.get(evidence_id) is None
     with pytest.raises(RuntimeError, match="immutable record mismatch"):
         repository.put_operation(**kwargs)
+
+
+def _persist_two_member_operation() -> tuple[
+    FakeScenariosTable, IssuedProvenanceRepository, list[str], str
+]:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    evidence_ids = [
+        build_evidence_id("a", f"field-{index}", "bess_screen_v1", "ctx") for index in range(2)
+    ]
+    provenances = {value: _stored_provenance(value) for value in evidence_ids}
+    provenances[evidence_ids[0]]["parent_evidence_ids"] = [evidence_ids[1]]
+    operation_id = repository.put_operation(
+        operation="bess_screen",
+        request_digest="b" * 64,
+        provenances=provenances,
+        source_records=[
+            {
+                "asset_id": "A",
+                "source_key": "original",
+                "source_sha256": "a" * 64,
+                "method": "original_method",
+            }
+        ],
+    )
+    return table, repository, evidence_ids, operation_id
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda operation, _table, _ids: operation["source_records"][0].__setitem__(
+            "source_key", "tampered"
+        ),
+        lambda operation, _table, _ids: operation["source_records"][0].__setitem__(
+            "asset_id", "tampered"
+        ),
+        lambda operation, _table, _ids: operation["source_records"][0].__setitem__(
+            "source_sha256", "f" * 64
+        ),
+        lambda operation, _table, ids: operation["provenances"][ids[0]].__setitem__(
+            "parent_evidence_ids", []
+        ),
+        lambda operation, _table, ids: operation["provenances"].pop(ids[1]),
+        lambda operation, _table, ids: operation["provenances"].__setitem__(
+            build_evidence_id("extra", "extra", "bess_screen_v1", "ctx"),
+            _stored_provenance(build_evidence_id("extra", "extra", "bess_screen_v1", "ctx")),
+        ),
+        lambda operation, _table, _ids: operation["source_records"].clear(),
+        lambda operation, _table, _ids: operation["source_records"].append(
+            {"source_key": "unexpected", "source_sha256": "f" * 64}
+        ),
+    ],
+    ids=[
+        "source-key",
+        "source-value",
+        "source-sha256",
+        "lineage",
+        "missing-member",
+        "extra-member",
+        "deleted-source-record",
+        "extra-source-record",
+    ],
+)
+def test_fresh_read_rejects_tampered_operation_content(mutate) -> None:
+    table, _repository, evidence_ids, operation_id = _persist_two_member_operation()
+    operation = table.items[("PROVENANCE", f"operation#{operation_id}")]
+    mutate(operation, table, evidence_ids)
+
+    fresh_repository = IssuedProvenanceRepository(table)
+
+    assert fresh_repository.get(evidence_ids[0]) is None
+
+
+def test_fresh_read_rejects_missing_operation_member_index() -> None:
+    table, _repository, evidence_ids, _operation_id = _persist_two_member_operation()
+    missing_index_key = IssuedProvenanceRepository._key(evidence_ids[1])
+    del table.items[(missing_index_key["plant_id"], missing_index_key["scenario_id"])]
+
+    assert IssuedProvenanceRepository(table).get(evidence_ids[0]) is None
+
+
+def test_fresh_read_rejects_unexpected_index_content() -> None:
+    table, _repository, evidence_ids, _operation_id = _persist_two_member_operation()
+    index_key = IssuedProvenanceRepository._key(evidence_ids[0])
+    index = table.items[(index_key["plant_id"], index_key["scenario_id"])]
+    index["unexpected"] = "tampered"
+
+    assert IssuedProvenanceRepository(table).get(evidence_ids[0]) is None
+
+
+def test_fresh_read_rejects_index_operation_membership_mismatch() -> None:
+    table, repository, evidence_ids, operation_id = _persist_two_member_operation()
+    other_evidence_id = build_evidence_id("other", "other", "bess_screen_v1", "ctx")
+    other_operation_id = repository.put_operation(
+        operation="bess_screen",
+        request_digest="c" * 64,
+        provenances={other_evidence_id: _stored_provenance(other_evidence_id)},
+        source_records=[{"source_key": "other", "source_sha256": "c" * 64}],
+    )
+    index_key = IssuedProvenanceRepository._key(evidence_ids[0])
+    index = table.items[(index_key["plant_id"], index_key["scenario_id"])]
+    index["operation_id"] = other_operation_id
+
+    assert operation_id != index["operation_id"]
+    assert IssuedProvenanceRepository(table).get(evidence_ids[0]) is None
+
+
+def test_fresh_read_rejects_recomputed_provenance_leaf_digest_after_tampering() -> None:
+    table, _repository, evidence_ids, operation_id = _persist_two_member_operation()
+    operation = table.items[("PROVENANCE", f"operation#{operation_id}")]
+    operation["provenances"][evidence_ids[0]]["field_name"] = "tampered"
+    index_key = IssuedProvenanceRepository._key(evidence_ids[0])
+    index = table.items[(index_key["plant_id"], index_key["scenario_id"])]
+    index["provenance_digest"] = canonical_digest(operation["provenances"][evidence_ids[0]])
+
+    assert IssuedProvenanceRepository(table).get(evidence_ids[0]) is None
 
 
 def test_operation_item_size_guard_runs_before_dynamodb_write() -> None:
