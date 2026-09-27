@@ -1,0 +1,22 @@
+version = 0.1
+
+[default.global.parameters]
+region = "us-west-2"
+
+[default.build.parameters]
+template_file = "template.yaml"
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = true
+template_file = "template.yaml"
+
+[default.deploy.parameters]
+stack_name = "curtailess-dev"
+region = "us-west-2"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+fail_on_empty_changeset = false
+parameter_overrides = "StageName=dev BedrockModelId=us.anthropic.claude-opus-5 BedrockFallbackModelId=us.anthropic.claude-sonnet-5 BedrockEmergencyModelId=us.amazon.nova-pro-v1:0 BedrockKnowledgeBaseId=pending OnsSourceBucket=ons-aws-prod-opendata OnsSourceDataset=restricao_coff_eolica_tm OnsSourcePrefix=dataset/restricao_coff_eolica_tm/"

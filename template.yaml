@@ -7,9 +7,7 @@ Parameters:
     Type: String
     Default: dev
     AllowedPattern: "^[a-z0-9-]+$"
-  AllowedOrigin:
-    Type: String
-    Default: http://localhost:5173
+
   BedrockModelId:
     Type: String
     Default: us.anthropic.claude-opus-5
@@ -59,7 +57,7 @@ Resources:
         Variables:
           APP_ENV: !Ref StageName
           API_GATEWAY_BASE_PATH: !Sub /${StageName}
-          CORS_ORIGINS: !Ref AllowedOrigin
+          CORS_ORIGINS: !Sub http://${FrontendBucket}.s3-website-${AWS::Region}.${AWS::URLSuffix}
           DATA_BUCKET: !Ref DataBucket
           SCENARIOS_TABLE: !Ref ScenariosTable
           EXPOSURE_TABLE: !Ref ExposureTable
@@ -256,6 +254,37 @@ Resources:
       VersioningConfiguration:
         Status: Enabled
 
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadStaticWebsite
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub ${FrontendBucket.Arn}/*
+
   ScenariosTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -305,6 +334,12 @@ Outputs:
   DataBucketName:
     Description: Bucket de dados e artefatos
     Value: !Ref DataBucket
+  FrontendBucketName:
+    Description: Bucket do frontend SPA gerenciado pela stack
+    Value: !Ref FrontendBucket
+  FrontendWebsiteUrl:
+    Description: URL publica do website S3
+    Value: !Sub http://${FrontendBucket}.s3-website-${AWS::Region}.${AWS::URLSuffix}
   ScenariosTableName:
     Description: Tabela de planos e cenarios
     Value: !Ref ScenariosTable
