@@ -157,9 +157,7 @@ def test_maintenance_derate_applies_only_to_the_scheduled_intervals() -> None:
         slope=0.2,
     )
     schedule = build_maintenance_schedule(spec, days=_days(4), seed=0)
-    candidate = MaintenanceWindow(
-        plant_id="A", start_interval=48, interval_count=144, derate=0.35
-    )
+    candidate = MaintenanceWindow(plant_id="A", start_interval=48, interval_count=144, derate=0.35)
     schedule = schedule.with_candidate(candidate)
     intervals = 4 * INTERVALS_PER_DAY
 

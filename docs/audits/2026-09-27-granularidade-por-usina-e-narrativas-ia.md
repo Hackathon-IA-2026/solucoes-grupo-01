@@ -22,7 +22,7 @@ Artefatos empacotados e seus SHA-256:
 |---|---|---|
 | Catálogo de usinas | `data/individual_plant_catalog.json` | `f1f899744a23948c91eda061d0c755aa8a47d61344dac046eb945c6924e9176d` |
 | Histórico individual | `data/individual_plant_history.json` | `bf8a1a105c6cc1db3a22b0d295b5d1496f981f33dc069290023a3eb6ab911cd2` |
-| Previsão individual | `data/individual_plant_forecast.json` | `fb163f1960cb3869a0e25edf30644171a1ae8410903290ef43d411d28ee54f54` |
+| Previsão individual | `data/individual_plant_forecast.json` | `07441ead594b942ca18f7d38b329c862a62799a58fe92f902da4fbdd5741c15b` |
 | Agenda simulada do ponto | `data/simulated_point_maintenance_schedule.json` | `a66c476933c4ab51fa06ce41a37feaa9fc1f34ef8509779850a52dd5f6ed515d` |
 
 O `input_manifest` do artefato de previsão declara o digest consolidado `58e9efc5a1f53f0f6eb6403e6f6f4ac36dba932646d676fe729963994ad12dc1` sobre catálogo, histórico, vínculo, capacidade, agregados e detalhados.
@@ -98,7 +98,7 @@ O contexto do ponto agrega somente os conjuntos publicados naquele ponto. Cada c
 
 ## 6. Telemetria simulada e capacidade operacional estimada
 
-A capacidade instalada continua ancorada no cadastro. A capacidade operacional disponível é estimada pela simulação da usina, e a capacidade de injeção aceita é estimada a partir da condição simulada da usina, do conjunto e de todas as entidades do ponto. Estado simulado no corte:
+A capacidade instalada continua ancorada no cadastro. A capacidade operacional disponível é estimada pela simulação da usina, e a capacidade de injeção aceita é estimada a partir da condição simulada da usina, do conjunto e de todas as entidades do ponto. Cada entidade do ponto preserva seu `ons_group_id`, o que separa as usinas do mesmo conjunto usadas na reconciliação das demais usinas usadas na pressão sistêmica, sem dupla contagem. Estado simulado no corte:
 
 | Usina | Geração (MW) | Potencial (MW) | Disponibilidade (MW) | Cap. operacional (MW) | Limite aceito (MW) | Restringido (MW) | Meteorologia |
 |---|---|---|---|---|---|---|---|

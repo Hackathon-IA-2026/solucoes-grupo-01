@@ -278,9 +278,7 @@ def test_materialization_fails_when_every_day_is_above_the_alert_threshold() -> 
         enforce_published_series("PLANT1", [1.4] * 60)
     # A constant published series is allowed: the frozen policy may pick a constant baseline,
     # and it is published honestly, one row per date, instead of a saturated model series.
-    constant = enforce_published_series(
-        "PLANT1", [0.5] * 60, candidate="baseline_frequency"
-    )
+    constant = enforce_published_series("PLANT1", [0.5] * 60, candidate="baseline_frequency")
     assert constant["days_above_95_pct"] == 0
     assert constant["distinct_values"] == 1
     assert constant["saturated"] is False
@@ -962,9 +960,7 @@ def test_artifact_validation_rejects_broken_contracts() -> None:
     with pytest.raises(ValueError, match="95%"):
         validate_forecast_artifact(
             broken(
-                lambda clone: clone["checks"].update(
-                    {"all_plants_have_days_below_95_pct": False}
-                )
+                lambda clone: clone["checks"].update({"all_plants_have_days_below_95_pct": False})
             )
         )
 
@@ -982,9 +978,7 @@ def _minimal_artifact() -> dict:
                 "probability_source": "baseline_frequency",
                 "forecasts": [
                     {
-                        "forecast_date": (
-                            date(2026, 9, 26) + timedelta(days=offset)
-                        ).isoformat(),
+                        "forecast_date": (date(2026, 9, 26) + timedelta(days=offset)).isoformat(),
                         "display_label": (
                             f"{(date(2026, 9, 26) + timedelta(days=offset)).day:02d}/09"
                         ),
@@ -1050,9 +1044,7 @@ def test_bundled_forecast_has_five_plants_sixty_consecutive_days_and_three_windo
         assert published["frozen_support"]["basis"] == "validation_paths"
         assert published["frozen_support"]["low"] is not None
         assert published["frozen_support"]["high"] is not None
-        assert (
-            published["frozen_support"]["low"] <= published["frozen_support"]["high"]
-        )
+        assert published["frozen_support"]["low"] <= published["frozen_support"]["high"]
         assert published["frozen_support"]["days"] > 0
         assert published["future_days"] == HORIZON_DAYS
         assert isinstance(published["future_days_outside_support"], int)
@@ -1069,16 +1061,10 @@ def test_bundled_forecast_has_five_plants_sixty_consecutive_days_and_three_windo
         capacity = plant["capacity_mw"]
         assert telemetry["availability_mw"] <= capacity + 1e-6
         assert telemetry["operational_capacity_mw"] <= capacity + 1e-6
-        assert (
-            telemetry["availability_mw"] <= telemetry["operational_capacity_mw"] + 1e-6
-        )
-        assert (
-            telemetry["potential_generation_mw"] <= telemetry["operational_capacity_mw"] + 1e-6
-        )
+        assert telemetry["availability_mw"] <= telemetry["operational_capacity_mw"] + 1e-6
+        assert telemetry["potential_generation_mw"] <= telemetry["operational_capacity_mw"] + 1e-6
         assert telemetry["generation_mw"] <= telemetry["potential_generation_mw"] + 1e-6
-        assert (
-            telemetry["generation_mw"] <= telemetry["accepted_generation_limit_mw"] + 1e-6
-        )
+        assert telemetry["generation_mw"] <= telemetry["accepted_generation_limit_mw"] + 1e-6
         assert telemetry["potentially_curtailed_mw"] == pytest.approx(
             max(
                 telemetry["potential_generation_mw"] - telemetry["generation_mw"],
@@ -1224,9 +1210,7 @@ def test_point_envelope_fits_only_the_groups_represented_in_the_potential(monkey
         "CJU_SOL": {"SOL1": ("Solar 1", "CEG-SOL")},
         "CJU_WIND": {"WIN1": ("Wind 1", "CEG-WIND")},
     }
-    instants = tuple(
-        datetime(2024, 4, 1) + timedelta(minutes=30 * index) for index in range(1600)
-    )
+    instants = tuple(datetime(2024, 4, 1) + timedelta(minutes=30 * index) for index in range(1600))
     captured: list[list[str]] = []
 
     def fake_potential(*_args, **_kwargs):

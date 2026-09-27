@@ -1715,9 +1715,7 @@ def count_outside_support(
     if support_low is None or support_high is None:
         return len(probabilities)
     return sum(
-        1
-        for value in probabilities
-        if float(value) < support_low or float(value) > support_high
+        1 for value in probabilities if float(value) < support_low or float(value) > support_high
     )
 
 

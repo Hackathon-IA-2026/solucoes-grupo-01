@@ -46,4 +46,4 @@ O gerador por conjunto foi executado duas vezes consecutivas com resultados idê
 - Linhas previstas: 300
 - Datas únicas: 60
 
-O artefato por usina individual é reprodutível pelos mesmos comandos documentados na auditoria por usina. Digests empacotados: catálogo `f1f899744a23948c91eda061d0c755aa8a47d61344dac046eb945c6924e9176d`, histórico `bf8a1a105c6cc1db3a22b0d295b5d1496f981f33dc069290023a3eb6ab911cd2` e previsão `fb163f1960cb3869a0e25edf30644171a1ae8410903290ef43d411d28ee54f54`.
+O artefato por usina individual é reprodutível pelos mesmos comandos documentados na auditoria por usina. Digests empacotados: catálogo `f1f899744a23948c91eda061d0c755aa8a47d61344dac046eb945c6924e9176d`, histórico `bf8a1a105c6cc1db3a22b0d295b5d1496f981f33dc069290023a3eb6ab911cd2` e previsão `07441ead594b942ca18f7d38b329c862a62799a58fe92f902da4fbdd5741c15b`.

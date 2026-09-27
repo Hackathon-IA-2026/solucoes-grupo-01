@@ -95,8 +95,7 @@ def test_individual_conversion_builds_the_five_plant_contract():
         assert asset["allocation_coverage"] == 100.0
         assert asset["material_event"] == {
             "definition": (
-                "at least one half-hour interval flagged by flg_geracaorestrita "
-                "on the forecast day"
+                "at least one half-hour interval flagged by flg_geracaorestrita on the forecast day"
             ),
             "percentile": 0.0,
             "probability_status": asset["probability_status"],

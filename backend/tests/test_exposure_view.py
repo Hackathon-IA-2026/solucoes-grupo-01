@@ -129,8 +129,7 @@ def test_simulated_telemetry_and_point_context_validate_against_the_schema():
     # Every entity of the point declares its own ONS group, and the selected plant's own
     # entity carries the group of the selected asset.
     groups = {
-        entity.plant_id: entity.ons_group_id
-        for entity in view.point_context.simulated_entities
+        entity.plant_id: entity.ons_group_id for entity in view.point_context.simulated_entities
     }
     assert all(groups.values())
     assert groups["RNEM13"] == view.asset.ons_group_id

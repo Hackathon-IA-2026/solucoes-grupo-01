@@ -662,9 +662,7 @@ def simulate_point(
             selected_available_value = 0.0
             selected_potential_value = 0.0
             for position, plant in enumerate(plants):
-                weather = (
-                    base_series[position][interval] * factor * noise[position][scenario_index]
-                )
+                weather = base_series[position][interval] * factor * noise[position][scenario_index]
                 weather_potential = lookup_potential_mw(
                     lookups[position], weather, step=steps[position]
                 )
