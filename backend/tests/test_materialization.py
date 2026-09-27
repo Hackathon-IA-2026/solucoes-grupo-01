@@ -8,6 +8,7 @@ from pathlib import Path
 
 import duckdb
 import pytest
+from botocore.exceptions import ClientError
 
 from curtailess.ingestion_state import ClaimResult
 from curtailess.materialization import aggregate_exposure_rows, materialization_handler
@@ -84,14 +85,18 @@ def ons_parquet(tmp_path: Path) -> Path:
                 nom_pontoconexao VARCHAR,
                 id_estado VARCHAR,
                 din_instante TIMESTAMP,
+                val_geracao DOUBLE,
+                val_disponibilidade DOUBLE,
                 val_geracaolimitada DOUBLE,
+                val_geracaoreferencia DOUBLE,
                 val_geracaonaorealizadaapurada DOUBLE,
-                cod_razaorestricao VARCHAR
+                cod_razaorestricao VARCHAR,
+                cod_origemrestricao VARCHAR
             )
             """
         )
         connection.executemany(
-            "INSERT INTO ons_fixture VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO ons_fixture VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     "CJU_RSSVPA",
@@ -101,8 +106,12 @@ def ons_parquet(tmp_path: Path) -> Path:
                     "RN",
                     "2026-08-01T00:00:00",
                     80.0,
+                    100.0,
+                    80.0,
+                    100.0,
                     20.0,
                     "CNF",
+                    "LOC",
                 ),
                 (
                     "CJU_RSSVPA",
@@ -112,8 +121,12 @@ def ons_parquet(tmp_path: Path) -> Path:
                     "RN",
                     "2026-08-01T00:30:00",
                     70.0,
+                    100.0,
+                    70.0,
+                    80.0,
                     10.0,
                     "REL",
+                    "SIS",
                 ),
                 (
                     "CJU_TESTE",
@@ -122,8 +135,12 @@ def ons_parquet(tmp_path: Path) -> Path:
                     "Ponto Dois",
                     "BA",
                     "2026-08-01T00:00:00",
-                    None,
                     50.0,
+                    100.0,
+                    None,
+                    100.0,
+                    50.0,
+                    None,
                     None,
                 ),
             ],
@@ -146,8 +163,6 @@ class FakeS3:
     def put_object(self, **kwargs):
         object_id = (kwargs["Bucket"], kwargs["Key"])
         if kwargs.get("IfNoneMatch") == "*" and object_id in self.objects:
-            from botocore.exceptions import ClientError
-
             raise ClientError(
                 {"Error": {"Code": "PreconditionFailed", "Message": "exists"}},
                 "PutObject",
@@ -155,13 +170,25 @@ class FakeS3:
         self.put_calls.append(kwargs)
         self.objects[object_id] = kwargs["Body"]
 
+    def upload_file(self, filename, bucket, key, ExtraArgs):
+        body = Path(filename).read_bytes()
+        self.objects[(bucket, key)] = body
+        self.put_calls.append({"Bucket": bucket, "Key": key, "Body": body, "ExtraArgs": ExtraArgs})
+
     def get_object(self, **kwargs):
-        return {"Body": BytesIO(self.objects[(kwargs["Bucket"], kwargs["Key"])])}
+        object_id = (kwargs["Bucket"], kwargs["Key"])
+        if object_id not in self.objects:
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "not found"}},
+                "GetObject",
+            )
+        return {"Body": BytesIO(self.objects[object_id])}
 
 
 class FakeTable:
     def __init__(self):
         self.items = []
+        self.deleted = []
 
     class Batch:
         def __init__(self, owner):
@@ -172,6 +199,9 @@ class FakeTable:
 
         def put_item(self, *, Item):
             self.owner.items.append(Item)
+
+        def delete_item(self, *, Key):
+            self.owner.deleted.append(Key)
 
         def __exit__(self, *args):
             return False
@@ -241,6 +271,13 @@ def test_materialization_handler_validates_persists_and_finalizes_manifest(
     table = FakeTable()
     message = materialization_message(ons_parquet)
     ledger = FakeLedger(ledger_item(message))
+    summary_key = "curated/ons/restricao_coff_eolica_tm/period=2026-08/summary.json"
+    s3.objects[("data-bucket", summary_key)] = json.dumps(
+        {
+            "dynamodb_keys": [{"asset_id": "OBSOLETE", "period": "2026-08"}],
+            "superseded_dynamodb_keys": [],
+        }
+    ).encode()
     result = materialization_handler(
         {"Records": [{"messageId": "materialize-1", "body": json.dumps(message)}]},
         None,
@@ -259,10 +296,18 @@ def test_materialization_handler_validates_persists_and_finalizes_manifest(
     assert top["source_sha256"] == message["raw_sha256"]
     assert top["source_fingerprint"] == message["source_fingerprint"]
 
-    summary_key = "curated/settlement_energy/period=2026-08/summary.json"
     summary = json.loads(s3.objects[("data-bucket", summary_key)])
     assert summary["row_count"] == 3
-    assert summary["asset_count"] == 2
+    assert summary["fact_count"] == 2
+    assert summary["metrics"]["asset_count"] == 2
+    assert summary["curated_key"].startswith(
+        "curated/ons/constrained_off/dataset=restricao_coff_eolica_tm/"
+    )
+    assert summary["curated_key"].endswith(
+        f"sha256={summary['curated_sha256'][:2]}/{summary['curated_sha256']}.parquet"
+    )
+    assert table.deleted == [{"asset_id": "OBSOLETE", "period": "2026-08"}]
+    assert summary["superseded_dynamodb_keys"] == table.deleted
     manifest = json.loads(s3.objects[("data-bucket", message["manifest_key"])])
     assert manifest["raw"]["sha256"] == message["raw_sha256"]
     assert manifest["source"]["etag"] == "source-etag"

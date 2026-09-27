@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from curtailess.data_access import ExposureRepository
@@ -23,6 +23,18 @@ class FakeTable:
             ]
         items.sort(key=lambda item: item["period"], reverse=not kwargs["ScanIndexForward"])
         return {"Items": items}
+
+    def get_item(self, **kwargs):
+        key = kwargs["Key"]
+        item = next(
+            (
+                item
+                for item in self.items
+                if item["asset_id"] == key["asset_id"] and item["period"] == key["period"]
+            ),
+            None,
+        )
+        return {"Item": item} if item is not None else {}
 
     def scan(self, **kwargs):
         self.scan_calls.append(kwargs)
@@ -259,3 +271,94 @@ def test_source_hash_lookup_batches_one_fully_paginated_scan() -> None:
 
     assert set(found) == {"a" * 64, "b" * 64}
     assert table.scan_calls == [{}, {"ExclusiveStartKey": {"page": 1}}]
+
+
+def test_forecast_selection_uses_latest_publication_for_valid_instant() -> None:
+    base = {
+        "asset_id": "program:SOL",
+        "fact_type": "forecast_program_daily",
+        "program_entity_id": "SOL",
+        "program_entity_name": "Solar",
+        "intervals": [
+            {
+                "valid_at": "2026-09-27T00:30:00-03:00",
+                "forecast_mw": Decimal("10"),
+                "programmed_mw": Decimal("9"),
+            }
+        ],
+        "source_key": "older.parquet",
+        "source_sha256": "a" * 64,
+        "source_fingerprint": "b" * 64,
+    }
+    newer = {
+        **base,
+        "period": "forecast#2026-09-27-new",
+        "publication_timestamp": "2026-09-27T01:00:00+00:00",
+        "source_key": "newer.parquet",
+        "source_sha256": "c" * 64,
+        "source_fingerprint": "d" * 64,
+        "intervals": [{**base["intervals"][0], "forecast_mw": Decimal("12")}],
+    }
+    older = {
+        **base,
+        "period": "forecast#2026-09-27-old",
+        "publication_timestamp": "2026-09-27T00:00:00+00:00",
+    }
+    repository = ExposureRepository(FakeTable([newer, older]))
+
+    result = repository.get_forecast("SOL", datetime(2026, 9, 27, 3, 30, tzinfo=UTC))
+
+    assert result["forecast_mw"] == Decimal("12")
+    assert result["source_key"] == "newer.parquet"
+
+
+def test_generation_profile_query_filters_periods() -> None:
+    table = FakeTable(
+        [
+            {
+                "asset_id": "A",
+                "period": "generation#2026-07",
+                "fact_type": "observed_generation_profile",
+            },
+            {
+                "asset_id": "A",
+                "period": "generation#2026-08",
+                "fact_type": "observed_generation_profile",
+            },
+            {"asset_id": "A", "period": "2026-08", "fact_type": "constrained_off_monthly"},
+        ]
+    )
+
+    result = ExposureRepository(table).get_generation_profiles("A", "2026-08", "2026-08")
+
+    assert [item["period"] for item in result] == ["generation#2026-08"]
+
+
+def test_identity_query_resolves_effective_relationship_and_capacity() -> None:
+    capacity = {
+        "asset_id": "ceg:CEG-1",
+        "period": "identity#capacity#snapshot",
+        "active_capacity_mw": Decimal("30"),
+    }
+    old = {
+        "asset_id": "A",
+        "period": "identity#relationship#2020-01-01#OLD",
+        "fact_type": "asset_group_relationship",
+        "ons_group_id": "OLD",
+        "ceg": "CEG-1",
+        "valid_from": "2020-01-01",
+        "valid_to": "2021-12-31",
+    }
+    current = {
+        **old,
+        "period": "identity#relationship#2022-01-01#CURRENT",
+        "ons_group_id": "CURRENT",
+        "valid_from": "2022-01-01",
+        "valid_to": None,
+    }
+    repository = ExposureRepository(FakeTable([capacity, old, current]))
+
+    result = repository.get_identity("A", date(2026, 9, 27))
+
+    assert result["ons_group_id"] == "CURRENT"
+    assert result["capacity"]["active_capacity_mw"] == Decimal("30")

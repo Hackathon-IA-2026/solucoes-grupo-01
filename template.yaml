@@ -256,7 +256,7 @@ Resources:
       CodeUri: backend/
       Handler: src.curtailess.materialization.materialization_handler
       Runtime: python3.12
-      Description: Valida e materializa exposicao mensal real do ONS
+      Description: Valida e materializa fatos publicos ONS sem misturar granularidades
       MemorySize: 2048
       Timeout: 300
       EphemeralStorage:

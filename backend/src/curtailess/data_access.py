@@ -2,6 +2,7 @@ import hashlib
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import boto3
 
@@ -31,6 +32,7 @@ class ExposureRepository:
         period_end: str | None = None,
         descending: bool = False,
         max_items: int | None = None,
+        include_prefixed_periods: bool = False,
     ) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         values = {":asset_id": asset_id}
@@ -48,7 +50,9 @@ class ExposureRepository:
         while True:
             response = self.table.query(**request)
             items.extend(
-                item for item in response.get("Items", []) if "#" not in item.get("period", "")
+                item
+                for item in response.get("Items", [])
+                if include_prefixed_periods or "#" not in item.get("period", "")
             )
             if max_items is not None and len(items) >= max_items:
                 return items[:max_items]
@@ -175,6 +179,83 @@ class ExposureRepository:
             )
         return windows
 
+    def get_forecast(self, program_entity_id: str, valid_at: datetime) -> dict[str, Any] | None:
+        local_timezone = ZoneInfo("America/Sao_Paulo")
+        if valid_at.tzinfo is None:
+            target = valid_at.replace(tzinfo=local_timezone).isoformat()
+        else:
+            target = valid_at.astimezone(local_timezone).isoformat()
+        candidates = []
+        for item in self._query_asset(
+            f"program:{program_entity_id.strip()}", include_prefixed_periods=True
+        ):
+            if item.get("fact_type") != "forecast_program_daily":
+                continue
+            for interval in item.get("intervals", []):
+                if interval.get("valid_at") == target:
+                    candidates.append(
+                        {
+                            **interval,
+                            "program_entity_id": item["program_entity_id"],
+                            "program_entity_name": item["program_entity_name"],
+                            "publication_timestamp": item.get("publication_timestamp"),
+                            "publication_time_status": item.get("publication_time_status"),
+                            "source_key": item["source_key"],
+                            "source_sha256": item["source_sha256"],
+                            "source_fingerprint": item["source_fingerprint"],
+                        }
+                    )
+        if not candidates:
+            return None
+        return max(
+            candidates,
+            key=lambda item: (
+                item.get("publication_timestamp") or "",
+                item["source_fingerprint"],
+            ),
+        )
+
+    def get_generation_profiles(
+        self,
+        asset_id: str,
+        start_period: str | None = None,
+        end_period: str | None = None,
+    ) -> list[dict[str, Any]]:
+        profiles = [
+            item
+            for item in self._query_asset(asset_id, include_prefixed_periods=True)
+            if item.get("fact_type") == "observed_generation_profile"
+        ]
+        if start_period is not None:
+            profiles = [item for item in profiles if item["period"][11:] >= start_period]
+        if end_period is not None:
+            profiles = [item for item in profiles if item["period"][11:] <= end_period]
+        return sorted(profiles, key=lambda item: item["period"])
+
+    def get_identity(self, asset_id: str, as_of: date) -> dict[str, Any] | None:
+        relationships = [
+            item
+            for item in self._query_asset(asset_id, include_prefixed_periods=True)
+            if item.get("fact_type") == "asset_group_relationship"
+            and (item.get("valid_from") is None or date.fromisoformat(item["valid_from"]) <= as_of)
+            and (item.get("valid_to") is None or date.fromisoformat(item["valid_to"]) >= as_of)
+        ]
+        if not relationships:
+            return None
+        relationships.sort(
+            key=lambda item: (item.get("valid_from") or "", item["period"]), reverse=True
+        )
+        identity = dict(relationships[0])
+        ceg = identity.get("ceg")
+        if ceg and ceg != "-":
+            response = self.table.get_item(
+                Key={"asset_id": f"ceg:{ceg}", "period": "identity#capacity#snapshot"},
+                ConsistentRead=True,
+            )
+            if response.get("Item") is not None:
+                identity["capacity"] = response["Item"]
+        return identity
+
     def get_data_quality(self, asset_id: str) -> dict[str, Any] | None:
         return self.get_asset(asset_id)
 
@@ -238,6 +319,23 @@ class UnconfiguredExposureRepository:
     ) -> list[dict[str, Any]]:
         del asset_id, start, end, duration_hours, reason
         return []
+
+    def get_forecast(self, program_entity_id: str, valid_at: datetime) -> None:
+        del program_entity_id, valid_at
+        return None
+
+    def get_generation_profiles(
+        self,
+        asset_id: str,
+        start_period: str | None = None,
+        end_period: str | None = None,
+    ) -> list[dict[str, Any]]:
+        del asset_id, start_period, end_period
+        return []
+
+    def get_identity(self, asset_id: str, as_of: date) -> None:
+        del asset_id, as_of
+        return None
 
     def get_data_quality(self, asset_id: str) -> None:
         del asset_id
