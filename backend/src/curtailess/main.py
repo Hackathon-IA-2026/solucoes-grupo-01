@@ -16,6 +16,7 @@ from .canonical import canonical_json as _canonical_json
 from .config import get_settings
 from .data_access import create_exposure_repository
 from .decision_operations import build_rank_maintenance, build_screen_bess
+from .plant_state import build_plant_state, create_plant_state_repository
 from .provenance import build_evidence_id as build_evidence_id
 from .provenance import create_issued_provenance_repository
 from .provenance_service import (
@@ -51,6 +52,7 @@ from .schemas import (
     ModelRunResponse,
     NumericEvidence,
     Period,
+    PlantStateResponse,
     PointContextResponse,
     ProvenanceResponse,
     ReportCreateRequest,
@@ -64,6 +66,9 @@ artifact_repository = create_artifact_repository(
     settings.scenarios_table, settings.data_bucket, settings.aws_region
 )
 issued_provenance_repository = create_issued_provenance_repository(
+    settings.scenarios_table, settings.aws_region
+)
+plant_state_repository = create_plant_state_repository(
     settings.scenarios_table, settings.aws_region
 )
 
@@ -178,6 +183,26 @@ def get_asset(asset_id: str) -> Asset:
     asset = materialized_asset(item)
     _persist_asset(item, asset)
     return asset
+
+
+@app.get(
+    "/v1/assets/{asset_id}/plant-state",
+    response_model=PlantStateResponse,
+    tags=["assets"],
+)
+def get_plant_state(asset_id: str, as_of: datetime) -> PlantStateResponse:
+    if as_of.tzinfo is None:
+        raise HTTPException(status_code=422, detail="as_of requer fuso horário.")
+    try:
+        return build_plant_state(
+            asset_id,
+            as_of,
+            repository,
+            plant_state_repository,
+            max_forecast_age_hours=settings.public_data_max_age_hours,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado.") from exc
 
 
 @app.get(

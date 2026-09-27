@@ -80,6 +80,10 @@ def materialize(
             sum(coalesce(val_disponibilidade, 0) * 0.5),
             sum(coalesce(val_geracaoreferencia, 0) * 0.5),
             sum(CASE WHEN val_geracaolimitada IS NOT NULL
+                THEN coalesce(val_geracaolimitada, 0) * 0.5 ELSE 0 END),
+            sum(CASE WHEN val_geracaolimitada IS NOT NULL
+                THEN coalesce(val_disponibilidade, 0) * 0.5 ELSE 0 END),
+            sum(CASE WHEN val_geracaolimitada IS NOT NULL
                 THEN coalesce(val_geracaonaorealizadaapurada, 0) * 0.5 ELSE 0 END),
             {null_expressions}
         FROM source_rows
@@ -142,7 +146,7 @@ def materialize(
         compatibility_reasons["NC"] = exact_reasons.get("__NULL__", {}).get(
             "curtailed_mwh", Decimal("0")
         )
-        null_counts = {column: int(row[15 + index]) for index, column in enumerate(VALUE_COLUMNS)}
+        null_counts = {column: int(row[17 + index]) for index, column in enumerate(VALUE_COLUMNS)}
         items.append(
             {
                 "asset_id": row[0],
@@ -163,7 +167,9 @@ def materialize(
                 "generation_mwh": _decimal(row[11]),
                 "availability_mwh": _decimal(row[12]),
                 "reference_generation_mwh": _decimal(row[13]),
-                "curtailed_mwh": _decimal(row[14]),
+                "limited_generation_mwh": _decimal(row[14]),
+                "availability_limited_mwh": _decimal(row[15]),
+                "curtailed_mwh": _decimal(row[16]),
                 "curtailed_mwh_by_reason": compatibility_reasons,
                 "curtailed_mwh_by_reason_exact": exact_reasons,
                 "limited_interval_count_by_origin": origins[row[0]],

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     bedrock_fallback_model_id: str = "us.anthropic.claude-sonnet-5"
     bedrock_emergency_model_id: str = "us.amazon.nova-pro-v1:0"
     bedrock_knowledge_base_id: str | None = None
+    public_data_max_age_hours: int = 48
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -65,6 +65,7 @@ Resources:
           BEDROCK_FALLBACK_MODEL_ID: !Ref BedrockFallbackModelId
           BEDROCK_EMERGENCY_MODEL_ID: !Ref BedrockEmergencyModelId
           BEDROCK_KNOWLEDGE_BASE_ID: !Ref BedrockKnowledgeBaseId
+          PUBLIC_DATA_MAX_AGE_HOURS: "48"
       Policies:
         - S3ReadPolicy:
             BucketName: !Ref DataBucket

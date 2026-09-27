@@ -618,6 +618,73 @@ class MaintenanceRankResponse(BaseModel):
     limitations: list[str]
 
 
+class PlantStateFact(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    value: FiniteFloat = Field(ge=0)
+    unit: Literal["MW"] = "MW"
+    value_status: ValueStatus
+    origin: DataOrigin
+    provenance: EvidenceProvenance
+
+    @model_validator(mode="after")
+    def validate_semantics(self) -> Self:
+        expected = STATUS_ORIGIN[self.value_status]
+        if self.origin is not expected or self.provenance.origin is not self.origin:
+            raise ValueError("plant-state value status, origin, and provenance must agree")
+        return self
+
+
+class PlantStateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    snapshot_id: Annotated[str, StringConstraints(pattern=r"^pst1\.[0-9a-f]{64}$")]
+    asset_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
+    as_of: datetime
+    status: Literal["SIMULATED", "REVIEW_REQUIRED"]
+    fallback_level: Literal["asset", "ons_group", "technology_state", "none"]
+    public_forecast_mw: PlantStateFact | None = None
+    capacity_mw: PlantStateFact | None = None
+    generation_mw: PlantStateFact | None = None
+    availability_mw: PlantStateFact | None = None
+    reference_generation_mw: PlantStateFact | None = None
+    generation_limit_mw: PlantStateFact | None = None
+    source_snapshot_ids: tuple[Sha256, ...] = ()
+    method_version: Literal["public_history_simulation_v1"] = "public_history_simulation_v1"
+    limitations: tuple[BoundedText, ...]
+
+    @field_validator("as_of")
+    @classmethod
+    def require_aware_as_of(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("as_of requires timezone information")
+        return value
+
+    @model_validator(mode="after")
+    def validate_status_payload(self) -> Self:
+        simulated_fields = (
+            self.generation_mw,
+            self.availability_mw,
+            self.reference_generation_mw,
+            self.generation_limit_mw,
+        )
+        if self.status == "SIMULATED" and (
+            self.public_forecast_mw is None
+            or self.capacity_mw is None
+            or any(value is None for value in simulated_fields)
+        ):
+            raise ValueError(
+                "SIMULATED plant state requires public bounds and all simulated values"
+            )
+        if self.status == "REVIEW_REQUIRED" and any(
+            value is not None for value in simulated_fields
+        ):
+            raise ValueError("REVIEW_REQUIRED cannot expose simulated current values")
+        if tuple(sorted(set(self.source_snapshot_ids))) != self.source_snapshot_ids:
+            raise ValueError("source_snapshot_ids must be sorted and unique")
+        return self
+
+
 class BessScreenRequest(BaseModel):
     asset_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]
     maintenance_result_id: Annotated[str, StringConstraints(min_length=1, max_length=128)]

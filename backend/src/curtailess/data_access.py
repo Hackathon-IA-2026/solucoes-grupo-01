@@ -256,6 +256,40 @@ class ExposureRepository:
                 identity["capacity"] = response["Item"]
         return identity
 
+    def get_generation_profiles_by_technology_state(
+        self, technology: str | None, state: str | None
+    ) -> list[dict[str, Any]]:
+        if not technology or not state:
+            return []
+        normalized = technology.strip().lower()
+        technology_token = (
+            "solar"
+            if "solar" in normalized
+            else "eoli"
+            if "eoli" in normalized or normalized == "wind"
+            else normalized
+        )
+        all_items = self._scan_all()
+        latest_state: dict[str, tuple[str, str]] = {}
+        for item in all_items:
+            period = str(item.get("period", ""))
+            item_state = item.get("state")
+            if "#" in period or not item_state:
+                continue
+            current = latest_state.get(item["asset_id"])
+            if current is None or period > current[0]:
+                latest_state[item["asset_id"]] = (period, str(item_state))
+        return sorted(
+            (
+                item
+                for item in all_items
+                if item.get("fact_type") == "observed_generation_profile"
+                and technology_token in str(item.get("technology_name", "")).lower()
+                and latest_state.get(item["asset_id"], ("", ""))[1] == state
+            ),
+            key=lambda item: (item["asset_id"], item["period"]),
+        )
+
     def get_data_quality(self, asset_id: str) -> dict[str, Any] | None:
         return self.get_asset(asset_id)
 
