@@ -18,6 +18,33 @@ _MAX_DISCOVERY_CAP = 1_000
 _PERIOD_LABEL = re.compile(r"^(?P<year>\d{4})(?:-(?P<month>\d{2})(?:-(?P<day>\d{2}))?)?$")
 
 
+def discover_latest_parquet(
+    s3_client: Any,
+    *,
+    source_bucket: str,
+    source_prefix: str,
+) -> dict[str, object]:
+    """Preserve the deployed empty-event discovery contract until its scheduler migrates."""
+    latest: dict[str, Any] | None = None
+    paginator = s3_client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=source_bucket, Prefix=source_prefix):
+        for item in page.get("Contents", []):
+            if not item["Key"].lower().endswith(".parquet"):
+                continue
+            if latest is None or item["LastModified"] > latest["LastModified"]:
+                latest = item
+
+    if latest is None:
+        raise RuntimeError(f"Nenhum Parquet encontrado em s3://{source_bucket}/{source_prefix}")
+
+    return {
+        "key": latest["Key"],
+        "size": latest["Size"],
+        "etag": latest["ETag"].strip('"'),
+        "last_modified": latest["LastModified"].isoformat(),
+    }
+
+
 def discover_dataset_objects(
     s3_client: Any, spec: DatasetSpec
 ) -> tuple[list[dict[str, object]], list[str]]:
@@ -186,6 +213,40 @@ def discovery_handler(
     env = environment if environment is not None else dict(os.environ)
     object_store = s3_client or boto3.client("s3", region_name="us-west-2")
     queue = sqs_client or boto3.client("sqs", region_name="us-west-2")
+    if not event:
+        dataset = env["SOURCE_DATASET"]
+        latest = discover_latest_parquet(
+            object_store,
+            source_bucket=env["SOURCE_BUCKET"],
+            source_prefix=env["SOURCE_PREFIX"],
+        )
+        message = {
+            "dataset": dataset,
+            "source_bucket": env["SOURCE_BUCKET"],
+            "source_key": latest["key"],
+            "source_size": latest["size"],
+            "source_etag": latest["etag"],
+            "source_last_modified": latest["last_modified"],
+        }
+        response = queue.send_message(
+            QueueUrl=env["INGESTION_QUEUE_URL"],
+            MessageBody=json.dumps(message),
+        )
+        message_id = response["MessageId"]
+        return {
+            "mode": "incremental",
+            "dataset": dataset,
+            "source_key": str(latest["key"]),
+            "message_id": message_id,
+            "enqueued": 1,
+            "message_ids": [message_id],
+            "has_more": False,
+            "continuation": None,
+            "malformed_count": 0,
+            "malformed_keys": [],
+            "malformed_keys_truncated": False,
+        }
+
     mode, specs, start, end = _validate_request(event)
     cap = _discovery_cap(env)
     continuation_context = _continuation_context(event, mode)
@@ -239,6 +300,11 @@ def discovery_handler(
     )
     result: dict[str, object] = {
         "mode": mode,
+        # Legacy scalar fields are meaningful only for exactly one discovery.
+        # Keep the keys stable and use null for zero or multiple discoveries.
+        "dataset": None,
+        "source_key": None,
+        "message_id": None,
         "enqueued": len(selected),
         "message_ids": message_ids,
         "has_more": has_more,

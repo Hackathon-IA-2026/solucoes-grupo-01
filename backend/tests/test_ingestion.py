@@ -61,6 +61,15 @@ def environment(*, cap: int = 100) -> dict[str, str]:
     }
 
 
+def legacy_environment(*, cap: int = 100) -> dict[str, str]:
+    return {
+        **environment(cap=cap),
+        "SOURCE_BUCKET": "ons-aws-prod-opendata",
+        "SOURCE_PREFIX": "dataset/restricao_coff_eolica_tm/",
+        "SOURCE_DATASET": "restricao_coff_eolica_tm",
+    }
+
+
 def test_discover_dataset_objects_paginates_through_empty_pages_and_skips_malformed_keys() -> None:
     spec = get_dataset_spec("restricao_coff_eolica_tm")
     valid_08 = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_08.parquet"
@@ -175,6 +184,96 @@ def test_duplicate_straddling_cap_boundary_does_not_create_spurious_continuation
     assert result["enqueued"] == 2
     assert result["has_more"] is False
     assert result["continuation"] is None
+
+
+def test_empty_event_preserves_deployed_single_prefix_latest_object_contract() -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    older = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_08.parquet"
+    latest = f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_09.parquet"
+    s3 = FakeS3(
+        {
+            spec.s3_prefix: [
+                {
+                    "Contents": [
+                        source_object(latest, last_modified=datetime(2026, 9, 2, tzinfo=UTC)),
+                        source_object(older, last_modified=datetime(2026, 9, 1, tzinfo=UTC)),
+                    ]
+                }
+            ]
+        }
+    )
+    sqs = FakeSQS()
+
+    result = discovery_handler(
+        {},
+        None,
+        s3_client=s3,
+        sqs_client=sqs,
+        environment=legacy_environment(),
+    )
+
+    assert s3.pagination_calls == [{"Bucket": "ons-aws-prod-opendata", "Prefix": spec.s3_prefix}]
+    assert len(sqs.messages) == 1
+    assert json.loads(sqs.messages[0]["MessageBody"]) == {
+        "dataset": "restricao_coff_eolica_tm",
+        "source_bucket": "ons-aws-prod-opendata",
+        "source_key": latest,
+        "source_size": 100,
+        "source_etag": latest,
+        "source_last_modified": "2026-09-02T00:00:00+00:00",
+    }
+    assert result == {
+        "mode": "incremental",
+        "dataset": "restricao_coff_eolica_tm",
+        "source_key": latest,
+        "message_id": "message-1",
+        "enqueued": 1,
+        "message_ids": ["message-1"],
+        "has_more": False,
+        "continuation": None,
+        "malformed_count": 0,
+        "malformed_keys": [],
+        "malformed_keys_truncated": False,
+    }
+
+
+@pytest.mark.parametrize(
+    ("object_count", "legacy_values", "legacy_types"),
+    [
+        (0, (None, None, None), (type(None), type(None), type(None))),
+        (1, ("restricao_coff_eolica_tm", "SOURCE_KEY", "message-1"), (str, str, str)),
+        (2, (None, None, None), (type(None), type(None), type(None))),
+    ],
+)
+def test_response_preserves_exact_legacy_keys_for_every_discovery_cardinality(
+    object_count: int,
+    legacy_values: tuple[str | None, str | None, str | None],
+    legacy_types: tuple[type, type, type],
+) -> None:
+    spec = get_dataset_spec("restricao_coff_eolica_tm")
+    keys = [
+        f"{spec.s3_prefix}RESTRICAO_COFF_EOLICA_2026_{month:02d}.parquet"
+        for month in range(1, object_count + 1)
+    ]
+
+    result = discovery_handler(
+        {"mode": "incremental"},
+        None,
+        s3_client=FakeS3({spec.s3_prefix: [{"Contents": [source_object(key) for key in keys]}]}),
+        sqs_client=FakeSQS(),
+        environment=environment(),
+    )
+
+    expected_values = (
+        legacy_values[0],
+        keys[0] if object_count == 1 else legacy_values[1],
+        legacy_values[2],
+    )
+    actual_values = (result["dataset"], result["source_key"], result["message_id"])
+    assert actual_values == expected_values
+    assert tuple(type(value) for value in actual_values) == legacy_types
+    assert result["enqueued"] == object_count
+    assert result["message_ids"] == [f"message-{index}" for index in range(1, object_count + 1)]
 
 
 def test_incremental_enumerates_enabled_datasets_and_sorts_messages_deterministically() -> None:
