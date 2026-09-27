@@ -1,12 +1,13 @@
 import hashlib
 import json
 import re
+import time
 from collections.abc import Iterator
 from decimal import Decimal
 from typing import Any
 
 import boto3
-from boto3.dynamodb.types import TypeSerializer
+from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from botocore.exceptions import ClientError
 
 from .canonical import canonical_digest
@@ -15,6 +16,9 @@ EVIDENCE_ID_MAX_LENGTH = 69
 MAX_DYNAMO_ITEM_BYTES = 350 * 1024
 MAX_OPERATION_PROVENANCES = 224
 MAX_OPERATION_SOURCE_RECORDS = 32
+_BATCH_GET_MAX_KEYS = 100
+_BATCH_GET_MAX_ATTEMPTS = 4
+_BATCH_GET_BACKOFF_SECONDS = 0.01
 _ID_REGISTRY = {
     "evd1": ("derived", re.compile(r"^evd1\.[0-9a-f]{64}$")),
     "evp1": ("public_materialized", re.compile(r"^evp1\.[0-9a-f]{64}$")),
@@ -76,6 +80,17 @@ def _dynamodb_safe(value: Any) -> Any:
         return {key: _dynamodb_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_dynamodb_safe(item) for item in value]
+    return value
+
+
+def _dynamodb_loaded(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        exponent = value.as_tuple().exponent
+        return int(value) if isinstance(exponent, int) and exponent >= 0 else float(value)
+    if isinstance(value, dict):
+        return {key: _dynamodb_loaded(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_dynamodb_loaded(item) for item in value]
     return value
 
 
@@ -331,6 +346,67 @@ class IssuedProvenanceRepository:
         self._put_immutable(operation_item)
         return operation_id
 
+    def _read_items(self, keys: list[dict[str, str]]) -> dict[tuple[str, str], dict[str, Any]]:
+        """Read keys strongly consistently, using bounded BatchGetItem calls when available."""
+        unique_keys = list({(key["plant_id"], key["scenario_id"]): key for key in keys}.values())
+        client = getattr(getattr(self.table, "meta", None), "client", None)
+        batch_get_item = getattr(client, "batch_get_item", None)
+        table_name = getattr(self.table, "name", None)
+        if not callable(batch_get_item) or not isinstance(table_name, str) or not table_name:
+            items = {}
+            for key in unique_keys:
+                item = self.table.get_item(Key=key, ConsistentRead=True).get("Item")
+                if isinstance(item, dict):
+                    items[(key["plant_id"], key["scenario_id"])] = item
+            return items
+
+        serializer = TypeSerializer()
+        deserializer = TypeDeserializer()
+        items: dict[tuple[str, str], dict[str, Any]] = {}
+        for offset in range(0, len(unique_keys), _BATCH_GET_MAX_KEYS):
+            pending = [
+                {name: serializer.serialize(value) for name, value in key.items()}
+                for key in unique_keys[offset : offset + _BATCH_GET_MAX_KEYS]
+            ]
+            for attempt in range(_BATCH_GET_MAX_ATTEMPTS):
+                response: Any = batch_get_item(
+                    RequestItems={
+                        table_name: {
+                            "Keys": pending,
+                            "ConsistentRead": True,
+                        }
+                    }
+                )
+                for serialized_item in response.get("Responses", {}).get(table_name, []):
+                    item = _dynamodb_loaded(
+                        {
+                            name: deserializer.deserialize(value)
+                            for name, value in serialized_item.items()
+                        }
+                    )
+                    plant_id = item.get("plant_id")
+                    scenario_id = item.get("scenario_id")
+                    if isinstance(plant_id, str) and isinstance(scenario_id, str):
+                        items[(plant_id, scenario_id)] = item
+                pending = response.get("UnprocessedKeys", {}).get(table_name, {}).get("Keys", [])
+                if not pending:
+                    break
+                if attempt + 1 < _BATCH_GET_MAX_ATTEMPTS:
+                    time.sleep(_BATCH_GET_BACKOFF_SECONDS * (2**attempt))
+            if pending:
+                raise ClientError(
+                    {
+                        "Error": {
+                            "Code": "ProvisionedThroughputExceededException",
+                            "Message": (
+                                "BatchGetItem retained UnprocessedKeys after bounded retries"
+                            ),
+                        }
+                    },
+                    "BatchGetItem",
+                )
+        return items
+
     def _memberships(self, evidence_id: str) -> Iterator[dict[str, Any]]:
         exclusive_start_key = None
         while True:
@@ -386,13 +462,28 @@ class IssuedProvenanceRepository:
             for member in manifest:
                 member_id = member["evidence_id"]
                 leaf_digest = member["leaf_digest"]
+                if not isinstance(member_id, str) or not isinstance(leaf_digest, str):
+                    return None
                 parse_evidence_id(member_id)
-                stored_leaf = self.table.get_item(
-                    Key=self._key(member_id), ConsistentRead=True
-                ).get("Item")
-                stored_membership = self.table.get_item(
-                    Key=self._membership_key(member_id, operation_id), ConsistentRead=True
-                ).get("Item")
+            member_keys = [
+                key
+                for member in manifest
+                for key in (
+                    self._key(member["evidence_id"]),
+                    self._membership_key(member["evidence_id"], operation_id),
+                )
+            ]
+            stored_items = self._read_items(member_keys)
+            for member in manifest:
+                member_id = member["evidence_id"]
+                leaf_digest = member["leaf_digest"]
+                parse_evidence_id(member_id)
+                leaf_key = self._key(member_id)
+                membership_key = self._membership_key(member_id, operation_id)
+                stored_leaf = stored_items.get((leaf_key["plant_id"], leaf_key["scenario_id"]))
+                stored_membership = stored_items.get(
+                    (membership_key["plant_id"], membership_key["scenario_id"])
+                )
                 if not isinstance(stored_leaf, dict):
                     return None
                 member_provenance = stored_leaf.get("provenance")
@@ -445,12 +536,22 @@ class IssuedProvenanceRepository:
                 ):
                     return None
                 parse_evidence_id(member_id)
-                stored_leaf = self.table.get_item(
-                    Key=self._key(member_id), ConsistentRead=True
-                ).get("Item")
-                stored_membership = self.table.get_item(
-                    Key=self._membership_key(member_id, operation_id), ConsistentRead=True
-                ).get("Item")
+            member_keys = [
+                key
+                for member_id in provenances
+                for key in (
+                    self._key(member_id),
+                    self._membership_key(member_id, operation_id),
+                )
+            ]
+            stored_items = self._read_items(member_keys)
+            for member_id, member_provenance in provenances.items():
+                leaf_key = self._key(member_id)
+                membership_key = self._membership_key(member_id, operation_id)
+                stored_leaf = stored_items.get((leaf_key["plant_id"], leaf_key["scenario_id"]))
+                stored_membership = stored_items.get(
+                    (membership_key["plant_id"], membership_key["scenario_id"])
+                )
                 if stored_leaf != self._leaf_item(member_id, member_provenance) or (
                     stored_membership
                     != self._membership_item(member_id, operation_id, member_provenance)
@@ -460,7 +561,11 @@ class IssuedProvenanceRepository:
             return None
         return operation, provenances, dict.fromkeys(provenances, source_records)
 
-    def get(self, evidence_id: str) -> dict[str, Any] | None:
+    def _get(
+        self,
+        evidence_id: str,
+        operation_cache: dict[str, Any],
+    ) -> dict[str, Any] | None:
         try:
             parse_evidence_id(evidence_id)
         except ValueError:
@@ -476,7 +581,9 @@ class IssuedProvenanceRepository:
             operation_id = membership.get("operation_id")
             if not isinstance(operation_id, str):
                 continue
-            validated = self._validated_operation(operation_id)
+            if operation_id not in operation_cache:
+                operation_cache[operation_id] = self._validated_operation(operation_id)
+            validated = operation_cache[operation_id]
             if validated is None:
                 continue
             operation, provenances, sources = validated
@@ -505,6 +612,17 @@ class IssuedProvenanceRepository:
             }
         return None
 
+    def get(self, evidence_id: str) -> dict[str, Any] | None:
+        return self._get(evidence_id, {})
+
+    def get_many(self, evidence_ids: list[str]) -> dict[str, dict[str, Any] | None]:
+        """Resolve IDs with an operation-verification cache scoped to this call only."""
+        operation_cache: dict[str, Any] = {}
+        return {
+            evidence_id: self._get(evidence_id, operation_cache)
+            for evidence_id in dict.fromkeys(evidence_ids)
+        }
+
 
 class UnconfiguredIssuedProvenanceRepository:
     def put_operation(self, **kwargs: Any) -> str:
@@ -514,6 +632,9 @@ class UnconfiguredIssuedProvenanceRepository:
     def get(self, evidence_id: str) -> None:
         del evidence_id
         return None
+
+    def get_many(self, evidence_ids: list[str]) -> dict[str, None]:
+        return dict.fromkeys(evidence_ids)
 
 
 def create_issued_provenance_repository(

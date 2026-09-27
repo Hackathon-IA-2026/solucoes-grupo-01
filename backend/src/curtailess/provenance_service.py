@@ -173,8 +173,8 @@ def persist_operation(
     )
 
 
-def resolve_server_evidence(
-    evidence_id: str, issued_repository: Any
+def _resolve_server_record(
+    evidence_id: str, record: dict[str, Any] | None
 ) -> tuple[
     dict[str, Any],
     DataOrigin,
@@ -182,7 +182,6 @@ def resolve_server_evidence(
     list[dict[str, Any]],
     EvidenceProvenance,
 ]:
-    record = issued_repository.get(evidence_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Proveniência não encontrada.")
     try:
@@ -229,9 +228,22 @@ def resolve_server_evidence(
     return identity, origin, classification, source_records, candidate
 
 
+def resolve_server_evidence(
+    evidence_id: str, issued_repository: Any
+) -> tuple[
+    dict[str, Any],
+    DataOrigin,
+    Literal["medido", "calculado"],
+    list[dict[str, Any]],
+    EvidenceProvenance,
+]:
+    return _resolve_server_record(evidence_id, issued_repository.get(evidence_id))
+
+
 def validate_caller_provenance(
     provenances: dict[str, EvidenceProvenance], issued_repository: Any
 ) -> None:
+    server_provenances = []
     for provenance in provenances.values():
         if provenance.origin is DataOrigin.CLIENTE_INFORMADO:
             continue
@@ -239,9 +251,17 @@ def validate_caller_provenance(
             raise HTTPException(
                 status_code=422, detail="Proveniência simulada não é entrada confiável."
             )
+        server_provenances.append(provenance)
+
+    evidence_ids = [provenance.evidence_id for provenance in server_provenances]
+    if hasattr(issued_repository, "get_many"):
+        records = issued_repository.get_many(evidence_ids)
+    else:
+        records = {evidence_id: issued_repository.get(evidence_id) for evidence_id in evidence_ids}
+    for provenance in server_provenances:
         try:
-            identity, origin, _, _, candidate = resolve_server_evidence(
-                provenance.evidence_id, issued_repository
+            identity, origin, _, _, candidate = _resolve_server_record(
+                provenance.evidence_id, records.get(provenance.evidence_id)
             )
         except HTTPException as exc:
             raise HTTPException(

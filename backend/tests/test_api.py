@@ -2,9 +2,10 @@ import copy
 import hashlib
 import json
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
-from boto3.dynamodb.types import TypeSerializer
+from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from botocore.exceptions import ClientError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -20,7 +21,7 @@ from curtailess.provenance import (
     build_evidence_id,
     build_public_evidence_id,
 )
-from curtailess.provenance_service import field_provenance
+from curtailess.provenance_service import field_provenance, validate_caller_provenance
 from curtailess.schemas import DataOrigin, EvidenceProvenance
 
 client = TestClient(app)
@@ -38,7 +39,14 @@ evidence_contract_client = TestClient(evidence_contract_app)
 class FakeScenariosTable:
     def __init__(self) -> None:
         self.items = {}
+        self.name = "scenarios"
+        self.meta = SimpleNamespace(client=self)
         self.consistent_reads = 0
+        self.read_round_trips = 0
+        self.get_item_calls = []
+        self.batch_get_calls = []
+        self.unprocessed_batch_calls = 0
+        self.query_page_size: int | None = None
         self.put_count = 0
         self.fail_on_put: int | None = None
         self.throttle = False
@@ -71,8 +79,41 @@ class FakeScenariosTable:
     def get_item(self, *, Key, ConsistentRead=False) -> dict:
         self._validate_key(Key)
         self.consistent_reads += int(ConsistentRead)
+        self.read_round_trips += 1
+        self.get_item_calls.append(copy.deepcopy(Key))
         item = self.items.get((Key["plant_id"], Key["scenario_id"]))
-        return {} if item is None else {"Item": item}
+        return {} if item is None else {"Item": copy.deepcopy(item)}
+
+    def batch_get_item(self, *, RequestItems) -> dict:
+        assert set(RequestItems) == {self.name}
+        request = RequestItems[self.name]
+        keys = request["Keys"]
+        assert request.get("ConsistentRead") is True
+        assert len(keys) <= 100
+        self.consistent_reads += 1
+        self.read_round_trips += 1
+        self.batch_get_calls.append(copy.deepcopy(keys))
+        if self.unprocessed_batch_calls > 0:
+            self.unprocessed_batch_calls -= 1
+            return {
+                "Responses": {self.name: []},
+                "UnprocessedKeys": {self.name: copy.deepcopy(request)},
+            }
+        deserializer = TypeDeserializer()
+        serializer = TypeSerializer()
+        response_items = []
+        for serialized_key in keys:
+            key = {name: deserializer.deserialize(value) for name, value in serialized_key.items()}
+            self._validate_key(key)
+            item = self.items.get((key["plant_id"], key["scenario_id"]))
+            if item is not None:
+                response_items.append(
+                    {
+                        name: serializer.serialize(value)
+                        for name, value in copy.deepcopy(item).items()
+                    }
+                )
+        return {"Responses": {self.name: response_items}, "UnprocessedKeys": {}}
 
     def query(
         self,
@@ -84,16 +125,24 @@ class FakeScenariosTable:
     ) -> dict:
         assert KeyConditionExpression == "plant_id = :plant_id"
         self.consistent_reads += int(ConsistentRead)
+        self.read_round_trips += 1
         plant_id = ExpressionAttributeValues[":plant_id"]
         items = [
-            item
+            copy.deepcopy(item)
             for (item_plant_id, _), item in sorted(self.items.items())
             if item_plant_id == plant_id
         ]
         if ExclusiveStartKey is not None:
             start = ExclusiveStartKey["scenario_id"]
             items = [item for item in items if item["scenario_id"] > start]
-        return {"Items": items}
+        response: dict = {"Items": items[: self.query_page_size]}
+        if self.query_page_size and len(items) > self.query_page_size:
+            last = response["Items"][-1]
+            response["LastEvaluatedKey"] = {
+                "plant_id": last["plant_id"],
+                "scenario_id": last["scenario_id"],
+            }
+        return response
 
 
 @pytest.fixture(autouse=True)
@@ -225,6 +274,134 @@ def test_maximum_operation_manifest_is_bounded_before_any_write() -> None:
     )
     assert _item_size(operation) <= MAX_DYNAMO_ITEM_BYTES
     assert len(operation["evidence_manifest"]) == 224
+
+
+def _reset_read_probe(table: FakeScenariosTable) -> None:
+    table.consistent_reads = 0
+    table.read_round_trips = 0
+    table.get_item_calls.clear()
+    table.batch_get_calls.clear()
+
+
+def test_maximum_operation_resolves_with_at_most_eight_dynamodb_round_trips() -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    evidence_ids = [
+        build_evidence_id("a", f"field-{index}", "bess_screen_v1", "ctx") for index in range(224)
+    ]
+    repository.put_operation(
+        operation="maintenance_rank",
+        request_digest="b" * 64,
+        provenances={value: _stored_provenance(value) for value in evidence_ids},
+        source_records=[
+            {"asset_id": "A", "source_key": "raw/source.parquet", "source_sha256": "a" * 64}
+        ],
+    )
+    _reset_read_probe(table)
+
+    assert IssuedProvenanceRepository(table).get(evidence_ids[0]) is not None
+    assert table.read_round_trips == 8
+    assert [len(keys) for keys in table.batch_get_calls] == [100, 100, 100, 100, 48]
+
+
+def test_local_table_without_batch_get_falls_back_to_consistent_gets() -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    evidence_id = build_evidence_id("a", "field", "bess_screen_v1", "ctx")
+    repository.put_operation(
+        operation="bess_screen",
+        request_digest="b" * 64,
+        provenances={evidence_id: _stored_provenance(evidence_id)},
+        source_records=[{"source_key": "raw/source.parquet", "source_sha256": "a" * 64}],
+    )
+    del table.meta
+    del table.name
+    _reset_read_probe(table)
+
+    assert IssuedProvenanceRepository(table).get(evidence_id) is not None
+    assert not table.batch_get_calls
+    assert table.consistent_reads == 5
+
+
+def test_batch_get_retries_unprocessed_keys_with_a_bounded_attempt_count(monkeypatch) -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    evidence_id = build_evidence_id("a", "field", "bess_screen_v1", "ctx")
+    repository.put_operation(
+        operation="bess_screen",
+        request_digest="b" * 64,
+        provenances={evidence_id: _stored_provenance(evidence_id)},
+        source_records=[{"source_key": "raw/source.parquet", "source_sha256": "a" * 64}],
+    )
+    _reset_read_probe(table)
+    table.unprocessed_batch_calls = 1
+    monkeypatch.setattr("curtailess.provenance.time.sleep", lambda _delay: None)
+
+    assert repository.get(evidence_id) is not None
+    assert len(table.batch_get_calls) == 2
+    assert table.read_round_trips == 5
+
+    _reset_read_probe(table)
+    table.unprocessed_batch_calls = 100
+    with pytest.raises(ClientError, match="UnprocessedKeys"):
+        repository.get(evidence_id)
+    assert len(table.batch_get_calls) == 4
+    assert table.read_round_trips == 7
+
+
+def test_multiple_caller_provenances_authenticate_shared_operation_once() -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    evidence_ids = [
+        build_evidence_id("a", f"annual-{index}", "bess_screen_v1", "ctx") for index in range(2)
+    ]
+    provenances = {value: _stored_provenance(value) for value in evidence_ids}
+    repository.put_operation(
+        operation="bess_screen",
+        request_digest="b" * 64,
+        provenances=provenances,
+        source_records=[{"source_key": "raw/source.parquet", "source_sha256": "a" * 64}],
+    )
+    _reset_read_probe(table)
+
+    validate_caller_provenance(
+        {
+            evidence_id: EvidenceProvenance.model_validate(provenance)
+            for evidence_id, provenance in provenances.items()
+        },
+        repository,
+    )
+
+    operation_reads = [
+        key
+        for key in table.get_item_calls
+        if key["plant_id"] == "PROVENANCE" and key["scenario_id"].startswith("operation#")
+    ]
+    assert len(operation_reads) == 1
+    assert len(table.batch_get_calls) == 1
+
+
+def test_membership_query_pagination_remains_supported() -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    shared_id = build_public_evidence_id("c" * 64, "capacity_mw", "ons_capacity_source_v1", "A")
+    july_id = build_evidence_id("july", "field", "bess_screen_v1", "A:2026-07")
+    august_id = build_evidence_id("august", "field", "bess_screen_v1", "A:2026-08")
+    repository.put_operation(
+        **_operation_kwargs(shared_id, july_id, month="2026-07", request_digest="7" * 64)
+    )
+    repository.put_operation(
+        **_operation_kwargs(shared_id, august_id, month="2026-08", request_digest="8" * 64)
+    )
+    first_membership = next(
+        item
+        for (plant_id, _), item in sorted(table.items.items())
+        if plant_id == repository._membership_partition(shared_id)
+    )
+    del table.items[("PROVENANCE", f"operation#{first_membership['operation_id']}")]
+    table.query_page_size = 1
+
+    assert IssuedProvenanceRepository(table).get(shared_id) is not None
 
 
 def test_authenticated_legacy_compact_operation_remains_readable() -> None:
