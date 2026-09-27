@@ -60,7 +60,11 @@ Resources:
         Variables:
           APP_ENV: !Ref StageName
           API_GATEWAY_BASE_PATH: !Sub /${StageName}
-          CORS_ORIGINS: !Sub http://${FrontendBucket}.s3-website-${AWS::Region}.${AWS::URLSuffix}
+          CORS_ORIGINS:
+            Fn::Join:
+              - ","
+              - - !Sub http://${FrontendBucket}.s3-website-${AWS::Region}.${AWS::URLSuffix}
+                - http://curtailess-frontend-290278850174-us-west-2.s3-website-us-west-2.amazonaws.com
           DATA_BUCKET: !Ref DataBucket
           SCENARIOS_TABLE: !Ref ScenariosTable
           EXPOSURE_TABLE: !Ref ExposureTable
