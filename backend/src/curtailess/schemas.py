@@ -1277,7 +1277,7 @@ class ExposureNarrativeSection(BaseModel):
 
 
 class ExposureNarrative(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
     secao_ativo: ExposureNarrativeSection = Field(alias="secao-ativo")
     secao_resumo: ExposureNarrativeSection = Field(alias="secao-resumo")

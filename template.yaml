@@ -37,6 +37,9 @@ Globals:
     MemorySize: 2048
     Timeout: 60
     Tracing: Active
+    Environment:
+      Variables:
+        PYTHONPATH: /var/task/src
 
 Resources:
   HttpApi:
