@@ -72,6 +72,27 @@ class FakeScenariosTable:
         item = self.items.get((Key["plant_id"], Key["scenario_id"]))
         return {} if item is None else {"Item": item}
 
+    def query(
+        self,
+        *,
+        KeyConditionExpression,
+        ExpressionAttributeValues,
+        ConsistentRead=False,
+        ExclusiveStartKey=None,
+    ) -> dict:
+        assert KeyConditionExpression == "plant_id = :plant_id"
+        self.consistent_reads += int(ConsistentRead)
+        plant_id = ExpressionAttributeValues[":plant_id"]
+        items = [
+            item
+            for (item_plant_id, _), item in sorted(self.items.items())
+            if item_plant_id == plant_id
+        ]
+        if ExclusiveStartKey is not None:
+            start = ExclusiveStartKey["scenario_id"]
+            items = [item for item in items if item["scenario_id"] > start]
+        return {"Items": items}
+
 
 @pytest.fixture(autouse=True)
 def issued_provenance_table(monkeypatch) -> FakeScenariosTable:
@@ -170,12 +191,156 @@ def test_operation_persistence_stores_one_commit_and_compact_indexes() -> None:
         provenances={value: _stored_provenance(value) for value in ids},
         source_records=[{"asset_id": "A", "period": "2026-01", "source_key": "raw/source.parquet"}],
     )
-    assert len(table.items) == 3
+    assert len(table.items) == 5
     operation = next(
         item for item in table.items.values() if item["record_type"] == "provenance_operation"
     )
     assert "request_json" not in operation and "output_json" not in operation
     assert repository.get(ids[0])["provenance"]["evidence_id"] == ids[0]
+
+
+def _stored_capacity_provenance(evidence_id: str) -> dict:
+    return {
+        **_stored_provenance(evidence_id),
+        "field_name": "capacity_mw",
+        "origin": "ONS_PUBLICO",
+        "source_uri": "curtailess://ons/capacidade-geracao",
+        "source_key": "raw/capacity.parquet",
+        "source_sha256": "c" * 64,
+        "source_sha256s": ["c" * 64],
+        "method_version": "ons_capacity_source_v1",
+    }
+
+
+def _operation_kwargs(shared_id: str, unique_id: str, *, month: str, request_digest: str) -> dict:
+    return {
+        "operation": "materialize_asset",
+        "request_digest": request_digest,
+        "provenances": {
+            shared_id: _stored_capacity_provenance(shared_id),
+            unique_id: _stored_provenance(unique_id),
+        },
+        "source_records": [
+            {
+                "asset_id": "A",
+                "period": month,
+                "source_key": f"raw/{month}.parquet",
+                "source_sha256": "a" * 64,
+                "capacity_source_key": "raw/capacity.parquet",
+                "capacity_source_sha256": "c" * 64,
+            }
+        ],
+    }
+
+
+def test_unchanged_capacity_evidence_is_reusable_across_july_and_august_operations() -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    capacity_id = build_public_evidence_id("c" * 64, "capacity_mw", "ons_capacity_source_v1", "A")
+    july_id = build_evidence_id("july", "field", "bess_screen_v1", "A:2026-07")
+    august_id = build_evidence_id("august", "field", "bess_screen_v1", "A:2026-08")
+
+    repository.put_operation(
+        **_operation_kwargs(capacity_id, july_id, month="2026-07", request_digest="7" * 64)
+    )
+    assert repository.get(july_id) is not None
+    repository.put_operation(
+        **_operation_kwargs(capacity_id, august_id, month="2026-08", request_digest="8" * 64)
+    )
+
+    fresh = IssuedProvenanceRepository(table)
+    assert fresh.get(capacity_id) is not None
+    assert fresh.get(july_id) is not None
+    assert fresh.get(august_id) is not None
+    membership_partition = IssuedProvenanceRepository._membership_partition(capacity_id)
+    memberships = [key for key in table.items if key[0] == membership_partition]
+    assert len(memberships) == 2
+
+
+@pytest.mark.parametrize("failed_put", range(1, 6))
+def test_interrupted_reuse_never_shadows_first_operation_and_retry_recovers(failed_put) -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    capacity_id = build_public_evidence_id("c" * 64, "capacity_mw", "ons_capacity_source_v1", "A")
+    july_id = build_evidence_id("july", "field", "bess_screen_v1", "A:2026-07")
+    august_id = build_evidence_id("august", "field", "bess_screen_v1", "A:2026-08")
+    repository.put_operation(
+        **_operation_kwargs(capacity_id, july_id, month="2026-07", request_digest="7" * 64)
+    )
+
+    table.put_count = 0
+    table.fail_on_put = failed_put
+    with pytest.raises(ClientError):
+        repository.put_operation(
+            **_operation_kwargs(capacity_id, august_id, month="2026-08", request_digest="8" * 64)
+        )
+    fresh = IssuedProvenanceRepository(table)
+    assert fresh.get(capacity_id) is not None
+    assert fresh.get(july_id) is not None
+    assert fresh.get(august_id) is None
+
+    table.fail_on_put = None
+    repository.put_operation(
+        **_operation_kwargs(capacity_id, august_id, month="2026-08", request_digest="8" * 64)
+    )
+    repository.put_operation(
+        **_operation_kwargs(capacity_id, august_id, month="2026-08", request_digest="8" * 64)
+    )
+    assert IssuedProvenanceRepository(table).get(august_id) is not None
+
+
+def test_reused_evidence_id_rejects_conflicting_payload_without_harming_first_operation() -> None:
+    table = FakeScenariosTable()
+    repository = IssuedProvenanceRepository(table)
+    evidence_id = build_public_evidence_id("c" * 64, "capacity_mw", "ons_capacity_source_v1", "A")
+    first = _operation_kwargs(
+        evidence_id,
+        build_evidence_id("july", "field", "bess_screen_v1", "A:2026-07"),
+        month="2026-07",
+        request_digest="7" * 64,
+    )
+    repository.put_operation(**first)
+    conflicting = _stored_capacity_provenance(evidence_id)
+    conflicting["limitations"] = ["conflicting immutable payload"]
+    before = len(table.items)
+
+    with pytest.raises(RuntimeError, match="immutable record mismatch"):
+        repository.put_operation(
+            operation="materialize_asset",
+            request_digest="8" * 64,
+            provenances={evidence_id: conflicting},
+            source_records=[{"asset_id": "A", "period": "2026-08"}],
+        )
+
+    assert len(table.items) == before
+    assert IssuedProvenanceRepository(table).get(evidence_id) is not None
+
+
+class ConcurrentWinnerTable(FakeScenariosTable):
+    def put_item(self, *, Item, ConditionExpression=None) -> dict:
+        key = (Item["plant_id"], Item["scenario_id"])
+        if ConditionExpression is not None and key not in self.items:
+            self.items[key] = copy.deepcopy(Item)
+            raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem")
+        return super().put_item(Item=Item, ConditionExpression=ConditionExpression)
+
+
+def test_simulated_concurrent_duplicate_writer_is_idempotent() -> None:
+    table = ConcurrentWinnerTable()
+    repository = IssuedProvenanceRepository(table)
+    evidence_id = build_public_evidence_id("c" * 64, "capacity_mw", "ons_capacity_source_v1", "A")
+    kwargs = {
+        "operation": "materialize_asset",
+        "request_digest": "7" * 64,
+        "provenances": {evidence_id: _stored_capacity_provenance(evidence_id)},
+        "source_records": [{"asset_id": "A", "period": "2026-07"}],
+    }
+
+    first_id = repository.put_operation(**kwargs)
+    second_id = repository.put_operation(**kwargs)
+
+    assert first_id == second_id
+    assert IssuedProvenanceRepository(table).get(evidence_id) is not None
 
 
 @pytest.mark.parametrize(
@@ -366,6 +531,19 @@ def test_fresh_read_rejects_unexpected_index_content() -> None:
     index_key = IssuedProvenanceRepository._key(evidence_ids[0])
     index = table.items[(index_key["plant_id"], index_key["scenario_id"])]
     index["unexpected"] = "tampered"
+
+    assert IssuedProvenanceRepository(table).get(evidence_ids[0]) is None
+
+
+@pytest.mark.parametrize("mutation", ["missing", "tampered"])
+def test_fresh_read_rejects_changed_operation_membership(mutation) -> None:
+    table, _repository, evidence_ids, operation_id = _persist_two_member_operation()
+    membership_key = IssuedProvenanceRepository._membership_key(evidence_ids[0], operation_id)
+    item_key = (membership_key["plant_id"], membership_key["scenario_id"])
+    if mutation == "missing":
+        del table.items[item_key]
+    else:
+        table.items[item_key]["provenance_digest"] = "f" * 64
 
     assert IssuedProvenanceRepository(table).get(evidence_ids[0]) is None
 
@@ -1456,7 +1634,7 @@ def test_rank_maintenance_uses_materialized_ons_historical_windows(
         window["expected_curtailed_energy"]["provenance_id"],
         payload["input_provenance"]["energy_price"]["evidence_id"],
     }
-    assert len(issued_provenance_table.items) == 15
+    assert len(issued_provenance_table.items) == 29
     operation = next(
         item
         for item in issued_provenance_table.items.values()
@@ -1697,7 +1875,7 @@ def test_rank_maintenance_changed_values_get_new_immutable_ids(
     }
     assert first_ids.isdisjoint(second_ids)
     assert second_window["opportunity_cost"]["value"] == 6000.0
-    assert len(issued_provenance_table.items) == 16
+    assert len(issued_provenance_table.items) == 30
 
     prior = client.get(f"/v1/provenances/{first_cost_id}")
     assert prior.status_code == 200
@@ -1709,7 +1887,7 @@ def test_rank_maintenance_changed_values_get_new_immutable_ids(
         duplicate.json()["ranked_windows"][0]["field_provenance"]
         == second_window["field_provenance"]
     )
-    assert len(issued_provenance_table.items) == 16
+    assert len(issued_provenance_table.items) == 30
 
 
 def test_rank_maintenance_accepts_legacy_payload_and_infers_client_lineage(monkeypatch) -> None:
@@ -1864,7 +2042,7 @@ def test_bess_screen_uses_materialized_residual_and_explicit_assumptions(
         set(item["provenance"]["parent_evidence_ids"]) == expected_parents
         for item in output_evidence.values()
     )
-    assert len(issued_provenance_table.items) == 7
+    assert len(issued_provenance_table.items) == 13
     source_id = payload["source_observation"]["evidence_id"]
     source_key = IssuedProvenanceRepository._key(source_id)["scenario_id"]
     assert ("PROVENANCE", source_key) in issued_provenance_table.items
@@ -1933,7 +2111,7 @@ def test_bess_screen_changed_input_values_get_new_immutable_ids(
         *(evidence["provenance_id"] for evidence in second_payload["output_evidence"].values()),
     }
     assert first_ids.isdisjoint(second_ids)
-    assert len(issued_provenance_table.items) == 14
+    assert len(issued_provenance_table.items) == 26
 
     prior = client.get(f"/v1/provenances/{first_net_id}")
     assert prior.status_code == 200

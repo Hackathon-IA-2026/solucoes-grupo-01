@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+from collections.abc import Iterator
 from decimal import Decimal
 from typing import Any
 
@@ -90,7 +91,7 @@ def _guard_item_size(item: dict[str, Any]) -> None:
 
 
 class IssuedProvenanceRepository:
-    """Persist compact evidence indexes first and a committed operation record last.
+    """Persist immutable leaves and memberships before the committed operation record.
 
     Records have no application TTL because the shared scenarios table has no provenance
     retention policy. Only request digests, compact source metadata, and provenance needed for
@@ -101,21 +102,47 @@ class IssuedProvenanceRepository:
         self.table = table
 
     @staticmethod
-    def _key(evidence_id: str) -> dict[str, str]:
-        digest = hashlib.sha256(evidence_id.encode("utf-8")).hexdigest()
-        return {"plant_id": "PROVENANCE", "scenario_id": f"evidence#{digest}"}
+    def _evidence_digest(evidence_id: str) -> str:
+        return hashlib.sha256(evidence_id.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _key(cls, evidence_id: str) -> dict[str, str]:
+        return {
+            "plant_id": "PROVENANCE",
+            "scenario_id": f"evidence-leaf#{cls._evidence_digest(evidence_id)}",
+        }
+
+    @classmethod
+    def _membership_partition(cls, evidence_id: str) -> str:
+        return f"PROVENANCE#{cls._evidence_digest(evidence_id)}"
+
+    @classmethod
+    def _membership_key(cls, evidence_id: str, operation_id: str) -> dict[str, str]:
+        return {
+            "plant_id": cls._membership_partition(evidence_id),
+            "scenario_id": f"operation#{operation_id}",
+        }
 
     @staticmethod
     def _operation_key(operation_id: str) -> dict[str, str]:
         return {"plant_id": "PROVENANCE", "scenario_id": f"operation#{operation_id}"}
 
     @classmethod
-    def _index_item(
+    def _leaf_item(cls, evidence_id: str, provenance: dict[str, Any]) -> dict[str, Any]:
+        return {
+            **cls._key(evidence_id),
+            "record_type": "provenance_leaf",
+            "evidence_id": evidence_id,
+            "provenance_digest": canonical_digest(provenance),
+        }
+
+    @classmethod
+    def _membership_item(
         cls, evidence_id: str, operation_id: str, provenance: dict[str, Any]
     ) -> dict[str, Any]:
         return {
-            **cls._key(evidence_id),
-            "record_type": "provenance_index",
+            **cls._membership_key(evidence_id, operation_id),
+            "record_type": "provenance_membership",
             "evidence_id": evidence_id,
             "operation_id": operation_id,
             "provenance_digest": canonical_digest(provenance),
@@ -214,33 +241,40 @@ class IssuedProvenanceRepository:
         operation_item = self._operation_item(operation_id, payload)
         _guard_item_size(operation_item)
         for evidence_id, provenance in provenances.items():
-            self._put_immutable(self._index_item(evidence_id, operation_id, provenance))
+            self._put_immutable(self._leaf_item(evidence_id, provenance))
+        for evidence_id, provenance in provenances.items():
+            self._put_immutable(self._membership_item(evidence_id, operation_id, provenance))
         self._put_immutable(operation_item)
         return operation_id
 
-    def get(self, evidence_id: str) -> dict[str, Any] | None:
-        try:
-            parse_evidence_id(evidence_id)
-        except ValueError:
-            return None
-        index = self.table.get_item(Key=self._key(evidence_id), ConsistentRead=True).get("Item")
-        if (
-            index is None
-            or index.get("record_type") != "provenance_index"
-            or index.get("evidence_id") != evidence_id
-        ):
-            return None
-        operation_id = index.get("operation_id")
-        if not isinstance(operation_id, str):
-            return None
+    def _memberships(self, evidence_id: str) -> Iterator[dict[str, Any]]:
+        exclusive_start_key = None
+        while True:
+            kwargs: dict[str, Any] = {
+                "KeyConditionExpression": "plant_id = :plant_id",
+                "ExpressionAttributeValues": {":plant_id": self._membership_partition(evidence_id)},
+                "ConsistentRead": True,
+            }
+            if exclusive_start_key is not None:
+                kwargs["ExclusiveStartKey"] = exclusive_start_key
+            response = self.table.query(**kwargs)
+            page = response.get("Items", [])
+            if not isinstance(page, list):
+                return
+            yield from (item for item in page if isinstance(item, dict))
+            exclusive_start_key = response.get("LastEvaluatedKey")
+            if not exclusive_start_key:
+                return
+
+    def _validated_operation(
+        self, operation_id: str
+    ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]] | None:
         operation = self.table.get_item(
             Key=self._operation_key(operation_id), ConsistentRead=True
         ).get("Item")
         if not isinstance(operation, dict):
             return None
         try:
-            # The original compact format is safe to read only after reconstructing its
-            # canonical commit and every deterministic member index from persisted content.
             payload = {
                 key: operation[key]
                 for key in ("operation", "request_digest", "provenances", "source_records")
@@ -260,27 +294,57 @@ class IssuedProvenanceRepository:
                 ):
                     return None
                 parse_evidence_id(member_id)
-                expected_index = self._index_item(member_id, operation_id, member_provenance)
-                stored_index = self.table.get_item(
+                stored_leaf = self.table.get_item(
                     Key=self._key(member_id), ConsistentRead=True
                 ).get("Item")
-                if stored_index != expected_index:
+                stored_membership = self.table.get_item(
+                    Key=self._membership_key(member_id, operation_id), ConsistentRead=True
+                ).get("Item")
+                if stored_leaf != self._leaf_item(member_id, member_provenance) or (
+                    stored_membership
+                    != self._membership_item(member_id, operation_id, member_provenance)
+                ):
                     return None
         except (KeyError, TypeError, ValueError):
             return None
-        provenance = provenances.get(evidence_id)
-        if not isinstance(provenance, dict) or index != self._index_item(
-            evidence_id, operation_id, provenance
+        return operation, provenances
+
+    def get(self, evidence_id: str) -> dict[str, Any] | None:
+        try:
+            parse_evidence_id(evidence_id)
+        except ValueError:
+            return None
+        leaf = self.table.get_item(Key=self._key(evidence_id), ConsistentRead=True).get("Item")
+        if (
+            not isinstance(leaf, dict)
+            or leaf.get("record_type") != "provenance_leaf"
+            or leaf.get("evidence_id") != evidence_id
         ):
             return None
-        return {
-            "evidence_id": evidence_id,
-            "record_type": "issued_provenance",
-            "operation": operation.get("operation"),
-            "request_digest": operation.get("request_digest"),
-            "provenance": provenance,
-            "source_records": operation.get("source_records", []),
-        }
+        for membership in self._memberships(evidence_id):
+            operation_id = membership.get("operation_id")
+            if not isinstance(operation_id, str):
+                continue
+            validated = self._validated_operation(operation_id)
+            if validated is None:
+                continue
+            operation, provenances = validated
+            provenance = provenances.get(evidence_id)
+            if not isinstance(provenance, dict):
+                continue
+            if leaf != self._leaf_item(evidence_id, provenance) or membership != (
+                self._membership_item(evidence_id, operation_id, provenance)
+            ):
+                continue
+            return {
+                "evidence_id": evidence_id,
+                "record_type": "issued_provenance",
+                "operation": operation.get("operation"),
+                "request_digest": operation.get("request_digest"),
+                "provenance": provenance,
+                "source_records": operation.get("source_records", []),
+            }
+        return None
 
 
 class UnconfiguredIssuedProvenanceRepository:
